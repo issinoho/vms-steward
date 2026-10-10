@@ -55,3 +55,14 @@ flags: build from CLEAN after changing headers or qualifiers.
 Commit in logical steps with messages that explain why, particularly the reasoning behind
 a platform workaround, and record what was verified and how. Don't push without the user
 asking.
+
+## VMS pitfalls found here
+
+- **Never name a DCL symbol after a verb the procedure uses.** A symbol `RUN` turned
+  `RUN/DETACHED` into an invalid command (`%DCL-W-IVVERB`), and the pool printed
+  "started" for processes that never existed. Check `$STATUS` after creating one.
+- **Do not use ACCOUNTING to find out why a process died:** it runs for many minutes on
+  these nodes. Read the process's /OUTPUT log, or start a minimal detached process
+  that writes one. If you cut a remote command short, stop the VMS process it
+  started (by PID, your own only).
+- **`#include "../x.h"` does not work in VSI C:** use bare names and include directories.

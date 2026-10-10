@@ -1,0 +1,18 @@
+$! STEWARD_SETTINGS.COM - site settings for the Steward pool.
+$!
+$! Copy to the pool's run directory as STEWARD_SETTINGS.COM and edit. Each pool
+$! process runs it before starting the server; the server reads these logical
+$! names (see src/main/steward_main.c). Restart the pool after a change.
+$!
+$! Reverse proxies whose X-Forwarded-* headers are believed (DECISIONS D7): the
+$! address(es) nginx proxy manager connects to lighttpd from, as exact addresses or
+$! IPv4 CIDR ranges, comma-separated. Leave empty when browsers reach lighttpd
+$! directly: forwarded headers are then ignored, which is the safe default. Never
+$! list a range that untrusted clients can connect from. (OpenVMS refuses an empty
+$! logical name, so "no proxies" is the line left commented out.)
+$! define/process/nolog STEWARD_TRUSTED_PROXIES "192.0.2.10"
+$!
+$! A session ends after this many seconds without an API call, and after this
+$! many seconds in any case.
+$ define/process/nolog STEWARD_IDLE_SECS "900"
+$ define/process/nolog STEWARD_ABSOLUTE_SECS "28800"
