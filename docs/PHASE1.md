@@ -172,3 +172,42 @@ work account, which holds every privilege. The least-privilege check on the node
 covered a *failed* sign-in only, and that never creates a persona. Lesson, now in
 the review checklist: verify least privilege with the **success** path, run as the
 real account.
+
+## Phase exit checks (2026-10-10, x86 node, through nginx proxy manager over HTTPS)
+
+Pool restarted as `STEWARD` with `/AUTHORIZE` (NOTES.md): authorized
+`DETACH,TMPMBX,NETMBX,SYSPRV`, current `DETACH,TMPMBX,NETMBX`. The user then
+ran the browser checks as `STEWARD_TEST`. The audit log shows:
+
+```
+21:16:19Z login       outcome="ok"
+21:16:32Z privileges  target="GRPPRV"     outcome="ok"
+21:16:35Z privileges  target="(defaults)" outcome="ok"
+21:16:48Z logout      outcome="ok"
+21:18:46Z login       outcome="failed"  %ACME-E-AUTHFAILURE   (DISUSER)
+21:19:24Z login       outcome="expired" password has expired (/PWDEXPIRED, right password)
+```
+
+- Sign-in, whoami, switching GRPPRV on and off (D9), and sign-out all worked.
+- A DISUSERed account looked exactly like a wrong password to the browser.
+- The expired password was refused and no session was created.
+- `SHOW INTRUSION` showed `NETWORK SUSPECT 192.168.0.1::STEWARD`, which names the client
+  address, not NPM. Here that address is the router, because of hairpin NAT (see above).
+- Both pool processes kept their PIDs throughout. Neither exited, so the after-request
+  checks for a leaked persona or SYSPRV never fired. STATUS afterwards showed current
+  privileges `DETACH,TMPMBX,NETMBX`.
+- `SESSIONS.DAT` and `AUDIT.LOG` are `(RWED,RWED,,)`.
+- Linux: `make test` 88/88, `make api-test` 31/31, `make audit` clean (CI green). On
+  VMS, TEST_CORE 88/88.
+
+Review of the changes made since the gate review (the SYSPRV bracket, 6bdd9b9, and the
+`/AUTHORIZE` pool change, fe2aa18), against the checklist:
+- SYSPRV is enabled only while no persona is active, because `persona_begin` refuses
+  when one is.
+- SYSPRV is disabled before `$PERSONA_ASSUME`. If disabling fails, or the following
+  `$GETJPI` cannot confirm it is off, the process exits.
+- The privilege masks are full quadwords.
+- `st_plat_privileges_clean` fails closed: a `$GETJPI` error counts as "not clean".
+- The persona's privileges come from the user's own UAF record. STEWARD_TEST is not
+  authorized SYSPRV, and none appeared in its whoami.
+- No findings.
