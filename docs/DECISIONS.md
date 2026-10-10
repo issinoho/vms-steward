@@ -75,3 +75,53 @@ Static `index.html`, ES modules and CSS served by lighttpd. There is no npm and 
 bundler, so deploying is a file copy and there are no dependencies to keep patched.
 Alternative: Vue/React built with Vite on Linux, which gives a richer UI but brings a
 toolchain and dependency churn.
+
+## D5. JSON: an in-house parser and writer
+
+**Status:** taken in Phase 1 (2026-10-10). Open to review.
+
+`src/core/st_json.c`, about 450 lines. It is strict RFC 8259: duplicate keys, NUL,
+lone surrogates and invalid UTF-8 are refused. Nesting is limited to depth 32 and 4096
+items per container, and decoded strings are scrubbed on free because they carry
+passwords. The writer takes ISO-8859-1 (what OpenVMS stores) and emits UTF-8, escaping
+`<`, `>` and `&`. It is unit-tested and mutation-fuzzed (`make fuzz`) under ASan and UBSan.
+
+Alternative: vendoring cJSON (MIT). It is mature, but it accepts duplicate keys and does
+no character-set conversion, so it would need wrapping, and it would be a second
+codebase to keep C99/VSI C clean.
+
+## D6. Creating and deleting users
+
+Reserved for Phase 4 (see the plan).
+
+## D7. Reverse proxies: nginx proxy manager in front of lighttpd
+
+**Status:** required by the user (2026-10-10).
+
+The site must work behind nginx proxy manager (NPM): TLS ends at NPM, which then
+connects to lighttpd. lighttpd's view of the request is then the proxy's, so Steward
+reconstructs the browser's view from `X-Forwarded-*`. It does so **only when the
+connection comes from a configured trusted proxy** (`STEWARD_TRUSTED_PROXIES`:
+addresses and IPv4 CIDR ranges). Otherwise any client could choose the address its
+failed logins are charged to, and spoof the intrusion records D2 depends on.
+
+- **Client address:** walk `X-Forwarded-For` from the right past trusted proxies, and
+  take the first address that is not one of them. Anything to its left was written
+  by the client and is ignored. This address goes to `$ACM` and the audit log.
+- **Scheme and host:** from `X-Forwarded-Proto` and `X-Forwarded-Host` (NPM keeps `Host`
+  anyway). These feed the same-origin check, which otherwise sees `http` while the
+  browser says `https` and refuses every sign-in.
+- **Mount point:** `X-Forwarded-Prefix`, if the proxy publishes the site under a path.
+  The session cookie's path follows it, and the front end uses only relative URLs.
+  The simplest setup is a host of its own at the root, which needs no prefix.
+- Steward never builds absolute URLs, so there are no redirects to rewrite.
+- Security headers that belong to the whole site (HSTS) are left to the proxy. The
+  lighttpd fragment sets the page-level ones (CSP, frame denial), and the API sets its
+  own (`no-store`, `nosniff`).
+- The future terminal will use WebSockets; NPM needs "Websockets Support" turned on
+  for the host.
+
+Alternative: lighttpd's `mod_extforward`, which rewrites `REMOTE_ADDR` before Steward
+sees it. It is a good second layer, but it would make Steward's security depend on a
+web-server setting it cannot check. Steward also needs the scheme, host and prefix, which
+mod_extforward does not provide.

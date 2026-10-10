@@ -29,6 +29,8 @@ product.
   `SSL3$LIBCRYPTO_SHR32`, which is vmsguard's proven combination. This was revised from clang
   during Phase 0 because system-service item lists are 32-bit structures. The code is C99
   so IA64 stays cheap later.
+- **D7 Reverse proxies:** must work behind nginx proxy manager. `X-Forwarded-*` is
+  believed only from configured trusted proxies, and the front end uses relative URLs.
 - **D4 Front end:** vanilla ES modules with no build step and no npm. Static files are served
   by lighttpd, and the deploy is a file copy.
 
