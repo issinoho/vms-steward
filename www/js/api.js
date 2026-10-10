@@ -43,5 +43,8 @@ async function call(method, path, body) {
 export const api = {
   signIn: (username, password) => call('POST', 'session', { username, password }),
   whoami: () => call('GET', 'session'),
+  // The authorized privileges to switch on for this session, on top of the defaults
+  // (D9). Returns the updated whoami.
+  setPrivileges: (enabled) => call('PUT', 'session/privileges', { enabled }),
   signOut: async () => { try { await call('DELETE', 'session'); } finally { csrf = null; } },
 };

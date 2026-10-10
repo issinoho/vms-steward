@@ -51,6 +51,7 @@ browser ─(1)─ nginx proxy manager ─(2)─ lighttpd ─(3)─ STEWARD.EXE �
 | Personas begin and end only in the dispatcher | design | `audit_rules.sh persona-only-in-dispatcher` |
 | Only our lighttpd reaches the API (gateway secret) | dispatcher `via_gateway`; lighttpd overwrites the header | unit `test_gateway`; API "bypasses lighttpd"; on VMS, direct FastCGI 403 |
 | Session store and audit log private to the service | pool default protection `(S:RWED,O:RWED,G,W)` and `[.RUN]` | directory listing at phase exit |
+| A session can enable only privileges the user is authorized for (D9) | OpenVMS: `$SETPRV` under the persona is capped by the persona's authorized mask (probe_setprv); Steward also refuses unauthorized names up front | unit `test_privileges`; API "unauthorized privilege is refused" |
 | Forwarded headers believed only from trusted proxies | `st_app_origin` | unit `test_proxy`, API "untrusted peer" |
 | State changes need same origin and the session's CSRF token | dispatcher | unit and API suites |
 | Sign-in failures are indistinguishable (wrong password, disabled, no such user, malformed) | `svc_session_login` | unit "disabled looks the same" |

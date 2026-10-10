@@ -19,6 +19,34 @@ const char *svc_priv_name(int bit)
     return priv_names[bit];
 }
 
+/* The bit for a privilege name (case-insensitive; DETACH accepted for IMPERSONATE),
+   or -1. */
+static int priv_bit(const char *name)
+{
+    char up[16];
+    size_t i, n = strlen(name);
+    int bit;
+    if (n == 0 || n >= sizeof up) return -1;
+    for (i = 0; i < n; i++) up[i] = (char) ((name[i] >= 'a' && name[i] <= 'z') ? name[i] - 'a' + 'A' : name[i]);
+    up[n] = '\0';
+    if (!strcmp(up, "DETACH")) return 5;
+    for (bit = 0; svc_priv_name(bit); bit++)
+        if (!strcmp(svc_priv_name(bit), up)) return bit;
+    return -1;
+}
+
+/* Names of the bits set in q, comma-separated, for messages and the audit log. */
+static void priv_list(const unsigned int q[2], char *out, size_t outlen)
+{
+    int bit;
+    out[0] = '\0';
+    for (bit = 0; bit < 64; bit++)
+        if ((q[bit / 32] & (1u << (bit % 32))) && svc_priv_name(bit)) {
+            if (*out) st_append(out, outlen, ",");
+            st_append(out, outlen, svc_priv_name(bit));
+        }
+}
+
 static void privs(st_jw *w, const char *key, const unsigned int q[2])
 {
     int bit;
@@ -156,6 +184,8 @@ void svc_session_get(st_ctx *c)
     st_jw_kstr(&w, "account", who.account);
     st_jw_kstr(&w, "uic", uic);
     privs(&w, "authorized_privileges", who.priv_auth);
+    privs(&w, "default_privileges", who.priv_def);
+    privs(&w, "enabled_privileges", c->session.priv_enable);
     privs(&w, "current_privileges", who.priv_cur);
     st_jw_key(&w, "identifiers");
     st_jw_arr(&w);
@@ -174,4 +204,63 @@ void svc_session_logout(st_ctx *c)
     st_app_audit(c, c->session.username, "logout", "-", "ok", NULL);
     st_app_set_cookie(c, "", 0);
     c->resp->status = 204;
+}
+
+/* PUT api/v1/session/privileges {"enabled": ["SYSPRV", ...]}: the authorized privileges
+   to switch on for this session, on top of the defaults, like SET PROCESS/PRIVILEGE
+   (D9). The whole set is replaced; [] goes back to the defaults. Each change is
+   audited. OpenVMS is the ceiling either way, but a name the user is not authorized
+   for is refused here with a clear message instead of being silently dropped. */
+void svc_session_privileges(st_ctx *c)
+{
+    st_jdoc doc;
+    const st_jval *list, *v;
+    unsigned int want[2] = { 0, 0 }, unauth[2];
+    st_whoami who;
+    st_err e;
+    char names[512];
+
+    if (st_app_body(c, &doc)) return;
+    list = st_json_get(doc.root, "enabled");
+    if (!list || list->type != ST_JARR) {
+        st_json_free(&doc);
+        st_resp_problem(c->resp, 400, "bad-request", "\"enabled\" must be a list of privilege names",
+                        NULL, 0, NULL);
+        return;
+    }
+    for (v = list->child; v; v = v->next) {
+        int bit = v->type == ST_JSTR ? priv_bit(v->str) : -1;
+        if (bit < 0) {
+            char detail[96];
+            snprintf(detail, sizeof detail, "Not an OpenVMS privilege: %.40s",
+                     v->type == ST_JSTR ? v->str : "(not a string)");
+            st_json_free(&doc);
+            st_resp_problem(c->resp, 422, "unknown-privilege", "Unknown privilege", detail, 0, NULL);
+            return;
+        }
+        want[bit / 32] |= 1u << (bit % 32);
+    }
+    st_json_free(&doc);
+
+    if (st_plat_whoami(&who, &e)) { st_app_error(c, &e); return; }
+    unauth[0] = want[0] & ~who.priv_auth[0];
+    unauth[1] = want[1] & ~who.priv_auth[1];
+    if (unauth[0] | unauth[1]) {
+        char detail[sizeof names + 40];
+        priv_list(unauth, names, sizeof names);
+        snprintf(detail, sizeof detail, "You are not authorized for: %s", names);
+        st_resp_problem(c->resp, 403, "not-authorized", "Privilege not authorized", detail, 0, NULL);
+        return;
+    }
+    /* Defaults are on anyway; keep the set to what the user actually switched on. */
+    want[0] &= ~who.priv_def[0];
+    want[1] &= ~who.priv_def[1];
+
+    if (st_plat_persona_set_privs(want, &e)) { st_app_error(c, &e); return; }
+    c->session.priv_enable[0] = want[0];
+    c->session.priv_enable[1] = want[1];
+    if (st_plat_session_put(&c->session, &e)) { st_app_error(c, &e); return; }
+    priv_list(want, names, sizeof names);
+    st_app_audit(c, c->session.username, "privileges", names[0] ? names : "(defaults)", "ok", NULL);
+    svc_session_get(c);
 }

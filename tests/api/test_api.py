@@ -133,6 +133,13 @@ def main(binary):
         st, _, doc = p.call("GET", "/api/v1/session")
         check(st == 200 and "SYSPRV" in doc["authorized_privileges"] and "GRPPRV" in doc["authorized_privileges"],
               "privileges above bit 31 are reported (GRPPRV)")
+        check("SYSPRV" not in doc["current_privileges"], "authorized-only privileges start switched off (D9)")
+        st, _, doc = p.call("PUT", "/api/v1/session/privileges", {"enabled": ["GRPPRV", "SYSPRV"]})
+        check(st == 200 and {"GRPPRV", "SYSPRV"} <= set(doc["current_privileges"]) and
+              set(doc["enabled_privileges"]) == {"GRPPRV", "SYSPRV"},
+              "switching on authorized privileges, including one above bit 31")
+        st, _, doc = p.call("PUT", "/api/v1/session/privileges", {"enabled": ["CMKRNL"]})
+        check(st == 403 and "CMKRNL" in doc.get("detail", ""), "an unauthorized privilege is refused by name")
 
         # The same headers from a peer we do not trust are ignored: the https Origin
         # no longer matches what lighttpd saw, so the request is refused.
@@ -159,6 +166,8 @@ def main(binary):
         log = raw.decode("ascii", "replace")
         check('client="203.0.113.50"' in log and 'user="STEWARD_ADM"' in log,
               "audit records the browser's address behind the proxy")
+        check('action="privileges" target="SYSPRV,GRPPRV" outcome="ok"' in log,
+              "switching privileges on is audited")
         check('outcome="failed" detail="invalid password"' in log,
               "audit records why a login failed (the client is not told)")
         check('user="STEWARD_ADMINISTRATOR"' in log,

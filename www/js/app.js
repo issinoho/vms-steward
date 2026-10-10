@@ -124,22 +124,67 @@ function keys(list, empty, accent) {
   return h('ul', { class: accent ? 'keys accent' : 'keys' }, list.map((x) => h('li', {}, x)));
 }
 
+// Privileges as keys (D9): defaults are always lit; authorized ones can be pressed
+// on and off for this session, as SET PROCESS/PRIVILEGE does at a terminal. Each
+// press is a request: OpenVMS has the final word, and the page redraws from what
+// it reports back.
+function privilegeKeys() {
+  const defaults = new Set(me.default_privileges);
+  const enabled = new Set(me.enabled_privileges);
+  const current = new Set(me.current_privileges);
+
+  async function toggle(name, btn) {
+    const next = new Set(enabled);
+    if (next.has(name)) next.delete(name); else next.add(name);
+    btn.disabled = true;
+    try {
+      me = await api.setPrivileges([...next]);
+      armIdle();
+      toast(vmsMessage('S', next.has(name) ? 'PRVENA' : 'PRVDIS',
+        `${name} ${next.has(name) ? 'enabled' : 'disabled'} for this session`));
+      shell(accountView());
+    } catch (err) {
+      btn.disabled = false;
+      if (err instanceof ApiError && err.status === 401) { expired('Your session has ended. Sign in again.'); return; }
+      toast(problemText(err), 'error');
+    }
+  }
+
+  const keysFor = (names, pressable) => h('ul', { class: 'keys' }, names.map((name) => {
+    const on = current.has(name);
+    if (!pressable) return h('li', { class: on ? 'on' : '' }, name);
+    const btn = h('button', {
+      type: 'button', class: on ? 'key on' : 'key', 'aria-pressed': on ? 'true' : 'false',
+      title: on ? `Switch ${name} off` : `Switch ${name} on for this session`,
+    }, name);
+    btn.addEventListener('click', () => toggle(name, btn));
+    return h('li', { class: 'pressable' }, btn);
+  }));
+
+  const optional = me.authorized_privileges.filter((p) => !defaults.has(p));
+  return [
+    h('h3', {}, 'Default privileges'),
+    me.default_privileges.length ? keysFor(me.default_privileges, false) : h('span', { class: 'muted' }, 'None'),
+    h('h3', {}, 'Authorized — press to switch on for this session'),
+    optional.length
+      ? [keysFor(optional, true),
+         h('p', { class: 'muted small' }, 'Like SET PROCESS/PRIVILEGE: they stay on until you switch them off or sign out. Each change is audited.')]
+      : h('span', { class: 'muted' }, 'None beyond your defaults'),
+  ];
+}
+
 function accountView() {
-  const cur = new Set(me.current_privileges);
-  const authOnly = me.authorized_privileges.filter((p) => !cur.has(p));
   return [
     h('h2', {}, 'My account'),
     h('p', { class: 'muted' },
       'Everything you do here runs as you: OpenVMS checks your own privileges and rights, exactly as at a terminal.'),
     h('div', { class: 'card' }, h('dl', { class: 'facts' },
       h('dt', {}, 'Username'), h('dd', {}, me.username),
-      h('dt', {}, 'Owner'), h('dd', {}, me.owner || '—'),
+      h('dt', {}, 'Owner'), h('dd', {}, me.owner || '\u2014'),
       h('dt', {}, 'UIC'), h('dd', { class: 'mono' }, me.uic),
-      h('dt', {}, 'Account'), h('dd', {}, me.account || '—'),
+      h('dt', {}, 'Account'), h('dd', {}, me.account || '\u2014'),
       h('dt', {}, 'Session ends'), h('dd', { class: 'mono' }, vmsDate(me.expires_at)))),
-    h('h3', {}, 'Privileges in effect'),
-    keys(me.current_privileges, 'None', true),
-    authOnly.length ? [h('h3', {}, 'Authorized, not enabled'), keys(authOnly, '')] : null,
+    privilegeKeys(),
     h('h3', {}, 'Rights identifiers held'),
     keys(me.identifiers, 'None'),
   ];

@@ -147,9 +147,9 @@ The checks are verified to fail when they should. The project rules and the
 analyzer were each shown a planted violation; the analyzer step had been a no-op
 under `-fsyntax-only` until that test.
 
-## D9. Enabling authorized privileges (proposed)
+## D9. Enabling authorized privileges: opt-in per session
 
-**Status:** proposed, for the user's decision at the Phase 1 exit.
+**Status:** approved by the user (2026-10-10): option A. Built in Phase 1.
 
 A persona starts with the user's **default** privileges and may enable any **authorized**
 privilege with `$SETPRV` (docs/PHASE1.md). Administrators often hold SYSPRV as authorized

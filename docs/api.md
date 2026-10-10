@@ -73,6 +73,27 @@ hours, intrusion detection.
 
 `401 not-signed-in` or `session-expired` when there is no live session.
 
+### `PUT api/v1/session/privileges`: switch authorized privileges on or off (D9)
+
+```json
+{"enabled": ["SYSPRV", "GRPPRV"]}
+```
+
+This replaces the set of privileges switched on for this session, on top of your
+defaults, like `SET PROCESS/PRIVILEGE`. `[]` goes back to the defaults. The set takes
+effect at once, stays for the session's later requests, and each change is audited.
+Names are case-insensitive, and `DETACH` is accepted for IMPERSONATE.
+
+| Status | Slug | When |
+|---|---|---|
+| 200 | | the updated whoami, as `GET api/v1/session` |
+| 400 | `bad-request` | `enabled` missing or not a list |
+| 403 | `not-authorized` | a privilege you are not authorized for; `detail` names it |
+| 422 | `unknown-privilege` | not an OpenVMS privilege name |
+
+`GET api/v1/session` reports `default_privileges`, `enabled_privileges` (this set)
+and `current_privileges` (what is in effect: defaults plus enabled).
+
 ### `DELETE api/v1/session`: sign out
 
 `204`; the session is deleted and the cookie cleared.

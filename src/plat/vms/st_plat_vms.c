@@ -115,7 +115,8 @@ static void set_text(st_err *e, int kind, const char *text)
 #define SR_SEEN     52    /* 8 */
 #define SR_CSRF     60    /* 32 */
 #define SR_CLIENT   92    /* 46, NUL-padded */
-#define SR_LEN      138
+#define SR_ENABLE   138   /* 8: privileges switched on (D9), two longwords */
+#define SR_LEN      146
 
 static struct FAB   sfab;
 static struct RAB   srab;
@@ -152,6 +153,7 @@ static void encode(const st_session *s, unsigned char *r)
     memcpy(r + SR_CSRF, s->csrf, 32);
     n = strlen(s->client);
     memcpy(r + SR_CLIENT, s->client, n > 45 ? 45 : n);
+    put64(r + SR_ENABLE, (long long) (((unsigned long long) s->priv_enable[1] << 32) | s->priv_enable[0]));
 }
 
 static void decode(const unsigned char *r, st_session *s)
@@ -165,6 +167,11 @@ static void decode(const unsigned char *r, st_session *s)
     s->last_seen = get64(r + SR_SEEN);
     memcpy(s->csrf, r + SR_CSRF, 32);
     memcpy(s->client, r + SR_CLIENT, 45);
+    {
+        unsigned long long m = (unsigned long long) get64(r + SR_ENABLE);
+        s->priv_enable[0] = (unsigned int) m;
+        s->priv_enable[1] = (unsigned int) (m >> 32);
+    }
 }
 
 static unsigned int open_sessions(const char *path)
@@ -187,6 +194,13 @@ static unsigned int open_sessions(const char *path)
     sfab.fab$l_fop = FAB$M_CIF;   /* create if absent, else open: the pool shares one file */
     st = sys$create(&sfab);
     if (!(st & 1)) return st;
+    if (sfab.fab$w_mrs != SR_LEN) {
+        /* An existing store from an older version, with shorter records. Sessions
+           are disposable: stop the pool and delete the file (STEWARD_POOL.COM). */
+        st_plat_log("the session store has an older record format; stop the pool and delete it");
+        sys$close(&sfab);
+        return RMS$_RSZ;
+    }
     srab = cc$rms_rab;
     srab.rab$l_fab = &sfab;
     st = sys$connect(&srab);
@@ -269,7 +283,7 @@ int st_plat_session_get(const unsigned char key[32], st_session *s, st_err *e)
     st = sys$get(&srab);
     if (st == RMS$_RNF) return 0;
     if (!(st & 1)) { set_cond(e, st); return -1; }
-    if (srab.rab$w_rsz != SR_LEN) { set_text(e, ST_E_INTERNAL, "malformed session record"); return -1; }
+    if (srab.rab$w_rsz != SR_LEN) return 0;   /* not a record we wrote: no session */
     decode(r, s);
     st_zero(r, sizeof r);
     return 1;
@@ -312,11 +326,33 @@ void st_plat_session_purge(long long created_before, long long seen_before)
 /* ================================================================ personas */
 
 static unsigned int persona_handle;
+static unsigned int persona_default[2];   /* what the persona started with */
 
-int st_plat_persona_begin(const char *username, st_err *e)
+/* Defaults plus enable (D9). A persona starts with the user's default privileges and
+   $SETPRV may add any the user is authorized for, nothing more (probe_setprv): the
+   persona's authorized mask, not the service's, is the ceiling. NOTALLPRIV, for a
+   privilege no longer authorized, is not an error: the rest are still applied.
+   Masks stay quadwords: PRV$M_ above bit 31 do not fit in a longword (PHASE1). */
+int st_plat_persona_set_privs(const unsigned int enable[2], st_err *e)
+{
+    unsigned int off[2], st;
+    if (!persona_handle) { set_text(e, ST_E_INTERNAL, "no persona"); return -1; }
+    off[0] = ~persona_default[0];
+    off[1] = ~persona_default[1];
+    st = sys$setprv(0, (void *) off, 0, 0);
+    if (!(st & 1)) { set_cond(e, st); return -1; }
+    if (enable[0] | enable[1]) {
+        st = sys$setprv(1, (void *) enable, 0, 0);
+        if (!(st & 1)) { set_cond(e, st); return -1; }
+    }
+    return 0;
+}
+
+int st_plat_persona_begin(const char *username, const unsigned int enable[2], st_err *e)
 {
     struct dsc$descriptor_s d;
-    unsigned int st, h = 0;
+    unsigned int st, h = 0, iosb[2];
+    st_ile3 items[2];
     if (persona_handle) { set_text(e, ST_E_INTERNAL, "a persona is already active"); return -1; }
     desc(&d, username, (unsigned short) strlen(username));
     st = sys$persona_create(&h, &d, 0, 0, 0);
@@ -324,6 +360,16 @@ int st_plat_persona_begin(const char *username, st_err *e)
     st = sys$persona_assume(&h, 0, 0, 0);
     if (!(st & 1)) { sys$persona_delete(&h); set_cond(e, st); return -1; }
     persona_handle = h;
+    persona_default[0] = persona_default[1] = 0;
+    item(&items[0], JPI$_CURPRIV, persona_default, 8, 0);
+    item_end(&items[1]);
+    st = sys$getjpiw(0, 0, 0, items, iosb, 0, 0);
+    if (st & 1) st = iosb[0];
+    if (!(st & 1) || st_plat_persona_set_privs(enable, e)) {
+        if (!(st & 1)) set_cond(e, st);
+        st_plat_persona_end();
+        return -1;
+    }
     return 0;
 }
 
@@ -376,7 +422,10 @@ static int check_expiry(const char *username, st_err *e)
     st_ile3 items[5];
     int exp;
 
-    if (st_plat_persona_begin(username, e)) return -1;
+    {
+        static const unsigned int none[2] = { 0, 0 };
+        if (st_plat_persona_begin(username, none, e)) return -1;
+    }
     desc(&d, username, (unsigned short) strlen(username));
     item(&items[0], UAI$_FLAGS, &flags, 4, 0);
     item(&items[1], UAI$_PWD_DATE, pwd, 8, 0);
@@ -456,6 +505,8 @@ int st_plat_whoami(st_whoami *w, st_err *e)
     while (alen && acct[alen - 1] == ' ') acct[--alen] = '\0';
     st_copy(w->account, sizeof w->account, acct);
     w->uic = uic;
+    w->priv_def[0] = persona_default[0];
+    w->priv_def[1] = persona_default[1];
 
     /* Owner: the user's own UAF record, which a persona may read (probe_selfuai). */
     desc(&d, w->username, (unsigned short) strlen(w->username));

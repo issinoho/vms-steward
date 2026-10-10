@@ -166,7 +166,20 @@ button:disabled { opacity: .6; cursor: progress; }
   padding: .65em .8em .75em; border-radius: 5px; background: var(--key-top);
   border: 1px solid var(--key-side); box-shadow: 0 3px 0 var(--key-side), 0 4px 6px rgb(0 0 0 / .12);
 }
-.keys.accent li { box-shadow: 0 3px 0 var(--accent), 0 4px 6px rgb(0 0 0 / .12); }
+.keys.accent li, .keys li.on { box-shadow: 0 3px 0 var(--accent), 0 4px 6px rgb(0 0 0 / .12); }
+/* Pressable keys: the button is the keycap; "on" keys sit lit with the accent edge,
+   and pressing travels the key down as a real one would. */
+.keys li.pressable { padding: 0; border: 0; background: none; box-shadow: none; }
+.keys button.key {
+  font: 600 .74rem/1 var(--mono); letter-spacing: .04em; text-transform: none; color: var(--key-text);
+  padding: .65em .8em .75em; border-radius: 5px; background: var(--key-top);
+  border: 1px solid var(--key-side); box-shadow: 0 3px 0 var(--key-side), 0 4px 6px rgb(0 0 0 / .12);
+  opacity: .72; transition: transform .06s, box-shadow .06s;
+}
+.keys button.key.on { opacity: 1; box-shadow: 0 3px 0 var(--accent), 0 4px 6px rgb(0 0 0 / .12); }
+.keys button.key:hover { opacity: 1; filter: none; }
+.keys button.key:active { transform: translateY(2px); box-shadow: 0 1px 0 var(--key-side); }
+.small { font-size: .85rem; margin-top: .8em; }
 
 /* ---- messages, OpenVMS style ---- */
 #toasts { position: fixed; right: 16px; bottom: 16px; display: grid; gap: 8px; z-index: 10; }

@@ -383,6 +383,59 @@ static void test_dispatch(void)
     CHECK(!st_plat_persona_active(), "no persona is left active after any request");
 }
 
+static void test_privileges(void)
+{
+    result a, b;
+    char cookie[140];
+    hdr h[4];
+
+    memset(&a, 0, sizeof a);
+    call("POST", "/api/v1/session", NULL, "{\"username\":\"steward_adm\",\"password\":\"admin-pass\"}", &a);
+    CHECK(a.resp.status == 201, "admin signs in");
+    st_resp_free(&a.resp);
+    snprintf(cookie, sizeof cookie, "steward_session=%s", a.cookie);
+    h[0].n = "HTTP_COOKIE"; h[0].v = cookie;
+    h[1].n = "HTTP_X_STEWARD_CSRF"; h[1].v = a.csrf;
+    h[2].n = NULL;
+
+    call("GET", "/api/v1/session", h, NULL, &b);
+    CHECK(b.resp.status == 200 && strstr(b.resp.body.data, "\"current_privileges\":[\"TMPMBX\",\"OPER\",\"NETMBX\"]"),
+          "a session starts with the default privileges only (D9)");
+    CHECK(strstr(b.resp.body.data, "\"enabled_privileges\":[]") != NULL, "nothing switched on yet");
+    st_resp_free(&b.resp);
+
+    call("PUT", "/api/v1/session/privileges", h, "{\"enabled\":[\"sysprv\"]}", &b);
+    CHECK(b.resp.status == 200 && strstr(b.resp.body.data, "\"current_privileges\":[\"TMPMBX\",\"OPER\",\"NETMBX\",\"SYSPRV\"]"),
+          "an authorized privilege can be switched on, and takes effect at once");
+    st_resp_free(&b.resp);
+
+    call("GET", "/api/v1/session", h, NULL, &b);
+    CHECK(strstr(b.resp.body.data, "\"enabled_privileges\":[\"SYSPRV\"]") &&
+          strstr(b.resp.body.data, "\"SYSPRV\"]"), "and stays on for the session's later requests");
+    st_resp_free(&b.resp);
+
+    call("PUT", "/api/v1/session/privileges", h, "{\"enabled\":[\"SYSPRV\",\"SECURITY\"]}", &b);
+    CHECK(b.resp.status == 403 && strstr(b.resp.body.data, "not authorized for: SECURITY"),
+          "a privilege the user is not authorized for is refused, by name");
+    st_resp_free(&b.resp);
+
+    call("PUT", "/api/v1/session/privileges", h, "{\"enabled\":[\"NOTAPRIV\"]}", &b);
+    CHECK(b.resp.status == 422, "an unknown privilege name is refused");
+    st_resp_free(&b.resp);
+
+    h[1].n = NULL;
+    call("PUT", "/api/v1/session/privileges", h, "{\"enabled\":[]}", &b);
+    CHECK(b.resp.status == 403, "changing privileges needs the CSRF token");
+    st_resp_free(&b.resp);
+    h[1].n = "HTTP_X_STEWARD_CSRF";
+
+    call("PUT", "/api/v1/session/privileges", h, "{\"enabled\":[]}", &b);
+    CHECK(b.resp.status == 200 && strstr(b.resp.body.data, "\"current_privileges\":[\"TMPMBX\",\"OPER\",\"NETMBX\"]"),
+          "an empty list goes back to the defaults");
+    st_resp_free(&b.resp);
+    CHECK(!st_plat_persona_active(), "no persona left active");
+}
+
 static void test_gateway(void)
 {
     st_app_config cfg;
@@ -427,6 +480,7 @@ int main(void)
     test_http();
     test_proxy();
     test_dispatch();
+    test_privileges();
     test_gateway();
     printf("%d checks, %d failed\n", checks, failures);
     return failures ? 1 : 0;

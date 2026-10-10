@@ -45,9 +45,15 @@ int  st_plat_authenticate(const char *username, const char *password,
                           const char *client, st_err *e);
 
 /* ---- personas ---- */
-/* Become username for the current request. Fails if a persona is already active:
-   that means an earlier request did not end its own, which is a bug. */
-int  st_plat_persona_begin(const char *username, st_err *e);
+/* Become username for the current request, with the user's default privileges plus
+   those in enable (a quadword mask) that the user is authorized for (D9). OpenVMS
+   refuses the rest, so enable can never grant more than the user holds. Fails if a
+   persona is already active: that means an earlier request did not end its own,
+   which is a bug. */
+int  st_plat_persona_begin(const char *username, const unsigned int enable[2], st_err *e);
+/* Within the active persona: defaults plus enable, as above, dropping anything
+   enabled before. */
+int  st_plat_persona_set_privs(const unsigned int enable[2], st_err *e);
 /* Return to the service's own identity. Safe to call when no persona is active. */
 void st_plat_persona_end(void);
 int  st_plat_persona_active(void);
@@ -60,6 +66,7 @@ typedef struct {
     char         account[9];
     unsigned int uic;               /* group << 16 | member */
     unsigned int priv_auth[2];      /* authorized privileges, quadword */
+    unsigned int priv_def[2];       /* default: what the persona starts with */
     unsigned int priv_cur[2];       /* enabled now */
     int          nids;
     char         ids[ST_MAX_IDS][32];   /* identifiers held, by name */
@@ -80,6 +87,7 @@ typedef struct {
     long long     last_seen;
     unsigned char csrf[32];
     char          client[46];
+    unsigned int  priv_enable[2];   /* authorized privileges the user switched on (D9) */
 } st_session;
 
 int  st_plat_session_put(const st_session *s, st_err *e);          /* insert or replace */

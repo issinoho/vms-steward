@@ -28,6 +28,7 @@ static const route routes[] = {
     { "POST",   "/api/v1/session", svc_session_login,  R_PUBLIC | R_NOPERSONA },
     { "GET",    "/api/v1/session", svc_session_get,    0 },
     { "DELETE", "/api/v1/session", svc_session_logout, R_NOPERSONA },
+    { "PUT",    "/api/v1/session/privileges", svc_session_privileges, 0 },
 };
 #define NROUTES (sizeof routes / sizeof routes[0])
 
@@ -431,7 +432,7 @@ void st_app_handle(const st_request *req, int body_overflow, st_response *resp)
 
     if (!(rt->flags & R_NOPERSONA)) {
         st_err e;
-        if (st_plat_persona_begin(c.session.username, &e)) {
+        if (st_plat_persona_begin(c.session.username, c.session.priv_enable, &e)) {
             st_plat_log("persona_begin failed");
             st_app_error(&c, &e);
             return;

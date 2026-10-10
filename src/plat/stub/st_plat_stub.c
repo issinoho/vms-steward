@@ -3,7 +3,9 @@
    A handful of fixed accounts stand in for SYSUAF, behaving as the x86 probes showed
    the real thing does (docs/PHASE0.md, docs/PHASE1.md):
 
-     STEWARD_ADM  admin-pass     [362,2] SYSPRV and more, holds STEWARD_DEMO
+     STEWARD_ADM    admin-pass     [362,2] defaults TMPMBX, NETMBX, OPER; SYSPRV and
+                                   GRPPRV authorized only (the habit D9 respects);
+                                   holds STEWARD_DEMO
      STEWARD_TEST   test-pass      [362,1] TMPMBX, NETMBX only, as on the x86 node
      DISABLED       disabled-pass  DISUSER: fails, reason "account is disabled"
      EXPIRED        expired-pass   right password, but expired
@@ -23,6 +25,7 @@ typedef struct {
     const char  *username, *password, *owner, *account;
     unsigned int uic;
     unsigned int priv_auth[2];
+    unsigned int priv_def[2];
     int          disabled, expired;
     const char  *ids[4];
 } stub_user;
@@ -31,13 +34,14 @@ typedef struct {
    GRPPRV 34 (bit 2 of the second longword). */
 static const stub_user users[] = {
     { "STEWARD_ADM", "admin-pass", "Steward admin (stub)", "STEWARD", 0x00F20002u,
-      { BIT(15) | BIT(20) | BIT(28) | BIT(18), BIT(2) }, 0, 0, { "STEWARD_DEMO", NULL } },
+      { BIT(15) | BIT(20) | BIT(28) | BIT(18), BIT(2) }, { BIT(15) | BIT(20) | BIT(18), 0 },
+      0, 0, { "STEWARD_DEMO", NULL } },
     { "STEWARD_TEST", "test-pass", "Steward test (stub)", "STEWARD", 0x00F20001u,
-      { BIT(15) | BIT(20), 0 }, 0, 0, { NULL } },
+      { BIT(15) | BIT(20), 0 }, { BIT(15) | BIT(20), 0 }, 0, 0, { NULL } },
     { "DISABLED", "disabled-pass", "Disabled account (stub)", "", 0x00F20003u,
-      { BIT(15) | BIT(20), 0 }, 1, 0, { NULL } },
+      { BIT(15) | BIT(20), 0 }, { BIT(15) | BIT(20), 0 }, 1, 0, { NULL } },
     { "EXPIRED", "expired-pass", "Expired password (stub)", "", 0x00F20004u,
-      { BIT(15) | BIT(20), 0 }, 0, 1, { NULL } },
+      { BIT(15) | BIT(20), 0 }, { BIT(15) | BIT(20), 0 }, 0, 1, { NULL } },
 };
 #define NUSERS (sizeof users / sizeof users[0])
 
@@ -45,6 +49,7 @@ static const stub_user users[] = {
 static st_session sessions[NSESSIONS];
 static int        session_used[NSESSIONS];
 static const stub_user *persona;
+static unsigned int       persona_cur[2];   /* current privileges of the persona */
 static FILE      *audit_fp;
 
 static void set_err(st_err *e, int kind, const char *text)
@@ -89,14 +94,24 @@ int st_plat_authenticate(const char *username, const char *password,
     return ST_AUTH_OK;
 }
 
-int st_plat_persona_begin(const char *username, st_err *e)
+/* As $SETPRV under a persona: defaults, plus what is asked for and authorized. */
+int st_plat_persona_set_privs(const unsigned int enable[2], st_err *e)
+{
+    int i;
+    if (!persona) { set_err(e, ST_E_INTERNAL, "no persona"); return -1; }
+    for (i = 0; i < 2; i++)
+        persona_cur[i] = persona->priv_def[i] | (enable[i] & persona->priv_auth[i]);
+    return 0;
+}
+
+int st_plat_persona_begin(const char *username, const unsigned int enable[2], st_err *e)
 {
     const stub_user *u;
     if (persona) { set_err(e, ST_E_INTERNAL, "a persona is already active"); return -1; }
     u = find_user(username);
     if (!u) { set_err(e, ST_E_NOTFOUND, "no such user"); return -1; }
     persona = u;
-    return 0;
+    return st_plat_persona_set_privs(enable, e);
 }
 
 void st_plat_persona_end(void) { persona = NULL; }
@@ -112,8 +127,12 @@ int st_plat_whoami(st_whoami *w, st_err *e)
     st_copy(w->owner, sizeof w->owner, persona->owner);
     st_copy(w->account, sizeof w->account, persona->account);
     w->uic = persona->uic;
-    w->priv_auth[0] = w->priv_cur[0] = persona->priv_auth[0];
-    w->priv_auth[1] = w->priv_cur[1] = persona->priv_auth[1];
+    w->priv_auth[0] = persona->priv_auth[0];
+    w->priv_auth[1] = persona->priv_auth[1];
+    w->priv_def[0] = persona->priv_def[0];
+    w->priv_def[1] = persona->priv_def[1];
+    w->priv_cur[0] = persona_cur[0];
+    w->priv_cur[1] = persona_cur[1];
     for (i = 0; i < 4 && persona->ids[i]; i++) st_copy(w->ids[w->nids++], sizeof w->ids[0], persona->ids[i]);
     return 0;
 }
