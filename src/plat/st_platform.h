@@ -57,6 +57,10 @@ int  st_plat_persona_set_privs(const unsigned int enable[2], st_err *e);
 /* Return to the service's own identity. Safe to call when no persona is active. */
 void st_plat_persona_end(void);
 int  st_plat_persona_active(void);
+/* 1 if the service's own identity holds only its baseline privileges, i.e. the
+   privilege it needs briefly to create personas (SYSPRV on OpenVMS, D2) is off
+   again. Checked after every request; anything else stops the process. */
+int  st_plat_privileges_clean(void);
 
 /* ---- the current persona ---- */
 #define ST_MAX_IDS 64

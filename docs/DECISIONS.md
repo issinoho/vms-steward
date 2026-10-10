@@ -37,8 +37,21 @@ The password is checked by `SYS$ACM` (authenticate principal), which applies the
 own policy: expiry, DISUSER, login hours, intrusion detection. Each API request then
 creates the caller's persona and assumes it for the duration of the work, so the OS
 enforces privileges and protection (SYSPRV for the UAF, rights database ownership,
-and so on). The service account needs IMPERSONATE (and whatever ACM additionally
-requires), not SYSPRV or CMKRNL.
+and so on). The service account holds IMPERSONATE, plus SYSPRV authorized only for
+persona creation (amendment below). It never holds CMKRNL or SECURITY.
+
+**Amended 2026-10-10 (user's choice): the service account also holds SYSPRV,
+authorized but not default.** `$PERSONA_CREATE` reads the user's UAF record under
+`$GETUAI`'s rules: GRPPRV within the service's UIC group, SYSPRV for everyone else
+(docs/PHASE1.md). Steward enables SYSPRV in its own identity only around that call and
+disables it before assuming the persona. If disabling fails it exits, and after every
+request it checks that SYSPRV is off and exits if not. The user's persona never
+inherits it: a persona's privileges come from that user's own record (probe_setprv).
+To be clear about the risk: IMPERSONATE already lets the service become any user,
+SYSTEM included, so SYSPRV adds little to what a compromised service could do. The
+real controls are the checks in front of persona creation.
+Rejected: an ACL on SYSUAF (unproven that `$PERSONA_CREATE` honours it, and it exposes
+password hashes to the account); SYSPRV as a default (on for any path outside a persona).
 
 Additions from Phase 0:
 - Non-dialogue `$ACM` accepts a pre-expired password, so Steward checks expiry itself

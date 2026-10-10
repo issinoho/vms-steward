@@ -209,6 +209,11 @@ static unsigned int open_sessions(const char *path)
     return SS$_NORMAL;
 }
 
+/* SYSPRV, which $PERSONA_CREATE needs to read the user's UAF record (GRPPRV within
+   the service's own UIC group, SYSPRV for everyone else: PHASE1.md). The account
+   holds it as authorized, not default, and it is on only around that one call (D2). */
+static unsigned int sysprv[2] = { PRV$M_SYSPRV, 0 };
+
 int st_plat_init(const st_plat_config *cfg, st_err *e)
 {
     unsigned int imp[2] = { PRV$M_DETACH, 0 }, st;   /* IMPERSONATE is the DETACH bit */
@@ -216,6 +221,12 @@ int st_plat_init(const st_plat_config *cfg, st_err *e)
     /* The service account is authorized IMPERSONATE; make sure it is enabled. */
     st = sys$setprv(1, (void *) imp, 0, 0);
     if (st != SS$_NORMAL) { set_cond(e, st == SS$_NOTALLPRIV ? SS$_NOPRIV : st); return -1; }
+    /* And SYSPRV off, whatever the account's defaults say. */
+    sys$setprv(0, (void *) sysprv, 0, 0);
+    if (!st_plat_privileges_clean()) {
+        set_text(e, ST_E_INTERNAL, "cannot disable SYSPRV");
+        return -1;
+    }
 
     if (!cfg->session_file || !*cfg->session_file) {
         set_text(e, ST_E_INTERNAL, "STEWARD_SESSION_FILE is not defined");
@@ -355,7 +366,17 @@ int st_plat_persona_begin(const char *username, const unsigned int enable[2], st
     st_ile3 items[2];
     if (persona_handle) { set_text(e, ST_E_INTERNAL, "a persona is already active"); return -1; }
     desc(&d, username, (unsigned short) strlen(username));
-    st = sys$persona_create(&h, &d, 0, 0, 0);
+    {
+        unsigned int on = sys$setprv(1, (void *) sysprv, 0, 0), off;
+        st = sys$persona_create(&h, &d, 0, 0, 0);
+        off = sys$setprv(0, (void *) sysprv, 0, 0);
+        if (!(off & 1) || !st_plat_privileges_clean()) {
+            st_plat_log("cannot disable SYSPRV after creating a persona; exiting");
+            exit(44);
+        }
+        if (on == SS$_NOTALLPRIV && !(st & 1))
+            st_plat_log("persona creation needs SYSPRV authorized for the service account (D2)");
+    }
     if (!(st & 1)) { set_cond(e, st); return -1; }
     st = sys$persona_assume(&h, 0, 0, 0);
     if (!(st & 1)) { sys$persona_delete(&h); set_cond(e, st); return -1; }
@@ -388,6 +409,18 @@ void st_plat_persona_end(void)
 }
 
 int st_plat_persona_active(void) { return persona_handle != 0; }
+
+int st_plat_privileges_clean(void)
+{
+    unsigned int cur[2] = { 0, 0 }, iosb[2], st;
+    st_ile3 items[2];
+    if (persona_handle) return 1;   /* only the service's own identity is checked */
+    item(&items[0], JPI$_CURPRIV, cur, 8, 0);
+    item_end(&items[1]);
+    st = sys$getjpiw(0, 0, 0, items, iosb, 0, 0);
+    if (st & 1) st = iosb[0];
+    return (st & 1) && !(cur[0] & sysprv[0]) && !(cur[1] & sysprv[1]);
+}
 
 /* ================================================================ sign-in */
 

@@ -81,6 +81,12 @@ static void serve(st_fcgi_conn *conn, st_buf *out)
     }
     st_request_free(&req);
 
+    if (!st_plat_privileges_clean()) {
+        /* SYSPRV is for $PERSONA_CREATE alone (D2); still on means a path skipped
+           turning it off. Stop rather than serve anything with it. */
+        st_plat_log("SYSPRV still enabled after a request; exiting");
+        exit(44);
+    }
     if (st_plat_persona_active()) {
         /* A handler path returned without ending its persona. Serving the next request
            as the wrong user is worse than any outage: stop, and let the pool loop

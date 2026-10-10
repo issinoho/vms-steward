@@ -118,6 +118,8 @@ void st_plat_persona_end(void) { persona = NULL; }
 
 int st_plat_persona_active(void) { return persona != NULL; }
 
+int st_plat_privileges_clean(void) { return 1; }   /* the stub has no privileges */
+
 int st_plat_whoami(st_whoami *w, st_err *e)
 {
     int i;
