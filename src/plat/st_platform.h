@@ -86,6 +86,9 @@ int  st_plat_session_put(const st_session *s, st_err *e);          /* insert or 
 /* 1 found, 0 not found, -1 error */
 int  st_plat_session_get(const unsigned char key[32], st_session *s, st_err *e);
 int  st_plat_session_delete(const unsigned char key[32], st_err *e);
+/* Remove sessions created before created_before or last used before seen_before.
+   Called at sign-in, so expired records do not accumulate. */
+void st_plat_session_purge(long long created_before, long long seen_before);
 
 /* ---- audit and diagnostics ---- */
 void st_plat_audit(const char *line);    /* one record; the platform adds a timestamp */

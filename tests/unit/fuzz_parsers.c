@@ -10,11 +10,11 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include "../../src/core/st_buf.h"
-#include "../../src/core/st_fcgi.h"
-#include "../../src/core/st_json.h"
-#include "../../src/core/st_http.h"
-#include "../../src/core/st_route.h"
+#include "st_buf.h"
+#include "st_fcgi.h"
+#include "st_json.h"
+#include "st_http.h"
+#include "st_route.h"
 
 static unsigned long rng = 88172645463325252ul;
 static unsigned long next(void) { rng ^= rng << 13; rng ^= rng >> 7; rng ^= rng << 17; return rng; }

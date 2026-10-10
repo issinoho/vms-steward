@@ -14,7 +14,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
-#include "../st_platform.h"
+#include "st_platform.h"
 
 #define BIT(n) (1u << (n))
 
@@ -153,6 +153,17 @@ int st_plat_session_delete(const unsigned char key[32], st_err *e)
     (void) e;
     if (i >= 0) { session_used[i] = 0; memset(&sessions[i], 0, sizeof sessions[i]); }
     return 0;
+}
+
+void st_plat_session_purge(long long created_before, long long seen_before)
+{
+    int i;
+    for (i = 0; i < NSESSIONS; i++)
+        if (session_used[i] && (sessions[i].created < created_before ||
+                                sessions[i].last_seen < seen_before)) {
+            session_used[i] = 0;
+            memset(&sessions[i], 0, sizeof sessions[i]);
+        }
 }
 
 void st_plat_audit(const char *line)

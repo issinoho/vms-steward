@@ -2,10 +2,10 @@
 #ifndef ST_APP_H
 #define ST_APP_H
 
-#include "../core/st_http.h"
-#include "../core/st_json.h"
-#include "../core/st_route.h"
-#include "../plat/st_platform.h"
+#include "st_http.h"
+#include "st_json.h"
+#include "st_route.h"
+#include "st_platform.h"
 
 #define ST_COOKIE "steward_session"
 

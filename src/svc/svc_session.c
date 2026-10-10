@@ -100,6 +100,10 @@ void svc_session_login(st_ctx *c)
         return;
     }
 
+    {
+        long long now = st_plat_time();
+        st_plat_session_purge(now - c->cfg->absolute_secs, now - c->cfg->idle_secs);
+    }
     memset(&s, 0, sizeof s);
     if (!st_plat_random(token, sizeof token) || !st_plat_random(s.csrf, sizeof s.csrf)) {
         st_resp_problem(c->resp, 500, "internal", "No random numbers", NULL, 0, NULL);

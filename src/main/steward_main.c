@@ -25,9 +25,9 @@
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include <unistd.h>
-#include "../core/st_fcgi.h"
-#include "../core/st_http.h"
-#include "../svc/st_app.h"
+#include "st_fcgi.h"
+#include "st_http.h"
+#include "st_app.h"
 
 #define PARAMS_LIMIT (64 * 1024)
 #define BODY_LIMIT   (256 * 1024)
@@ -153,7 +153,7 @@ static int parse_bind(const char *spec, struct sockaddr_in *sa)
     sa->sin_family = AF_INET;
     sa->sin_port = htons((unsigned short) port);
     sa->sin_addr.s_addr = inet_addr(host);
-    if (sa->sin_addr.s_addr == (in_addr_t) -1) return -1;
+    if (sa->sin_addr.s_addr == INADDR_NONE) return -1;
     return 0;
 }
 

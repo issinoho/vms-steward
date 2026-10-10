@@ -8,6 +8,9 @@ CC      ?= cc
 CFLAGS  ?= -std=c99 -pedantic -Wall -Wextra -O2 -g
 # glibc hides the socket timeout and inet_addr under strict -std=c99 without this.
 CFLAGS  += -D_DEFAULT_SOURCE
+# Includes are by bare name: VSI C does not resolve "../" in #include paths
+# (docs/NOTES.md), so the directories are named here and in build_vms.com.
+CFLAGS  += -Isrc/core -Isrc/svc -Isrc/plat
 LDLIBS  ?= -lcrypto
 
 CORE = src/core/st_buf.c src/core/st_fcgi.c src/core/st_json.c src/core/st_http.c \
