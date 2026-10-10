@@ -191,7 +191,7 @@ ran the browser checks as `STEWARD_TEST`. The audit log shows:
 - Sign-in, whoami, switching GRPPRV on and off (D9), and sign-out all worked.
 - A DISUSERed account looked exactly like a wrong password to the browser.
 - The expired password was refused and no session was created.
-- `SHOW INTRUSION` showed `NETWORK SUSPECT 192.168.0.1::STEWARD`, which names the client
+- `SHOW INTRUSION` showed `NETWORK SUSPECT <client-address>::STEWARD`, which names the client
   address, not NPM. Here that address is the router, because of hairpin NAT (see above).
 - Both pool processes kept their PIDs throughout. Neither exited, so the after-request
   checks for a leaked persona or SYSPRV never fired. STATUS afterwards showed current
