@@ -52,3 +52,27 @@ platform layer therefore checks, after a successful `$ACM`, `UAI$_FLAGS`
 (PWD_EXPIRED, PWD2_EXPIRED) and `UAI$_PWD_DATE`/`UAI$_PWD_LIFETIME`, and reports an
 expired password in place of a session. To be verified at the phase exit with
 `STEWARD_TEST /PWDEXPIRED`.
+
+## On OpenVMS (2026-10-10, x86 node)
+
+- `@BUILD_VMS CLEAN` then `@BUILD_VMS TEST`: clean compile and link, TEST_CORE 75/75
+  natively under VSI C V7.7-003.
+- A two-process pool (`STEWARD_POOL.COM`) behind a **separate** test lighttpd
+  (`LIGHTTPD_TEST.COM`: the installed VMSLIGHTTPD image with our own configuration on
+  port 8443, kept away from the site's server). Checked from a Linux client:
+  - the page gets `Content-Security-Policy`, `X-Frame-Options: DENY`,
+    `Referrer-Policy: no-referrer` and `nosniff`; the JS modules are served as
+    `text/javascript`, which module scripts require;
+  - `GET /api/v1/health` returns 200 `{"status":"ok"}` with `Cache-Control: no-store`;
+  - a wrong sign-in returns a generic 401 problem, and an unknown endpoint a 404 problem.
+- Earlier, through an SSH tunnel to a single process: a wrong password for
+  `STEWARD_TEST` from browser 192.0.2.99 left the intrusion record
+  `192.0.2.99::STEWARD` and the audit record
+  `outcome="failed" detail="%LOGIN-F-INVPWD, invalid password"`.
+
+Still running as the work account, not the service account: the least-privilege run
+waits for the `STEWARD` account.
+
+Signing in over plain HTTP straight to port 8443 cannot work, by design: the session
+cookie is `Secure`, so the browser does not keep it. The successful sign-in path is
+tested through nginx proxy manager over HTTPS, which is also the real deployment.
