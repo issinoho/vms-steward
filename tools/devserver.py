@@ -25,6 +25,7 @@ from fcgi_client import request  # noqa: E402
 ROOT = os.path.join(os.path.dirname(__file__), "..", "www")
 PREFIX = os.environ.get("DEV_PREFIX", "").rstrip("/")
 FCGI = ("127.0.0.1", 19190)
+DEV_GATEWAY = "devserver-gateway-secret-not-for-production"   # plays lighttpd's part
 
 # The page-level headers lighttpd sets in vms/steward.conf, so the dev server
 # exercises the same CSP.
@@ -62,6 +63,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 params["CONTENT_LENGTH"] = v
             else:
                 params["HTTP_" + key] = v
+        params["HTTP_X_STEWARD_GATEWAY"] = DEV_GATEWAY
         if PREFIX:
             # Pretend to be a trusted proxy publishing us under the prefix.
             params["HTTP_X_FORWARDED_PREFIX"] = PREFIX
@@ -106,7 +108,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
         body = ('{"username":"%s","password":"%s"}' % (user, stub.get(user, ""))).encode()
         params = {"REQUEST_METHOD": "POST", "REQUEST_URI": "/api/v1/session",
                   "REMOTE_ADDR": "127.0.0.1", "HTTP_HOST": self.headers.get("Host", ""),
-                  "CONTENT_TYPE": "application/json", "CONTENT_LENGTH": str(len(body))}
+                  "CONTENT_TYPE": "application/json", "CONTENT_LENGTH": str(len(body)),
+                  "HTTP_X_STEWARD_GATEWAY": DEV_GATEWAY}
         status, headers, _ = request(FCGI, params, body)
         self.send_response(302)
         for name, value in headers:
@@ -132,7 +135,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
 def main():
     binary = sys.argv[1] if len(sys.argv) > 1 else "build/steward"
     port = int(sys.argv[2]) if len(sys.argv) > 2 else 8080
-    env = dict(os.environ, STEWARD_INSECURE_COOKIE="1",
+    env = dict(os.environ, STEWARD_INSECURE_COOKIE="1", STEWARD_GATEWAY_SECRET=DEV_GATEWAY,
                STEWARD_TRUSTED_PROXIES="127.0.0.1" if PREFIX else "")
     proc = subprocess.Popen([binary, "-b", "%s:%d" % FCGI], env=env)
     for _ in range(50):

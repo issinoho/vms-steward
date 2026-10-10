@@ -17,6 +17,12 @@ typedef struct {
        list of addresses and IPv4 CIDR ranges, e.g. "127.0.0.1,172.17.0.0/16".
        Empty: forwarded headers are ignored entirely. */
     const char *trusted_proxies;
+    /* Shared with lighttpd, which sets it as the X-Steward-Gateway request header on
+       every /api/ request (vms/steward.conf). Requests without it are refused, so a
+       local process that connects to the FastCGI port directly, bypassing lighttpd,
+       cannot choose its own REMOTE_ADDR and guess passwords from "different"
+       clients (docs/security.md). Empty: not enforced (development only). */
+    const char *gateway_secret;
 } st_app_config;
 
 typedef struct st_ctx {

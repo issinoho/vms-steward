@@ -16,6 +16,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "tools"))
 from fcgi_client import request  # noqa: E402
 
 checks = failures = 0
+GATEWAY = "test-gateway-secret-0123456789abcdef"  # what lighttpd adds (vms/steward.conf)
 
 
 def check(cond, what):
@@ -45,6 +46,7 @@ class Client:
         params = {
             "REQUEST_METHOD": method, "REQUEST_URI": path, "REMOTE_ADDR": self.remote,
             "HTTP_HOST": "steward.example", "SERVER_PROTOCOL": "HTTP/1.1",
+            "HTTP_X_STEWARD_GATEWAY": GATEWAY,
         }
         params.update(self.extra)
         data = b""
@@ -73,7 +75,8 @@ def main(binary):
     audit = tempfile.NamedTemporaryFile(delete=False, suffix=".log")
     audit.close()
     env = dict(os.environ, STEWARD_AUDIT_FILE=audit.name,
-               STEWARD_TRUSTED_PROXIES="127.0.0.2, 172.17.0.0/16")
+               STEWARD_TRUSTED_PROXIES="127.0.0.2, 172.17.0.0/16",
+               STEWARD_GATEWAY_SECRET=GATEWAY)
     proc = subprocess.Popen([binary, "-b", "127.0.0.1:%d" % port], env=env,
                             stderr=subprocess.PIPE)
     try:
@@ -85,8 +88,11 @@ def main(binary):
                 time.sleep(0.1)
 
         b = Client(addr)
-        st, _, doc = b.call("GET", "/api/v1/health")
+        st, h, doc = b.call("GET", "/api/v1/health")
         check(st == 200 and doc == {"status": "ok"}, "health answers")
+        check("default-src 'none'" in h.get("Content-Security-Policy", ""), "API responses carry a deny-all CSP")
+        st, _, _ = b.call("GET", "/api/v1/health", headers={"HTTP_X_STEWARD_GATEWAY": ""})
+        check(st == 403, "a request that bypasses lighttpd (no gateway secret) is refused")
 
         st, h, doc = b.call("GET", "/api/v1/session")
         check(st == 401 and h.get("Content-Type", "").startswith("application/problem+json"),

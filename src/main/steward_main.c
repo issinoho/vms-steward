@@ -11,6 +11,8 @@
      STEWARD_INSECURE_COOKIE  "1": no Secure flag, for the plain-HTTP dev server only
      STEWARD_AUDIT_FILE       audit log                       (default: stderr)
      STEWARD_SESSION_FILE     shared session store (OpenVMS)
+     STEWARD_GATEWAY_SECRET   shared with lighttpd (vms/steward.conf), at least 32
+                              characters. Unset: not enforced, with a warning.
 
    Only loopback peers are served: lighttpd runs on the same machine, and nothing else
    should reach the FastCGI port even if a firewall slips. */
@@ -176,6 +178,14 @@ int main(int argc, char **argv)
     acfg.absolute_secs = env_long("STEWARD_ABSOLUTE_SECS", 28800);
     acfg.cookie_secure = strcmp(env_str("STEWARD_INSECURE_COOKIE"), "1") != 0;
     acfg.trusted_proxies = env_str("STEWARD_TRUSTED_PROXIES");
+    acfg.gateway_secret = env_str("STEWARD_GATEWAY_SECRET");
+    if (*acfg.gateway_secret && strlen(acfg.gateway_secret) < 32) {
+        fprintf(stderr, "steward: STEWARD_GATEWAY_SECRET must be at least 32 characters\n");
+        return 1;
+    }
+    if (!*acfg.gateway_secret)
+        fprintf(stderr, "steward: WARNING: no STEWARD_GATEWAY_SECRET; any local process "
+                        "can reach this port directly\n");
     pcfg.audit_file = env_str("STEWARD_AUDIT_FILE");
     pcfg.session_file = env_str("STEWARD_SESSION_FILE");
     if (st_plat_init(&pcfg, &e)) {

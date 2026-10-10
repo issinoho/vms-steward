@@ -357,6 +357,17 @@ static int check_csrf(st_ctx *c)
     return 1;
 }
 
+/* The request came through our lighttpd: it carries the gateway secret. */
+static int via_gateway(const st_request *r)
+{
+    const char *want = config.gateway_secret, *got;
+    size_t n;
+    if (!want || !*want) return 1;
+    got = st_req_header(r, "HTTP_X_STEWARD_GATEWAY");
+    n = strlen(want);
+    return got && strlen(got) == n && st_ct_equal(got, want, n);
+}
+
 static int is_json(const st_request *r)
 {
     const char *ct = st_req_param(r, "CONTENT_TYPE");
@@ -377,6 +388,13 @@ void st_app_handle(const st_request *req, int body_overflow, st_response *resp)
     c.resp = resp;
     c.cfg = &config;
     st_app_origin(&c, config.trusted_proxies);
+
+    if (!via_gateway(req)) {
+        /* Not from our lighttpd. No detail for the caller; one log line for us. */
+        st_plat_log("refused a request without the gateway secret");
+        problem(&c, 403, "forbidden", "Forbidden", NULL);
+        return;
+    }
 
     for (i = 0; i < NROUTES; i++) {
         int m = st_route_match(routes[i].pattern, req->path, c.args, ST_ROUTE_ARGS, &c.nargs);

@@ -12,6 +12,11 @@ $! list a range that untrusted clients can connect from. (OpenVMS refuses an emp
 $! logical name, so "no proxies" is the line left commented out.)
 $! define/process/nolog STEWARD_TRUSTED_PROXIES "192.0.2.10"
 $!
+$! Shared with lighttpd, which sends it with every API request (vms/steward.conf):
+$! 32 or more random characters. Without it any local process could bypass lighttpd.
+$! Protect this file: (S:RWED,O:RWED,G,W).
+$! define/process/nolog STEWARD_GATEWAY_SECRET "replace-with-32-or-more-random-characters"
+$!
 $! A session ends after this many seconds without an API call, and after this
 $! many seconds in any case.
 $ define/process/nolog STEWARD_IDLE_SECS "900"

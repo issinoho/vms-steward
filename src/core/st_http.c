@@ -229,6 +229,8 @@ int st_resp_serialize(st_response *r, st_buf *out)
     }
     st_buf_puts(out, "Cache-Control: no-store\r\n");
     st_buf_puts(out, "X-Content-Type-Options: nosniff\r\n");
+    /* API responses are data, never a page: nothing in them may run or be framed. */
+    st_buf_puts(out, "Content-Security-Policy: default-src 'none'; frame-ancestors 'none'\r\n");
     st_buf_append(out, r->headers.data, r->headers.len);
     st_buf_puts(out, "\r\n");
     if (r->status != 204) st_buf_append(out, r->body.data, r->body.len);

@@ -146,3 +146,25 @@ threat model (`docs/security.md`):
 The checks are verified to fail when they should. The project rules and the
 analyzer were each shown a planted violation; the analyzer step had been a no-op
 under `-fsyntax-only` until that test.
+
+## D9. Enabling authorized privileges (proposed)
+
+**Status:** proposed, for the user's decision at the Phase 1 exit.
+
+A persona starts with the user's **default** privileges and may enable any **authorized**
+privilege with `$SETPRV` (docs/PHASE1.md). Administrators often hold SYSPRV as authorized
+but not default, deliberately, so that it is enabled only when needed. Steward should
+respect that habit instead of silently enabling everything.
+
+Proposal: the session holds a set of privileges the user has chosen to enable, starting
+empty. The account page lets the user enable or disable authorized privileges, as
+`SET PROCESS/PRIVILEGE` does, and each change is audited. Every request assumes the
+persona and then `$SETPRV`s that set. OpenVMS refuses anything that is not authorized,
+so the set cannot grant more than the user holds. An action refused for want of a
+privilege that is authorized but not enabled says which one to enable.
+
+Alternatives:
+- Enable every authorized privilege on every request. Simple, but it removes a
+  safeguard the site chose.
+- Defaults only, with no way to enable more. Users whose SYSPRV is authorized only
+  could not administer anything.

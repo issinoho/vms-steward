@@ -108,3 +108,19 @@ Findings:
 - AUTHORIZE pre-expires a new account's password. `$GETUAI` shows the password date as
   `%XFFFFFFFFFFFFFFFF`, which is the marker `expired_now()` treats as expired: the
   first check of that logic against a real record.
+
+## Authorized-but-not-default privileges (`probe_setprv`, 2026-10-10)
+
+The user gave `STEWARD_TEST` GRPPRV as authorized only (default privileges unchanged).
+Under its persona:
+
+| | current privileges | authorized |
+|---|---|---|
+| just assumed | TMPMBX, NETMBX (`%X..00108000`) | + GRPPRV (`%X0000000400108000`) |
+| `$SETPRV GRPPRV` | **NORMAL; GRPPRV now enabled** | |
+| `$SETPRV SYSPRV` | NOTALLPRIV; nothing changes | |
+
+A persona starts with the user's default privileges and can enable any privilege
+the user is authorized for, as `SET PROCESS/PRIVILEGE` does, but nothing beyond.
+This closes the last open probe question. How Steward should offer it is proposed
+as D9.

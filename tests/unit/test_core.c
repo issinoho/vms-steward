@@ -383,6 +383,30 @@ static void test_dispatch(void)
     CHECK(!st_plat_persona_active(), "no persona is left active after any request");
 }
 
+static void test_gateway(void)
+{
+    st_app_config cfg;
+    result a;
+    hdr good[2], bad[2];
+    cfg.idle_secs = 900; cfg.absolute_secs = 28800; cfg.cookie_secure = 1;
+    cfg.trusted_proxies = "";
+    cfg.gateway_secret = "0123456789abcdef0123456789abcdef";
+    st_app_init(&cfg);
+    good[0].n = "HTTP_X_STEWARD_GATEWAY"; good[0].v = cfg.gateway_secret; good[1].n = NULL;
+    bad[0].n = "HTTP_X_STEWARD_GATEWAY"; bad[0].v = "0123456789abcdef0123456789abcdeX"; bad[1].n = NULL;
+    call("GET", "/api/v1/health", NULL, NULL, &a);
+    CHECK(a.resp.status == 403, "without the gateway secret a request is refused (direct FastCGI access)");
+    st_resp_free(&a.resp);
+    call("GET", "/api/v1/health", bad, NULL, &a);
+    CHECK(a.resp.status == 403, "a wrong gateway secret is refused");
+    st_resp_free(&a.resp);
+    call("GET", "/api/v1/health", good, NULL, &a);
+    CHECK(a.resp.status == 200, "with the gateway secret it is served");
+    st_resp_free(&a.resp);
+    cfg.gateway_secret = "";
+    st_app_init(&cfg);
+}
+
 int main(void)
 {
     st_app_config cfg;
@@ -395,6 +419,7 @@ int main(void)
     cfg.absolute_secs = 28800;
     cfg.cookie_secure = 1;
     cfg.trusted_proxies = "";
+    cfg.gateway_secret = "";
     st_app_init(&cfg);
 
     test_fcgi();
@@ -402,6 +427,7 @@ int main(void)
     test_http();
     test_proxy();
     test_dispatch();
+    test_gateway();
     printf("%d checks, %d failed\n", checks, failures);
     return failures ? 1 : 0;
 }
