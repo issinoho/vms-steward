@@ -11,13 +11,13 @@ see and change.
 ## Status
 
 Phase 1 (service skeleton and sign-in) is built and running on OpenVMS x86-64 behind
-lighttpd, as a least-privilege service account, and has passed its exit checks through
-nginx proxy manager. See [`docs/PLAN.md`](docs/PLAN.md), [`docs/api.md`](docs/api.md)
+lighttpd, as a least-privilege service account, and is closed: its exit checks passed
+through nginx proxy manager on 2026-10-10. See [`docs/PLAN.md`](docs/PLAN.md), [`docs/api.md`](docs/api.md)
 and [`docs/security.md`](docs/security.md).
 
 | Area | Status |
 | --- | --- |
-| Scaffolding, sign-in, sessions | built; exit checks passed (Phase 1) |
+| Scaffolding, sign-in, sessions | done (Phase 1, closed 2026-10-10) |
 | Users and rights identifiers | planned (Phases 2-4) |
 | Access history: who connected, when, how (SSH, TELNET, FTP, DECnet, batch, Steward) in one view | planned (Phase 6) |
 | Logical names, processes, queues, SYSGEN, licences, products, monitoring, error log, terminal | later |

@@ -211,3 +211,5 @@ Review of the changes made since the gate review (the SYSPRV bracket, 6bdd9b9, a
 - The persona's privileges come from the user's own UAF record. STEWARD_TEST is not
   authorized SYSPRV, and none appeared in its whoami.
 - No findings.
+
+**Phase 1 closed on 2026-10-10 with the user's approval.**
