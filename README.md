@@ -18,7 +18,8 @@ and [`docs/security.md`](docs/security.md).
 | Area | Status |
 | --- | --- |
 | Scaffolding, sign-in, sessions | done (Phase 1, closed 2026-10-10) |
-| Users and rights identifiers | planned (Phases 2-4) |
+| Users and rights identifiers: read-only views | built; exit checks in progress (Phase 2) |
+| Users and rights identifiers: changes, create and delete | planned (Phases 3-4) |
 | Access history: who connected, when, how (SSH, TELNET, FTP, DECnet, batch, Steward) in one view | planned (Phase 6) |
 | Logical names, processes, queues, SYSGEN, licences, products, monitoring, error log, terminal | later |
 

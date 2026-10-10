@@ -40,11 +40,26 @@ async function call(method, path, body) {
   return doc;
 }
 
+function query(q) {
+  const p = new URLSearchParams();
+  for (const [k, v] of Object.entries(q || {})) if (v !== undefined && v !== null && v !== '') p.set(k, v);
+  const s = p.toString();
+  return s ? `?${s}` : '';
+}
+
 export const api = {
   signIn: (username, password) => call('POST', 'session', { username, password }),
   whoami: () => call('GET', 'session'),
   // The authorized privileges to switch on for this session, on top of the defaults
   // (D9). Returns the updated whoami.
   setPrivileges: (enabled) => call('PUT', 'session/privileges', { enabled }),
+  // Phase 2: users and rights identifiers, read-only. Lists take
+  // { filter, after, limit } (and type for identifiers) and return { ..., next }.
+  users: (q) => call('GET', `users${query(q)}`),
+  user: (name) => call('GET', `users/${encodeURIComponent(name)}`),
+  userIdentifiers: (name) => call('GET', `users/${encodeURIComponent(name)}/identifiers`),
+  identifiers: (q) => call('GET', `identifiers${query(q)}`),
+  identifier: (name) => call('GET', `identifiers/${encodeURIComponent(name)}`),
+  holders: (name) => call('GET', `identifiers/${encodeURIComponent(name)}/holders`),
   signOut: async () => { try { await call('DELETE', 'session'); } finally { csrf = null; } },
 };

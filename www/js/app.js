@@ -5,6 +5,8 @@
 
 import { api, ApiError } from './api.js';
 import { h, mount, toast } from './dom.js';
+import { vmsMessage, problemText, vmsDate } from './fmt.js';
+import { usersView, userView, identifiersView, identifierView } from './rights.js';
 
 const app = document.getElementById('app');
 let me = null;           // whoami, while signed in
@@ -13,36 +15,13 @@ let idleTimer = null;
 // Areas of the system, in the order they will arrive (docs/PLAN.md).
 const AREAS = [
   { hash: '#/account', label: 'My account', ready: true },
-  { hash: '#/users', label: 'Users', phase: 'Phase 2' },
-  { hash: '#/identifiers', label: 'Rights identifiers', phase: 'Phase 2' },
+  { hash: '#/users', label: 'Users', ready: true },
+  { hash: '#/identifiers', label: 'Rights identifiers', ready: true },
   { hash: '#/access', label: 'Access history', phase: 'Phase 6' },
   { hash: '#/logicals', label: 'Logical names', phase: 'later' },
   { hash: '#/processes', label: 'Processes', phase: 'later' },
   { hash: '#/queues', label: 'Queues', phase: 'later' },
 ];
-
-// Messages in OpenVMS form: %FACILITY-S-IDENT, text. Steward's own use the facility
-// STEWARD; when OpenVMS refused something, its own message follows on the next line,
-// exactly as $GETMSG gave it.
-export function vmsMessage(severity, ident, text) {
-  return `%STEWARD-${severity}-${ident}, ${text}`;
-}
-
-function problemText(err) {
-  if (!(err instanceof ApiError)) return vmsMessage('F', 'NOSERVER', 'Steward could not be reached');
-  const ident = (err.slug || 'ERROR').replace(/[^a-z0-9]/gi, '').toUpperCase().slice(0, 12);
-  const lines = [vmsMessage(err.status >= 500 ? 'F' : 'E', ident, (err.problem.detail || err.message).replace(/\.$/, ''))];
-  if (err.vmsMessage) lines.push(err.vmsMessage);
-  return lines.join('\n');
-}
-
-// Absolute times as OpenVMS writes them: 10-OCT-2026 23:35:41, in the browser's zone.
-function vmsDate(epochSeconds) {
-  const d = new Date(epochSeconds * 1000);
-  const mon = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'][d.getMonth()];
-  const p2 = (n) => String(n).padStart(2, '0');
-  return `${d.getDate()}-${mon}-${d.getFullYear()} ${p2(d.getHours())}:${p2(d.getMinutes())}:${p2(d.getSeconds())}`;
-}
 
 function wordmark() {
   return h('span', { class: 'wordmark', 'aria-label': 'Steward' },
@@ -104,7 +83,7 @@ function signInView(note) {
 // ---------------------------------------------------------------- shell
 
 function shell(content) {
-  const current = location.hash || '#/account';
+  const current = '#/' + ((location.hash || '#/account').slice(2).split('/')[0]);
   const nav = h('nav', { class: 'sidebar', 'aria-label': 'Areas' },
     wordmark(),
     h('ul', {}, AREAS.map((a) => h('li', {},
@@ -190,21 +169,39 @@ function accountView() {
   ];
 }
 
+// #/area or #/area/NAME. Each view fetches what it shows, which also keeps the
+// server's idle clock and ours in step: only API calls count as activity there.
+const VIEWS = {
+  account: async () => {
+    me = await api.whoami();
+    return accountView();
+  },
+  users: (ctx, name) => (name ? userView(ctx, name) : usersView(ctx)),
+  identifiers: (ctx, name) => (name ? identifierView(ctx, name) : identifiersView(ctx)),
+};
+
+let routeSeq = 0;
+
 async function route() {
   if (!me) return;
-  const hash = location.hash || '#/account';
-  const area = AREAS.find((a) => a.hash === hash && a.ready);
-  if (!area) { location.hash = '#/account'; return; }
-  // Each view fetches what it shows. That also keeps the server's idle clock and
-  // ours in step, since only API calls count as activity there.
+  const [area, ...rest] = (location.hash || '#/account').slice(2).split('/');
+  let name = null;
+  try { name = rest.length ? decodeURIComponent(rest.join('/')) : null; } catch { name = null; }
+  const view = VIEWS[area];
+  if (!view || !AREAS.find((a) => a.hash === `#/${area}` && a.ready)) { location.hash = '#/account'; return; }
+  const seq = ++routeSeq;
+  const ctx = { me, touched: armIdle, authLost: () => expired('Your session has ended. Sign in again.') };
+  let content;
   try {
-    me = await api.whoami();
+    content = await view(ctx, name);
   } catch (err) {
     if (err instanceof ApiError && err.status === 401) { expired('Your session has ended. Sign in again.'); return; }
-    toast(problemText(err), 'error');
+    content = [h('pre', { class: 'vmsmsg' }, problemText(err))];
   }
+  if (seq !== routeSeq || !me) return;   // the user moved on while this loaded
   armIdle();
-  shell(accountView());
+  shell(content);
+  window.scrollTo(0, 0);
 }
 
 // ---------------------------------------------------------------- session

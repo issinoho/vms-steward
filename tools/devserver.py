@@ -11,6 +11,7 @@ Set DEV_PREFIX=/steward to serve under a prefix, as a reverse proxy would (D7).
 Add ?shot=1 to the page URL for headless screenshots: the page's load event then
 waits until the first view has rendered.
 """
+import json
 import http.server
 import mimetypes
 import os
@@ -110,12 +111,25 @@ class Handler(http.server.BaseHTTPRequestHandler):
                   "REMOTE_ADDR": "127.0.0.1", "HTTP_HOST": self.headers.get("Host", ""),
                   "CONTENT_TYPE": "application/json", "CONTENT_LENGTH": str(len(body)),
                   "HTTP_X_STEWARD_GATEWAY": DEV_GATEWAY}
-        status, headers, _ = request(FCGI, params, body)
+        status, headers, resp = request(FCGI, params, body)
+        cookies = [v for n, v in headers if n.lower() == "set-cookie"]
+        q = dict(kv.split("=", 1) for kv in path.split("?", 1)[-1].split("&") if "=" in kv)
+        if q.get("priv") and cookies:
+            # &priv=SYSPRV: switch privileges on for the session (D9), as the
+            # account page's keys do.
+            csrf = json.loads(resp)["csrf"]
+            pbody = json.dumps({"enabled": q["priv"].upper().split(",")}).encode()
+            pparams = dict(params, REQUEST_METHOD="PUT", REQUEST_URI="/api/v1/session/privileges",
+                           CONTENT_LENGTH=str(len(pbody)), HTTP_COOKIE=cookies[0].split(";")[0],
+                           HTTP_X_STEWARD_CSRF=csrf)
+            request(FCGI, pparams, pbody)
+        to = q.get("to", "account")   # &to=users/STEWARD_TEST: the view to land on
+        if not all(c.isalnum() or c in "/_$%" for c in to):
+            to = "account"
         self.send_response(302)
-        for name, value in headers:
-            if name.lower() == "set-cookie":
-                self.send_header(name, value)
-        self.send_header("Location", (PREFIX or "") + "/?shot=1#/account")
+        for value in cookies:
+            self.send_header("Set-Cookie", value)
+        self.send_header("Location", (PREFIX or "") + "/?shot=1#/" + to)
         self.end_headers()
 
     def _any(self):
