@@ -308,7 +308,7 @@ static int cmp_users(const void *a, const void *b)
 
 int st_plat_user_enum(const char *after, st_name_cb fn, void *ctx, st_err *e)
 {
-    const stub_user *sorted[MAXUSERS];
+    const stub_user *sorted[MAXUSERS] = { 0 };   /* cppcheck cannot see that only n are read */
     int i, n = 0;
     if (!may_read_uaf()) return fail(e, ST_E_NOPRIV, C_RMS_PRV, "%RMS-E-PRV, insufficient privilege or file protection violation");
     for (i = 0; i < MAXUSERS; i++) if (users[i].used) sorted[n++] = &users[i];

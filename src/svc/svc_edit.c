@@ -11,14 +11,28 @@
        and drop it silently (PHASE3.md, finding 4);
      - every change is audited, with what changed, and never a password.
    Passwords are scrubbed with st_zero on every path. */
+#include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include "st_app.h"
 #include "svc.h"
 
-#define TOO(c, ...) do { char d_[200]; snprintf(d_, sizeof d_, __VA_ARGS__); \
-    st_resp_problem((c)->resp, 422, "invalid-value", "Invalid value", d_, 0, NULL); } while (0)
+/* 422 invalid-value, with a detail naming the field. The format attribute makes GCC
+   check every caller's format string, which is always a literal, so the vsnprintf
+   below can never see one from a request (D8; CI's flawfinder cannot tell). */
+#ifdef __GNUC__
+static void TOO(st_ctx *c, const char *fmt, ...) __attribute__((format(printf, 2, 3)));
+#endif
+static void TOO(st_ctx *c, const char *fmt, ...)
+{
+    char d[200];
+    va_list ap;
+    va_start(ap, fmt);
+    vsnprintf(d, sizeof d, fmt, ap);   /* flawfinder: ignore */
+    va_end(ap);
+    st_resp_problem(c->resp, 422, "invalid-value", "Invalid value", d, 0, NULL);
+}
 
 /* ---------------------------------------------------------------- ETag */
 
