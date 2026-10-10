@@ -15,7 +15,7 @@ settles it.
 | 2 | Can the rights database be enumerated? | Yes. `$IDTOASC` with id -1 walks every identifier and ends with NOSUCHID, giving general (bit 31) and UIC identifiers. `$FIND_HELD` and `$ASCTOID`/`$FIND_HOLDER` work too. | **answered** |
 | 3 | Can SYSUAF be enumerated? | Yes. An RMS sequential `$GET` with RRL+NLK (it never takes a record lock), with the username at offset 4. `$GETUAI` agreed on every record (43 records, 0 failures, 0.25 s CPU including the `$GETUAI` calls). | **answered** |
 | 4 | Does a persona make the OS check the caller's rights (D2)? | **Yes.** Under an unprivileged persona (TMPMBX+NETMBX), `$GETUAI SYSTEM` failed with NOSYSPRV and `$OPEN SYSUAF` with RMS-E-PRV. After reverting to the natural persona both succeeded, and `$GETJPI` showed the username and privileges switch and switch back. Under a privileged persona both succeeded. | **answered** |
-| 5 | Can a detached service check a password non-interactively with `SYS$ACM`, and does that apply DISUSER, expiry and intrusion detection? | Probe builds; needs a test password. | **open** |
+| 5 | Can a detached service check a password non-interactively with `SYS$ACM`, and does that apply DISUSER, expiry and intrusion detection? | **Mostly.** A non-dialogue `$ACMW` (no context) authenticates. A right password succeeds in all three forms, and `ACME$M_ACQUIRE_CREDENTIALS` returns a persona handle. DISUSER is refused (AUTHFAILURE / LOGIN-F-DISUSER), and so is a wrong password (AUTHFAILURE / LOGIN-F-INVPWD). Intrusion detection counts the failures. **But a pre-expired password is accepted**, and **the intrusion record names the service's process, not the client** (see below). | **answered, with two gaps** |
 | 6 | FastCGI socket and pool | Settled by vms-lighttpd: `PHP_POOL.COM` runs detached LOGINOUT processes on `127.0.0.1:<base+n>` in a restart loop, with a stop file. We copy that shape. | **answered (prior art)** |
 
 ## Findings that shape Phase 1
@@ -37,17 +37,41 @@ settles it.
   Listing users can therefore read the file per request at first, with paging and a cache
   only if a large UAF needs them.
 
-## Probe 5: to run (needs you)
+## Probe 5: SYS$ACM (run by the user, 2026-10-10)
 
-Use a test account whose password you are willing to type on the node, ideally a
-dedicated one such as `STEWARD_TEST`. From the work directory's `[.PROBES]`:
+Run against the dedicated unprivileged account `STEWARD_TEST` (TMPMBX, NETMBX), from the
+work account, in this order: right password, DISUSER, pre-expired, wrong password.
+`STEWARD_TEST` stays for Phase 1 as the unprivileged test login.
 
-```
-$ define/process/nolog STEWARD_PROBE_PW "the-password"
-$ mcr sys$disk:[]probe_acm STEWARD_TEST
-$ deassign/process STEWARD_PROBE_PW
-```
+| Case | All three forms (plain, network logon type, acquire credentials) |
+|---|---|
+| right password | ACME-S-NORMAL; form C returned persona handle 2 |
+| DISUSER | ACME-E-AUTHFAILURE, secondary LOGIN-F-DISUSER |
+| pre-expired password | **ACME-S-NORMAL**: accepted, no warning in the ACMESB |
+| wrong password | ACME-E-AUTHFAILURE, secondary LOGIN-F-INVPWD |
 
-Then repeat it with a wrong password (and run `SHOW INTRUSION`), with the account
-DISUSERed, and with the password pre-expired. Each run prints the ACMESB statuses for
-the three forms (plain, network logon type, acquire credentials).
+`SHOW INTRUSION` after the wrong-password run: `NETWORK SUSPECT 3 ... X86VMS::IAIN`.
+
+### Two gaps Phase 1 must close (each gets a probe first)
+
+1. **An expired password is not refused in non-dialogue mode.** An interactive login
+   would force a change, but here nothing signals it. Before issuing a session, Steward
+   must check expiry itself (`UAI$_FLAGS` PWD_EXPIRED/PWD2_EXPIRED, and `UAI$_PWD_DATE`
+   against `UAI$_PWD_LIFETIME`), or find the ACME output item that reports it. It must
+   then refuse with "password expired" and offer a change-password flow
+   (`ACME$_FC_CHANGE_PASSWORD`). This is now part of D2.
+2. **Intrusion records name the service, not the browser.** The source is the service's
+   own process (`node::user`). If nothing changes, one attacker's failures make every web
+   login a suspect, and when the record turns INTRUDER, breakin evasion would block all
+   web logins: a denial of service, with the attacker's address never recorded. Phase 1
+   must probe the `ACME$_REMOTE_HOST_ADDRESS`/`ACME$_REMOTE_HOST_NAME` items with the
+   client IP from lighttpd (`REMOTE_ADDR`), so each client gets its own intrusion record.
+   Until that works, Steward also rate-limits failed logins per client IP itself.
+
+The runs were made with the work account (all privileges). That ACM needs only
+IMPERSONATE is still to be shown with the Phase 1 service account.
+
+## Exit
+
+Phase 0 closed 2026-10-10. Every question is answered, and the two ACM gaps above carry
+into Phase 1 as its first probes.

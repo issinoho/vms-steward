@@ -30,8 +30,8 @@ bindings, and each worker is heavier).
 
 ## D2. Authorization: SYS$ACM login, per-request persona
 
-**Status:** approved by the user (2026-10-10, plan). Mechanism to be confirmed by the
-Phase 0 probes.
+**Status:** approved by the user (2026-10-10, plan). Confirmed by the Phase 0 probes
+(docs/PHASE0.md #4, #5), with two additions below.
 
 The password is checked by `SYS$ACM` (authenticate principal), which applies the system's
 own policy: expiry, DISUSER, login hours, intrusion detection. Each API request then
@@ -39,6 +39,15 @@ creates the caller's persona and assumes it for the duration of the work, so the
 enforces privileges and protection (SYSPRV for the UAF, rights database ownership,
 and so on). The service account needs IMPERSONATE (and whatever ACM additionally
 requires), not SYSPRV or CMKRNL.
+
+Additions from Phase 0:
+- Non-dialogue `$ACM` accepts a pre-expired password, so Steward checks expiry itself
+  (UAI flags and password date/lifetime) and refuses the session until the password is
+  changed.
+- Intrusion records name the calling process, so the client's address must be passed
+  to ACM (`ACME$_REMOTE_HOST_*`). Steward also rate-limits failed logins per client IP.
+- Usernames are upcased and validated before `$ACM` or `$PERSONA_CREATE` (persona
+  creation accepts lowercase as given).
 
 Alternative: a privileged service with its own role checks against a rights identifier.
 It is simpler, but every authorization decision is then our code and a bug is a
