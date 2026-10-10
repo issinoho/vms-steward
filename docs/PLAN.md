@@ -156,6 +156,14 @@ PCSI kit and startup, README status table, and the independent external review a
 penetration test (D8). Exit: the kit is installed on x86, and you run
 it before we declare use case 1 stable.
 
+**Phase 6: access history** (the user's priority among later areas, 2026-10-10).
+This is one view of who reached the system, when, from where and by which route (SSH,
+SFTP, TELNET, FTP, DECnet, batch, Steward). Today the answer is spread across the
+security audit journal, the SSH logs, accounting and the operator log. A collector
+under its own account normalises these sources incrementally into a store that
+Steward reads under the viewer's persona, so OpenVMS decides who may see it. Probes
+come first. See `docs/ideas/access-history.md`.
+
 **Later areas, one at a time and each with the same read-only → modify split:** logical
 names, processes, batch/print queues, system parameters, licences, installed products,
 CPU/memory monitoring, error log, and a WebSocket terminal (lighttpd `mod_wstunnel`).

@@ -17,6 +17,7 @@ Phase 0 (scaffolding and platform probes). Nothing is usable yet. See
 | --- | --- |
 | Scaffolding, sign-in, sessions | planned (Phase 1) |
 | Users and rights identifiers | planned (Phases 2-4) |
+| Access history: who connected, when, how (SSH, TELNET, FTP, DECnet, batch, Steward) in one view | planned (Phase 6) |
 | Logical names, processes, queues, SYSGEN, licences, products, monitoring, error log, terminal | later |
 
 ## Platform

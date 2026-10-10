@@ -15,6 +15,7 @@ const AREAS = [
   { hash: '#/account', label: 'My account', ready: true },
   { hash: '#/users', label: 'Users', phase: 'Phase 2' },
   { hash: '#/identifiers', label: 'Rights identifiers', phase: 'Phase 2' },
+  { hash: '#/access', label: 'Access history', phase: 'Phase 6' },
   { hash: '#/logicals', label: 'Logical names', phase: 'later' },
   { hash: '#/processes', label: 'Processes', phase: 'later' },
   { hash: '#/queues', label: 'Queues', phase: 'later' },
