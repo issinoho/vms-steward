@@ -39,3 +39,20 @@ owner and flags were back as they were, and the identifier was gone.
 6. **`$REM_IDENT` of an identifier that is still held succeeds and removes the holder
    records too**, as `AUTHORIZE REMOVE/IDENTIFIER` does. A delete in Steward
    therefore shows the holders first and asks for confirmation.
+
+## Probes: passwords (2026-10-10)
+
+- **`$SETUAI UAI$_PASSWORD` (plaintext; the system hashes it)** enforces the account's
+  minimum length. Too short is refused with `%SYSTEM-F-INVPWDLEN`, and nothing
+  changes. This was run by the user with `probe_password SET`.
+- **`$ACM CHANGE_PASSWORD`, non-dialogue, needs `ACME$_NEW_PASSWORD_FLAGS`.** Without
+  it `$ACMW` itself returns `%SYSTEM-F-INSFARG` before looking at any password.
+  `probe_acmchg` found this using a made-up wrong password: with the item present,
+  the ACMESB said `ACME-E-AUTHFAILURE` / `LOGIN-F-INVPWD`.
+- **A failed CHANGE_PASSWORD is charged to the account, not to the client.** The
+  attempt above left `USERNAME SUSPECT STEWARD_TEST`, although a remote host was
+  supplied. A failed sign-in (`AUTHENTICATE_PRINCIPAL`) is charged to the client
+  (PHASE1.md). If Steward exposed CHANGE_PASSWORD directly, anyone could lock an
+  account by guessing. So Steward first checks the current password with
+  AUTHENTICATE_PRINCIPAL (failures charged to the client, as at sign-in), and calls
+  CHANGE_PASSWORD only after that succeeds.

@@ -25,6 +25,7 @@ static void read_noecho(const char *prompt, char *out, size_t outlen)
     unsigned int st;
     desc_set(&d, "SYS$COMMAND", 11);
     out[0] = '\0';
+    fflush(stdout);   /* the C RTL buffers; without this the prompt overwrote the last line */
     if (!(sys$assign(&d, &chan, 0, 0) & 1)) return;
     st = sys$qiow(0, chan, IO$_READPROMPT | IO$M_NOECHO, (void *) iosb, 0, 0,
                   out, (unsigned int) outlen - 1, 0, 0, (void *) prompt, (unsigned int) strlen(prompt));
@@ -89,8 +90,8 @@ int main(int argc, char **argv)
         report("$SETUAI UAI$_PASSWORD", st);
     } else {
         struct _acmesb sb;
-        unsigned int ltype = ACME$K_NETWORK;
-        ile3 it[6];
+        unsigned int ltype = ACME$K_NETWORK, pflags = 0;
+        ile3 it[7];
         read_noecho("Current password: ", pw, sizeof pw);
         read_noecho("New password: ", pw2, sizeof pw2);
         memset(&sb, 0, sizeof sb);
@@ -99,7 +100,9 @@ int main(int argc, char **argv)
         ile3_set(&it[2], ACME$_NEW_PASSWORD_1, pw2, (unsigned short) strlen(pw2), 0);
         ile3_set(&it[3], ACME$_LOGON_TYPE, &ltype, 4, 0);
         ile3_set(&it[4], ACME$_REMOTE_USERNAME, "STEWARD", 7, 0);
-        ile3_end(&it[5]);
+        /* Required in non-dialogue mode: without it $ACMW says INSFARG (probe_acmchg). */
+        ile3_set(&it[5], ACME$_NEW_PASSWORD_FLAGS, &pflags, 4, 0);
+        ile3_end(&it[6]);
         st = sys$acmw(0, ACME$_FC_CHANGE_PASSWORD, 0, (void *) it, &sb, 0, 0);
         report("$ACMW CHANGE_PASSWORD", st);
         report("  ACMESB status", sb.acmesb$l_status);
