@@ -2,6 +2,11 @@ $! STEWARD$STARTUP.COM - define STEWARD$ROOT and start the Steward pool.
 $!
 $!   @STEWARD$STARTUP root-directory      e.g. DKA100:[STEWARD]
 $!
+$! The STEWARD account is RESTRICTED, and LOGINOUT refuses a restricted account
+$! whose login procedure is missing (%DCL-E-NOCMDPROC, "captive command procedure",
+$! 2026-10-10), so the kit installs a do-nothing SYS$LOGIN:LOGIN.COM that the account
+$! can read but not change: (S:RWE,O:RE,G,W).
+$!
 $! Not yet exercised: the installed layout arrives with the PCSI kit (Phase 5), and
 $! until then the pool is started by hand from the work directory.
 $!

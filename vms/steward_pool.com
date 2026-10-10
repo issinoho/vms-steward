@@ -81,6 +81,9 @@ $ endif
 $ com = logs + name + ".COM"
 $ open/write w 'com'
 $ write w "$ set noon"
+$! Files the server creates (session store, audit log) are private to the account,
+$! whatever its default protection: they must not depend on the directory alone.
+$ write w "$ set protection=(s:rwed,o:rwed,g,w)/default"
 $ write w "$ define/process/nolog STEWARD_SESSION_FILE """, rdir, "SESSIONS.DAT"""
 $ write w "$ define/process/nolog STEWARD_AUDIT_FILE """, rdir, "AUDIT.LOG"""
 $ write w "$ @", settings

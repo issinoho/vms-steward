@@ -76,3 +76,35 @@ waits for the `STEWARD` account.
 Signing in over plain HTTP straight to port 8443 cannot work, by design: the session
 cookie is `Secure`, so the browser does not keep it. The successful sign-in path is
 tested through nginx proxy manager over HTTPS, which is also the real deployment.
+
+## Least privilege: the pool as STEWARD (2026-10-10)
+
+The user created the service account `STEWARD` `[362,2]`, with authorized and default
+privileges IMPERSONATE, TMPMBX and NETMBX, batch access only, and flags RESTRICTED and
+DISCTLY. The build is staged in `SYS$SYSDEVICE:[STEWARD]`
+(`[.BIN]`, `[.COM]`, `[.RUN]` protected `(S:RWE,O:RWED,G,W)`), and the pool is started
+with `SUBMIT/USER=STEWARD`.
+
+- `STEWARD_POOL STATUS`: both processes are user STEWARD with `DETACH,TMPMBX,NETMBX`
+  only.
+- Through the test lighttpd: health is 200. A wrong password for `STEWARD_TEST` gives a
+  generic 401 and an intrusion record `<client>::STEWARD`. `SESSIONS.DAT` and
+  `AUDIT.LOG` are created by the service.
+- **So `$ACM` sign-in and personas need only IMPERSONATE** (D2): no SYSPRV, no SECURITY.
+
+Findings:
+- **With only IMPERSONATE, `$ACM` hides the reason for a failure.** The audit record
+  says `%ACME-E-AUTHFAILURE`; with every privilege it was `%LOGIN-F-INVPWD`. The
+  reason is still in the OpenVMS security audit; Steward's log records only that a
+  sign-in failed. That is accepted: Steward never tells the client the reason anyway.
+- **A RESTRICTED account with no login procedure cannot log in at all, batch
+  included** (`%DCL-E-NOCMDPROC, error opening captive command procedure - access
+  denied`). Fixed with a do-nothing `LOGIN.COM` the account can read but not change
+  `(S:RWE,O:RE,G,W)`. The kit must install one.
+- **Files the service created took the account's default protection, including group
+  read** (`RWED,RWED,RE,`). `[.RUN]` already denied the group, but the pool now sets
+  `(S:RWED,O:RWED,G,W)` as the process default so the files do not depend on the
+  directory, and the existing ones were tightened.
+- AUTHORIZE pre-expires a new account's password. `$GETUAI` shows the password date as
+  `%XFFFFFFFFFFFFFFFF`, which is the marker `expired_now()` treats as expired: the
+  first check of that logic against a real record.
