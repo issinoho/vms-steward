@@ -124,3 +124,23 @@ A persona starts with the user's default privileges and can enable any privilege
 the user is authorized for, as `SET PROCESS/PRIVILEGE` does, but nothing beyond.
 This closes the last open probe question. How Steward should offer it is proposed
 as D9.
+
+## Through nginx proxy manager (2026-10-10)
+
+The user published the test lighttpd as `x86.issinoho.com` in NPM. NPM connects to
+lighttpd from its LAN address, which was found in lighttpd's access log and set as
+`STEWARD_TRUSTED_PROXIES` in `[STEWARD.RUN]STEWARD_SETTINGS.COM`.
+
+- Over HTTPS the page and API are served through NPM (openresty) with Steward's
+  headers.
+- A same-origin sign-in POST with the wrong password, with Origin
+  `https://x86.issinoho.com`, got a 401, not a 403. So the scheme reconstructed from
+  `X-Forwarded-Proto` matched the browser's Origin. The audit and intrusion records
+  name the client NPM saw, not NPM itself.
+- From inside the LAN through the public name, the client appears as the router
+  (hairpin NAT). Internet clients, and LAN clients whose DNS points the name straight
+  at NPM, appear as themselves.
+
+Raised with the user: NPM also serves the host over plain HTTP with no redirect
+(turn on Force SSL and HSTS), and the name resolves to the public address (limit it
+with an NPM access list until the Phase 5 external review).
