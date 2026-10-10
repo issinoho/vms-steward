@@ -175,8 +175,8 @@ void st_resp_problem(st_response *r, int status, const char *slug, const char *t
     char type[128];
     st_resp_json(r, status, &w);
     r->content_type = "application/problem+json";
-    strcpy(type, "/api/v1/problems/");
-    strncat(type, slug, sizeof type - strlen(type) - 1);
+    st_copy(type, sizeof type, "/api/v1/problems/");
+    st_append(type, sizeof type, slug);
     st_jw_obj(&w);
     st_jw_kstr(&w, "type", type);
     st_jw_kstr(&w, "title", title);

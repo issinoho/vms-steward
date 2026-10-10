@@ -20,8 +20,9 @@ int  st_buf_append(st_buf *b, const void *p, size_t n);
 int  st_buf_puts(st_buf *b, const char *s);
 int  st_buf_putc(st_buf *b, char c);
 #ifdef __GNUC__
-/* GCC checks every caller's format string against its arguments. */
-int  st_buf_printf(st_buf *b, const char *fmt, ...) __attribute__((format(printf, 2, 3)));
+/* GCC checks every caller's format string against its arguments. (The
+   annotation: CI's flawfinder takes the attribute itself for a printf call.) */
+int  st_buf_printf(st_buf *b, const char *fmt, ...) __attribute__((format(printf, 2, 3)));  /* flawfinder: ignore */
 #else
 int  st_buf_printf(st_buf *b, const char *fmt, ...);
 #endif
