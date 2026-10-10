@@ -105,6 +105,8 @@ instance behind nginx proxy manager.
 - [ ] Item lists, descriptors and buffers are sized from the definitions, and every
       `retlen` is honoured.
 - [ ] New dependencies: none without a decision in DECISIONS.md.
+- [ ] Least-privilege claims are verified on the **success** path, run as the real
+      service account (a failed sign-in never creates a persona: PHASE1.md).
 
 ## Audit record
 
@@ -118,4 +120,5 @@ instance behind nginx proxy manager.
 | 2026-10-10 | 1 | Phase 1 gate review: any local process could connect to the loopback FastCGI ports, bypass lighttpd and choose its own REMOTE_ADDR, guessing passwords without breakin evasion | High (local attacker) | gateway secret shared with lighttpd (this commit) | unit `test_gateway`, API suite, and on VMS a direct connection gets 403 |
 | 2026-10-10 | 1 | Files created by the service took the account's default protection, including group read | Low (already behind a no-group directory) | pool sets `(S:RWED,O:RWED,G,W)` as the default | phase-exit listing |
 | 2026-10-10 | 1 | API responses had no CSP of their own | Informational (hardening) | `default-src 'none'; frame-ancestors 'none'` on every API response | API suite |
+| 2026-10-10 | 1 | Claimed "IMPERSONATE alone suffices" from a failed-sign-in test; the first successful sign-in failed: `$PERSONA_CREATE` needs GRPPRV/SYSPRV to read the user's UAF record | Process (false verification) | correction in PHASE1.md; D2 to be amended | checklist item: verify the success path as the real account |
 | 2026-10-10 | 1 | Privilege masks above bit 31 truncated to 0 make `$SETPRV` a silent no-op that returns NORMAL (probe code) | Recorded as a rule | PHASE1.md | checklist item |

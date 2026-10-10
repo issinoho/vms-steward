@@ -90,7 +90,9 @@ with `SUBMIT/USER=STEWARD`.
 - Through the test lighttpd: health is 200. A wrong password for `STEWARD_TEST` gives a
   generic 401 and an intrusion record `<client>::STEWARD`. `SESSIONS.DAT` and
   `AUDIT.LOG` are created by the service.
-- **So `$ACM` sign-in and personas need only IMPERSONATE** (D2): no SYSPRV, no SECURITY.
+- ~~So `$ACM` sign-in and personas need only IMPERSONATE~~ **Wrong, corrected the same
+  day (see "Persona creation needs UAF access" below).** These checks covered `$ACM`
+  and a *failed* sign-in, which never creates a persona.
 
 Findings:
 - **With only IMPERSONATE, `$ACM` hides the reason for a failure.** The audit record
@@ -144,3 +146,29 @@ lighttpd from its LAN address, which was found in lighttpd's access log and set 
 Raised with the user: NPM also serves the host over plain HTTP with no redirect
 (turn on Force SSL and HSTS), and the name resolves to the public address (limit it
 with an NPM access list until the Phase 5 external review).
+
+## Persona creation needs UAF access, not just IMPERSONATE (2026-10-10)
+
+The user's first real sign-in through NPM (correct password) failed with
+`%SYSTEM-F-NOGRPPRV, operation requires GRPPRV privilege`. `$ACM` had accepted the
+password; the failure came at the first `$PERSONA_CREATE`.
+
+Reproduced with `probe_selfuai` submitted with `SUBMIT/USER=STEWARD` (privileges
+DETACH, TMPMBX, NETMBX):
+
+```
+[natural] $GETUAI STEWARD_TEST     FAIL %SYSTEM-F-NOGRPPRV
+$PERSONA_CREATE                    FAIL %SYSTEM-F-NOGRPPRV
+```
+
+`$PERSONA_CREATE` reads the user's UAF record and applies `$GETUAI`'s access rules:
+the caller's own record is free; another member of its UIC group needs GRPPRV;
+anyone else needs SYSPRV. `STEWARD` `[362,2]` and `STEWARD_TEST` `[362,1]` share
+group 362, hence GRPPRV; any other user would need SYSPRV. **IMPERSONATE alone cannot
+create a persona for anyone but the service itself.**
+
+Why the earlier evidence missed it: every probe that created a persona ran from the
+work account, which holds every privilege. The least-privilege check on the node
+covered a *failed* sign-in only, and that never creates a persona. Lesson, now in
+the review checklist: verify least privilege with the **success** path, run as the
+real account.
