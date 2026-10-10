@@ -22,7 +22,7 @@
    check every caller's format string, which is always a literal, so the vsnprintf
    below can never see one from a request (D8; CI's flawfinder cannot tell). */
 #ifdef __GNUC__
-static void TOO(st_ctx *c, const char *fmt, ...) __attribute__((format(printf, 2, 3)));
+static void TOO(st_ctx *c, const char *fmt, ...) __attribute__((format(printf, 2, 3)));  /* flawfinder: ignore */
 #endif
 static void TOO(st_ctx *c, const char *fmt, ...)
 {
