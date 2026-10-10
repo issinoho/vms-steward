@@ -141,6 +141,32 @@ def main(binary):
         st, _, doc = p.call("PUT", "/api/v1/session/privileges", {"enabled": ["CMKRNL"]})
         check(st == 403 and "CMKRNL" in doc.get("detail", ""), "an unauthorized privilege is refused by name")
 
+        # Phase 2: users and identifiers, read as the persona. SYSPRV is still on.
+        st, _, doc = p.call("GET", "/api/v1/users?filter=STEWARD*&limit=1")
+        check(st == 200 and [u["username"] for u in doc["users"]] == ["STEWARD_ADM"] and
+              doc["next"] == "STEWARD_ADM", "list users: wildcard filter, one page, cursor")
+        st, _, doc = p.call("GET", "/api/v1/users?filter=STEWARD*&after=STEWARD_ADM")
+        check(st == 200 and [u["username"] for u in doc["users"]] == ["STEWARD_TEST"] and doc["next"] is None,
+              "the next page, and the end")
+        st, _, doc = p.call("GET", "/api/v1/users/steward_test")
+        check(st == 200 and doc["restricted_hours"]["dialup"]["primary"] == list(range(24)) and
+              doc["secondary_days"] == ["SAT", "SUN"] and doc["password"]["minimum_length"] == 15,
+              "user detail: access hours, days, password policy")
+        st, _, doc = p.call("GET", "/api/v1/users/STEWARD_TEST/identifiers")
+        check(st == 200 and [i["name"] for i in doc["identifiers"]] == ["STEWARD_OPS"], "identifiers held")
+        st, _, doc = p.call("GET", "/api/v1/identifiers?filter=steward*")
+        check(st == 200 and [i["name"] for i in doc["identifiers"]] == ["STEWARD_DEMO", "STEWARD_OPS"],
+              "identifiers, filtered and sorted")
+        st, _, doc = p.call("GET", "/api/v1/identifiers/STEWARD_OPS/holders")
+        check(st == 200 and {x["username"] for x in doc["holders"]} == {"STEWARD_ADM", "STEWARD_TEST"},
+              "holders")
+        st, _, _ = p.call("GET", "/api/v1/users?filter=%22%3Cscript%3E")
+        check(st == 400, "a filter with a quote is refused, not echoed")
+        st, _, _ = p.call("PUT", "/api/v1/session/privileges", {"enabled": []})
+        st, _, doc = p.call("GET", "/api/v1/users")
+        check(st == 403 and doc.get("vms_status") == "%X00002964",
+              "with SYSPRV switched off again, the OS refuses the list (NOSYSPRV)")
+
         # The same headers from a peer we do not trust are ignored: the https Origin
         # no longer matches what lighttpd saw, so the request is refused.
         spoof = Client(addr, remote="198.51.100.1", extra=npm)
@@ -157,8 +183,10 @@ def main(binary):
                           body={"username": "x", "password": "y"})
         check(st == 415, "non-JSON bodies refused")
 
-        st, _, _ = b.call("GET", "/api/v1/users/a%2Fb")
+        st, _, _ = b.call("GET", "/api/v1/nope")
         check(st == 404, "unknown endpoints are 404")
+        st, _, _ = b.call("GET", "/api/v1/users/a%2Fb")
+        check(st == 400, "an encoded slash in a path segment is refused")
 
         with open(audit.name, "rb") as f:
             raw = f.read()

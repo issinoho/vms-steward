@@ -49,6 +49,70 @@ int st_valid_username(const char *in, char out[ST_USERNAME_MAX + 1])
     return 1;
 }
 
+int st_valid_ident(const char *in, char out[ST_IDENT_MAX + 1])
+{
+    size_t i, n = strlen(in);
+    int nondigit = 0;
+    if (n == 0 || n > ST_IDENT_MAX) return 0;
+    for (i = 0; i < n; i++) {
+        char c = in[i];
+        if (c >= 'a' && c <= 'z') c = (char) (c - 'a' + 'A');
+        if (!((c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_' || c == '$')) return 0;
+        if (c < '0' || c > '9') nondigit = 1;
+        out[i] = c;
+    }
+    out[n] = '\0';
+    return nondigit;
+}
+
+int st_valid_filter(const char *in, char out[ST_IDENT_MAX + 1])
+{
+    size_t i, n = strlen(in);
+    if (n > ST_IDENT_MAX) return 0;
+    for (i = 0; i < n; i++) {
+        char c = in[i];
+        if (c < 0x20 || c > 0x7E || c == '"' || c == '\\') return 0;
+        if (c >= 'a' && c <= 'z') c = (char) (c - 'a' + 'A');
+        out[i] = c;
+    }
+    out[n] = '\0';
+    return 1;
+}
+
+static char up(char c) { return (c >= 'a' && c <= 'z') ? (char) (c - 'a' + 'A') : c; }
+
+int st_wild_match(const char *p, const char *s)
+{
+    const char *star = NULL, *resume = NULL;
+    while (*s) {
+        if (*p == '*') { star = p++; resume = s; continue; }
+        if (*p && (*p == '%' || up(*p) == up(*s))) { p++; s++; continue; }
+        if (!star) return 0;
+        p = star + 1;
+        s = ++resume;
+    }
+    while (*p == '*') p++;
+    return *p == '\0';
+}
+
+static int contains(const char *hay, const char *needle)
+{
+    size_t i, j, n = strlen(needle);
+    if (!hay) return 0;
+    for (i = 0; hay[i]; i++) {
+        for (j = 0; j < n && hay[i + j] && up(hay[i + j]) == up(needle[j]); j++) ;
+        if (j == n) return 1;
+    }
+    return n == 0;
+}
+
+int st_filter_match(const char *filter, const char *name, const char *other)
+{
+    if (!filter || !*filter) return 1;
+    if (strchr(filter, '*') || strchr(filter, '%')) return st_wild_match(filter, name);
+    return contains(name, filter) || contains(other, filter);
+}
+
 int st_valid_ip(const char *in)
 {
     size_t i, n = strlen(in);

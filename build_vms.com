@@ -48,8 +48,10 @@ $ ccq = "/STANDARD=C99/POINTER_SIZE=32/PREFIX_LIBRARY_ENTRIES=ALL_ENTRIES" + -
 $ failed = 0
 $ sources = "[.src.core]st_buf,[.src.core]st_fcgi,[.src.core]st_json,[.src.core]st_http," + -
             "[.src.core]st_route,[.src.svc]st_app,[.src.svc]svc_session," + -
+            "[.src.svc]svc_users,[.src.svc]svc_idents," + -
             "[.src.plat]st_crypto_openssl,[.src.plat.vms]st_plat_vms," + -
-            "[.src.plat.stub]st_plat_stub,[.src.main]steward_main,[.tests.unit]test_core"
+            "[.src.plat.stub]st_plat_stub,[.src.main]steward_main,[.tests.unit]test_core," + -
+            "[.tests.vms]api_probe"
 $ i = 0
 $cc_loop:
 $ s = f$element(i, ",", sources)
@@ -72,7 +74,8 @@ $   exit 44
 $ endif
 $!
 $ core = "[.build]st_buf,[.build]st_fcgi,[.build]st_json,[.build]st_http,[.build]st_route," + -
-         "[.build]st_app,[.build]svc_session,[.build]st_crypto_openssl"
+         "[.build]st_app,[.build]svc_session,[.build]svc_users,[.build]svc_idents," + -
+         "[.build]st_crypto_openssl"
 $ link/executable=[.build]steward.exe 'core',[.build]st_plat_vms,[.build]steward_main,[.build]ssl.opt/options
 $ if $severity .ne. 1
 $ then
@@ -85,7 +88,15 @@ $ then
 $   say "BUILD-FAIL link TEST_CORE.EXE (severity ", $severity, ")"
 $   exit 44
 $ endif
-$ say "BUILD-OK [.BUILD]STEWARD.EXE, [.BUILD]TEST_CORE.EXE"
+$! API_PROBE: one request as a named user through the real platform, for checking
+$! results against AUTHORIZE (tests/vms/api_probe.c). A test tool, not part of the kit.
+$ link/executable=[.build]api_probe.exe 'core',[.build]st_plat_vms,[.build]api_probe,[.build]ssl.opt/options
+$ if $severity .ne. 1
+$ then
+$   say "BUILD-FAIL link API_PROBE.EXE (severity ", $severity, ")"
+$   exit 44
+$ endif
+$ say "BUILD-OK [.BUILD]STEWARD.EXE, [.BUILD]TEST_CORE.EXE, [.BUILD]API_PROBE.EXE"
 $!
 $ if mode .nes. "TEST" then exit 1
 $ say "=== TEST_CORE"

@@ -181,3 +181,30 @@ Alternatives:
   safeguard the site chose.
 - Defaults only, with no way to enable more. Users whose SYSPRV is authorized only
   could not administer anything.
+
+## D10. Read views show what OpenVMS shows, no more and no less
+
+**Status:** taken in Phase 2 (2026-10-10). It follows from D2. Raise it at the phase
+exit if you want it otherwise.
+
+Phase 2 found two places where OpenVMS is more open than its file protections
+suggest (docs/PHASE2.md):
+- anyone may read the rights database through `$IDTOASC`, `$FIND_HELD` and
+  `$FIND_HOLDER`;
+- `$GETUAI` says "record not found" for a missing user before it checks privilege,
+  so a signed-in user can tell whether a username exists.
+
+Decision: Steward passes on exactly what OpenVMS returns to the caller's persona.
+It adds no access rules of its own and does not mask the OS's answers. A user sees
+in Steward what they could see at a terminal.
+
+Why: D2 makes OpenVMS the single authority. A second, Steward-only rule set would
+drift from the system's, would need its own review, and would not stop anyone, since
+the same facts are available from DCL. Before sign-in nothing changes: every
+sign-in failure still looks the same (Phase 1).
+
+Alternatives:
+- Treat RNF as 403 for callers without SYSPRV. This hides little (MAIL and the
+  rights database already reveal usernames), and it would make Steward's answers
+  differ from the system's.
+- Require SYSPRV for the identifier views. Stricter than OpenVMS, for no gain.

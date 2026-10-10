@@ -21,6 +21,25 @@ int st_route_match(const char *pattern, const char *path,
 #define ST_USERNAME_MAX 12
 int st_valid_username(const char *in, char out[ST_USERNAME_MAX + 1]);
 
+/* Rights identifier names: 1-31 characters from A-Z, 0-9, '_' and '$', with at least
+   one that is not a digit, case-insensitive. Writes the upper-case form to out[32].
+   Returns 1 if valid. */
+#define ST_IDENT_MAX 31
+int st_valid_ident(const char *in, char out[ST_IDENT_MAX + 1]);
+
+/* A search filter as the list endpoints take it: up to 31 characters, printable ASCII
+   with no quotes or backslashes. Writes the upper-case form to out[32]. Returns 1 if
+   valid. */
+int st_valid_filter(const char *in, char out[ST_IDENT_MAX + 1]);
+
+/* Does s match pattern? '*' matches any run of characters and '%' exactly one, as in
+   DCL; anything else matches itself, ignoring case. Iterative: no recursion, and
+   linear in practice for the short strings it sees. */
+int st_wild_match(const char *pattern, const char *s);
+/* The filter rule shared by the list endpoints: with '*' or '%' it is a wildcard on
+   name; otherwise a case-insensitive substring of name or of other (may be NULL). */
+int st_filter_match(const char *filter, const char *name, const char *other);
+
 /* A client address as lighttpd reports it (IPv4 or IPv6 text), safe to hand to
    $ACM as the remote host name. Returns 1 if valid. */
 int st_valid_ip(const char *in);

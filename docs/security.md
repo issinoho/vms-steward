@@ -61,6 +61,31 @@ browser ─(1)─ nginx proxy manager ─(2)─ lighttpd ─(3)─ STEWARD.EXE �
 | No password or token in logs, responses or freed memory | `st_zero`, `st_json_free` scrubbing | API "no password in the audit log"; `audit_rules.sh scrub-with-st_zero` |
 | Data from OpenVMS never becomes markup | `dom.js` text nodes; JSON writer escapes `<>&`; CSP | `audit_rules.sh no-html-sinks`; unit writer test |
 | Privilege masks carried as full quadwords | review | PHASE1 probe finding; review checklist |
+| Read views add no access rules and hide nothing OpenVMS shows (D10): what a user sees is decided by the OS under their persona | design; the only reads are under the persona in the dispatcher | on VMS: PHASE2.md probes as STEWARD_TEST with and without GRPPRV; unit "an unprivileged user cannot list users" |
+| SYSUAF is opened only under the persona, and closed before the request ends; it never takes a record lock | `st_plat_user_enum` opens, walks and closes in one call, with `RRL+NLK` | review |
+| Query parameters that are present but unusable are refused, never ignored | `svc_query` | unit "an over-long filter is refused" |
+| Names from the URL are validated before any system service sees them (usernames, identifier names) | `st_valid_username`, `st_valid_ident` | unit; API "encoded slash" |
+
+## Phase 2 additions (users and identifiers, read-only)
+
+- **New endpoints:** six GETs (docs/api.md). All of them need a session and run
+  under the persona, and none changes anything.
+- **New system services, all under the persona:** RMS `$OPEN`/`$GET` of SYSUAF,
+  `$GETUAI`, `$IDTOASC`, `$ASCTOID`, `$FIND_HELD`, `$FIND_HOLDER`, `$FINISH_RDB`.
+- **New data shown:** every UAF field AUTHORIZE shows, except password hashes and
+  salts, which Steward never requests. It also shows identifier names, values,
+  attributes and holders. Owner names, LGICMD and directory strings are set by
+  whoever manages the UAF. They reach the page only through the JSON writer and
+  `dom.js` text nodes; an `href` is always `#/...` plus `encodeURIComponent`.
+- **What OpenVMS reveals, accepted as it is (D10):** a signed-in user can tell
+  whether a username exists (`$GETUAI` says RNF before checking privilege), and can
+  read the whole rights database. Neither is new: both are available at a terminal.
+  Before sign-in nothing changes.
+- **Cost:** a list makes one `$GETUAI` per SYSUAF record it scans, and an identifier
+  list reads the whole rights database (capped at 8192 entries per request). A
+  signed-in user can make the service do that work. Pages are capped at 200, and
+  the pool serves one request per process, so a heavy user slows only their own
+  process. Phase 5's load run measures it.
 
 ## What runs, and when
 
@@ -125,3 +150,6 @@ instance behind nginx proxy manager.
 | 2026-10-10 | 1 | Privilege masks above bit 31 truncated to 0 make `$SETPRV` a silent no-op that returns NORMAL (probe code) | Recorded as a rule | PHASE1.md | checklist item |
 | 2026-10-10 | 1 | Pool started with `RUN/DETACHED LOGINOUT` without `/AUTHORIZE`: the processes took the batch job's privileges, not the UAF's, so the authorized SYSPRV never reached them (fail-safe: persona creation failed) | Informational (deployment) | fe2aa18 | phase-exit check of `F$GETJPI(pid,"AUTHPRIV")` |
 | 2026-10-10 | 1 | Phase exit: review of the SYSPRV bracket and the pool change; browser checks of sign-in, D9, sign-out, DISUSER and expired passwords | None | | PHASE1.md "Phase exit checks" |
+| 2026-10-10 | 2 | A query parameter too long for its buffer, or badly encoded, was treated as absent, so `?filter=<80 chars>` listed every user instead of being refused | Low (no access gained: OpenVMS still decides; violates "refuse, don't repair") | Phase 2 commit (`svc_query`) | unit "an over-long filter is refused", "a badly encoded filter is refused" |
+| 2026-10-10 | 2 | `users/{u}/identifiers` fetched the UIC with `$GETUAI`, which made Steward stricter than OpenVMS for unprivileged users | Informational (functional; D10) | Phase 2 commit: UIC from `$ASCTOID` | unit "including another user's identifiers"; on VMS as STEWARD_TEST |
+| 2026-10-10 | 2 | UAF times are local; read as UTC, they were an hour late on a BST node | Informational (correctness) | Phase 2 commit | PHASE2.md AUTHORIZE comparison |

@@ -29,6 +29,12 @@ static const route routes[] = {
     { "GET",    "/api/v1/session", svc_session_get,    0 },
     { "DELETE", "/api/v1/session", svc_session_logout, R_NOPERSONA },
     { "PUT",    "/api/v1/session/privileges", svc_session_privileges, 0 },
+    { "GET",    "/api/v1/users",                       svc_users_list,       0 },
+    { "GET",    "/api/v1/users/{u}",                   svc_user_get,         0 },
+    { "GET",    "/api/v1/users/{u}/identifiers",       svc_user_identifiers, 0 },
+    { "GET",    "/api/v1/identifiers",                 svc_idents_list,      0 },
+    { "GET",    "/api/v1/identifiers/{id}",            svc_ident_get,        0 },
+    { "GET",    "/api/v1/identifiers/{id}/holders",    svc_ident_holders,    0 },
 };
 #define NROUTES (sizeof routes / sizeof routes[0])
 

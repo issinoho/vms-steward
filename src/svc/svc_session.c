@@ -47,7 +47,7 @@ static void priv_list(const unsigned int q[2], char *out, size_t outlen)
         }
 }
 
-static void privs(st_jw *w, const char *key, const unsigned int q[2])
+void svc_privs_json(st_jw *w, const char *key, const unsigned int q[2])
 {
     int bit;
     st_jw_key(w, key);
@@ -183,10 +183,10 @@ void svc_session_get(st_ctx *c)
     st_jw_kstr(&w, "owner", who.owner);
     st_jw_kstr(&w, "account", who.account);
     st_jw_kstr(&w, "uic", uic);
-    privs(&w, "authorized_privileges", who.priv_auth);
-    privs(&w, "default_privileges", who.priv_def);
-    privs(&w, "enabled_privileges", c->session.priv_enable);
-    privs(&w, "current_privileges", who.priv_cur);
+    svc_privs_json(&w, "authorized_privileges", who.priv_auth);
+    svc_privs_json(&w, "default_privileges", who.priv_def);
+    svc_privs_json(&w, "enabled_privileges", c->session.priv_enable);
+    svc_privs_json(&w, "current_privileges", who.priv_cur);
     st_jw_key(&w, "identifiers");
     st_jw_arr(&w);
     for (i = 0; i < who.nids; i++) st_jw_str(&w, who.ids[i]);

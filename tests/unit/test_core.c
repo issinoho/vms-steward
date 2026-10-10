@@ -436,6 +436,169 @@ static void test_privileges(void)
     CHECK(!st_plat_persona_active(), "no persona left active");
 }
 
+/* ------------------------------------------------- names, filters, wildcards */
+
+static void test_filters(void)
+{
+    char out[32];
+    CHECK(st_valid_ident("apache$www", out) && !strcmp(out, "APACHE$WWW"), "identifier names are upcased");
+    CHECK(!st_valid_ident("12345", out), "an all-digit identifier name is refused");
+    CHECK(!st_valid_ident("", out) && !st_valid_ident("A234567890123456789012345678901X", out),
+          "identifier names are 1-31 characters");
+    CHECK(!st_valid_ident("BAD-NAME", out) && !st_valid_ident("A B", out), "and only A-Z 0-9 _ $");
+    CHECK(st_valid_filter("steward*", out) && !strcmp(out, "STEWARD*"), "a filter is upcased");
+    CHECK(!st_valid_filter("a\"b", out) && !st_valid_filter("a\\b", out) && !st_valid_filter("a\nb", out),
+          "a filter refuses quotes, backslashes and control characters");
+    CHECK(st_wild_match("STEW*", "STEWARD_TEST") && st_wild_match("*TEST", "STEWARD_TEST") &&
+          st_wild_match("S%EWARD*", "steward_adm") && st_wild_match("*", ""),
+          "DCL wildcards: * any run, % one character, case-insensitive");
+    CHECK(!st_wild_match("STEW%", "STEWARD") && !st_wild_match("*X*", "STEWARD") && !st_wild_match("", "A"),
+          "and a non-match is a non-match");
+    CHECK(st_wild_match("*A*B*C*D*", "AXBXCXD") && !st_wild_match("*A*B*C*D*E", "AXBXCXDX"),
+          "several stars backtrack correctly");
+    CHECK(st_filter_match("TEST", "STEWARD_TEST", NULL) && st_filter_match("probe", "X", "steward probe"),
+          "without wildcards a filter is a substring of the name or of the owner");
+    CHECK(!st_filter_match("STEW*", "X", "STEWARD") && st_filter_match("", "X", NULL),
+          "with wildcards it matches the name only; empty matches everything");
+}
+
+/* ------------------------------------------------- users and identifiers (Phase 2) */
+
+static void sign_in(const char *body, char *cookie, size_t clen, char csrf[65])
+{
+    result a;
+    memset(&a, 0, sizeof a);
+    call("POST", "/api/v1/session", NULL, body, &a);
+    st_resp_free(&a.resp);
+    snprintf(cookie, clen, "steward_session=%s", a.cookie);
+    memcpy(csrf, a.csrf, 65);
+}
+
+static void test_users(void)
+{
+    result b;
+    char tc[140], ac[140], tcsrf[65], acsrf[65];
+    hdr t[2], adm[3];
+
+    sign_in("{\"username\":\"steward_test\",\"password\":\"test-pass\"}", tc, sizeof tc, tcsrf);
+    sign_in("{\"username\":\"steward_adm\",\"password\":\"admin-pass\"}", ac, sizeof ac, acsrf);
+    t[0].n = "HTTP_COOKIE"; t[0].v = tc; t[1].n = NULL;
+    adm[0].n = "HTTP_COOKIE"; adm[0].v = ac;
+    adm[1].n = "HTTP_X_STEWARD_CSRF"; adm[1].v = acsrf; adm[2].n = NULL;
+
+    call("GET", "/api/v1/users", NULL, NULL, &b);
+    CHECK(b.resp.status == 401, "listing users needs a session");
+    st_resp_free(&b.resp);
+
+    call("GET", "/api/v1/users", t, NULL, &b);
+    CHECK(b.resp.status == 403 && strstr(b.resp.body.data, "NOSYSPRV"),
+          "an unprivileged user cannot list users: the OS refuses, and says why");
+    st_resp_free(&b.resp);
+
+    call("GET", "/api/v1/users/steward_test", t, NULL, &b);
+    CHECK(b.resp.status == 200 && strstr(b.resp.body.data, "\"uic\":\"[362,1]\"") &&
+          strstr(b.resp.body.data, "\"quotas\":{\"prio\":4"),
+          "but can read their own record (reduced data, as $GETUAI allows)");
+    st_resp_free(&b.resp);
+
+    call("GET", "/api/v1/users/SYSTEM", t, NULL, &b);
+    CHECK(b.resp.status == 403, "and not someone else's");
+    st_resp_free(&b.resp);
+
+    call("GET", "/api/v1/users", adm, NULL, &b);
+    CHECK(b.resp.status == 403, "an admin with SYSPRV authorized but not switched on is refused too (D9)");
+    st_resp_free(&b.resp);
+
+    call("PUT", "/api/v1/session/privileges", adm, "{\"enabled\":[\"SYSPRV\"]}", &b);
+    st_resp_free(&b.resp);
+    call("GET", "/api/v1/users", adm, NULL, &b);
+    CHECK(b.resp.status == 200 && strstr(b.resp.body.data, "{\"users\":[{\"username\":\"DISABLED\"") &&
+          strstr(b.resp.body.data, "\"next\":null"),
+          "with SYSPRV on, users list in SYSUAF (alphabetical) order");
+    CHECK(strstr(b.resp.body.data, "\"flags\":[\"DISUSER\"]") != NULL, "flags are named as AUTHORIZE names them");
+    st_resp_free(&b.resp);
+
+    call("GET", "/api/v1/users?limit=2", adm, NULL, &b);
+    CHECK(b.resp.status == 200 && strstr(b.resp.body.data, "\"next\":\"EXPIRED\""), "a page ends with a cursor");
+    st_resp_free(&b.resp);
+    call("GET", "/api/v1/users?limit=2&after=EXPIRED", adm, NULL, &b);
+    CHECK(b.resp.status == 200 && strstr(b.resp.body.data, "[{\"username\":\"STEWARD_ADM\"") &&
+          strstr(b.resp.body.data, "\"next\":\"STEWARD_TEST\""), "and the cursor gives the next page");
+    st_resp_free(&b.resp);
+
+    call("GET", "/api/v1/users?filter=steward*", adm, NULL, &b);
+    CHECK(b.resp.status == 200 && strstr(b.resp.body.data, "STEWARD_ADM") &&
+          strstr(b.resp.body.data, "STEWARD_TEST") && !strstr(b.resp.body.data, "SYSTEM"),
+          "a wildcard filter matches usernames");
+    st_resp_free(&b.resp);
+    call("GET", "/api/v1/users?filter=manager", adm, NULL, &b);
+    CHECK(b.resp.status == 200 && strstr(b.resp.body.data, "\"username\":\"SYSTEM\"") &&
+          !strstr(b.resp.body.data, "STEWARD"), "a plain filter also matches owners");
+    st_resp_free(&b.resp);
+
+    call("GET", "/api/v1/users?limit=0", adm, NULL, &b);
+    CHECK(b.resp.status == 400, "limit is validated");
+    st_resp_free(&b.resp);
+    call("GET", "/api/v1/users?filter=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA", adm, NULL, &b);
+    CHECK(b.resp.status == 400, "an over-long filter is refused, not ignored (it would list everyone)");
+    st_resp_free(&b.resp);
+    call("GET", "/api/v1/users?filter=%zz", adm, NULL, &b);
+    CHECK(b.resp.status == 400, "a badly encoded filter is refused");
+    st_resp_free(&b.resp);
+    call("GET", "/api/v1/users?after=bad-name", adm, NULL, &b);
+    CHECK(b.resp.status == 400, "the cursor is validated");
+    st_resp_free(&b.resp);
+    call("GET", "/api/v1/users/NOBODY", adm, NULL, &b);
+    CHECK(b.resp.status == 404, "a user that does not exist is 404");
+    st_resp_free(&b.resp);
+    call("GET", "/api/v1/users/a%2Fb", adm, NULL, &b);
+    CHECK(b.resp.status == 400 || b.resp.status == 404, "a malformed username never reaches the OS");
+    st_resp_free(&b.resp);
+
+    call("GET", "/api/v1/users/STEWARD_ADM/identifiers", adm, NULL, &b);
+    CHECK(b.resp.status == 200 && strstr(b.resp.body.data, "{\"name\":\"STEWARD_DEMO\",\"value\":\"%X80010001\""),
+          "identifiers held, with values as AUTHORIZE shows them");
+    st_resp_free(&b.resp);
+
+    call("GET", "/api/v1/identifiers", t, NULL, &b);
+    CHECK(b.resp.status == 200, "anyone may read the rights database, as on OpenVMS (PHASE2.md)");
+    st_resp_free(&b.resp);
+    call("GET", "/api/v1/users/STEWARD_ADM/identifiers", t, NULL, &b);
+    CHECK(b.resp.status == 200 && strstr(b.resp.body.data, "STEWARD_DEMO"),
+          "including another user's identifiers, though not their UAF record");
+    st_resp_free(&b.resp);
+    call("GET", "/api/v1/users/BATCH/identifiers", t, NULL, &b);
+    CHECK(b.resp.status == 404, "a general identifier is not a user");
+    st_resp_free(&b.resp);
+
+    call("GET", "/api/v1/identifiers", adm, NULL, &b);
+    CHECK(b.resp.status == 200 && strstr(b.resp.body.data, "[{\"name\":\"BATCH\"") &&
+          !strstr(b.resp.body.data, "\"type\":\"uic\""),
+          "identifiers list general ones by default, sorted by name");
+    st_resp_free(&b.resp);
+    call("GET", "/api/v1/identifiers?type=uic&filter=steward*", adm, NULL, &b);
+    CHECK(b.resp.status == 200 && strstr(b.resp.body.data, "\"value\":\"[362,2]\",\"type\":\"uic\""),
+          "UIC identifiers on request, with octal UICs");
+    st_resp_free(&b.resp);
+    call("GET", "/api/v1/identifiers?type=bogus", adm, NULL, &b);
+    CHECK(b.resp.status == 400, "type is validated");
+    st_resp_free(&b.resp);
+
+    call("GET", "/api/v1/identifiers/steward_demo", adm, NULL, &b);
+    CHECK(b.resp.status == 200 && strstr(b.resp.body.data, "\"attributes\":[\"RESOURCE\"]"),
+          "identifier detail names its attributes");
+    st_resp_free(&b.resp);
+    call("GET", "/api/v1/identifiers/STEWARD_OPS/holders", adm, NULL, &b);
+    CHECK(b.resp.status == 200 && strstr(b.resp.body.data, "{\"username\":\"STEWARD_ADM\",\"uic\":\"[362,2]\"") &&
+          strstr(b.resp.body.data, "STEWARD_TEST"), "holders are listed with their UICs");
+    st_resp_free(&b.resp);
+    call("GET", "/api/v1/identifiers/NO_SUCH_ID", adm, NULL, &b);
+    CHECK(b.resp.status == 404 && strstr(b.resp.body.data, "NOSUCHID"), "an unknown identifier is 404");
+    st_resp_free(&b.resp);
+
+    CHECK(!st_plat_persona_active(), "no persona left active");
+}
+
 static void test_gateway(void)
 {
     st_app_config cfg;
@@ -481,6 +644,8 @@ int main(void)
     test_proxy();
     test_dispatch();
     test_privileges();
+    test_filters();
+    test_users();
     test_gateway();
     printf("%d checks, %d failed\n", checks, failures);
     return failures ? 1 : 0;

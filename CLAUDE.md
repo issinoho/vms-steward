@@ -66,3 +66,10 @@ asking.
   that writes one. If you cut a remote command short, stop the VMS process it
   started (by PID, your own only).
 - **`#include "../x.h"` does not work in VSI C:** use bare names and include directories.
+- **The C RTL lowercases unquoted `argv`.** Compare command-line arguments
+  case-insensitively.
+- **UAF dates are local time**, and the C RTL has no time zone rules here
+  (`decc$fix_time` is a no-op). Convert with the system's current offset
+  (`st_plat_vms.c`, `local_offset`).
+- **Take item codes and masks from the headers on the node** (`LIBRARY/EXTRACT` from
+  `SYS$STARLET_C.TLB`), never from memory: DISUSER is `UAI$M_DISACNT`.

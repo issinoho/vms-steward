@@ -19,3 +19,33 @@ child's *authorized* set. With `/AUTHORIZE` the process logs in properly:
 AUTHPRIV = `DETACH,TMPMBX,NETMBX,SYSPRV`, CURPRIV = `DETACH,TMPMBX,NETMBX`, and
 the quotas come from the UAF, so the pool no longer sets them. A RESTRICTED
 account needs a LOGIN.COM for this, which `[STEWARD]` has.
+
+## The rights database is world-readable through system services (2026-10-10)
+
+RIGHTSLIST.DAT is `(S:RWED,O:RWED,G,W)`, but an unprivileged persona read every
+identifier (`$IDTOASC` wildcard), the holders of one (`$FIND_HOLDER`), and another
+user's holdings (`$FIND_HELD`). The services read the file in executive mode.
+SYSUAF is different: RMS refuses to open it without SYSPRV or READALL. Details are
+in PHASE2.md.
+
+## UAF times are local, and the C RTL has no time zone rules here (2026-10-10)
+
+`$GETUAI` dates (password change, last login, expiration) are local system time. With
+`SYS$TIMEZONE_DIFFERENTIAL` 3600 (BST), they read an hour late when taken as UTC.
+`decc$fix_time` returned them unchanged, because `TZ` is not defined. Steward subtracts
+the current offset instead (PHASE2.md, finding 4).
+
+## The VSI C RTL lowercases unquoted `argv` (2026-10-10)
+
+`api_probe STEWARD_TEST GRPPRV ...` arrived with `argv[2]` = `grpprv`. DCL upper-cases
+unquoted parameters, and the C RTL then lowercases them unless
+`DECC$ARGV_PARSE_STYLE` is enabled. Command-line tools must compare case-insensitively,
+or the user must quote the argument.
+
+## UAIDEF names (2026-10-10)
+
+Read from `SYS$LIBRARY:SYS$STARLET_C.TLB`, not guessed:
+- DISUSER is `UAI$M_DISACNT`.
+- AUTHORIZE's DISMAIL is `UAI$M_NOMAIL`, and DISNEWMAIL is `UAI$M_DISMAIL`.
+- DISWELCOME is `UAI$M_DISWELCOM`.
+- Bit 20 is `UAI$M_DEFCLSVAL`.

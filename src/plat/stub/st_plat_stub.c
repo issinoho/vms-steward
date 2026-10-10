@@ -9,6 +9,14 @@
      STEWARD_TEST   test-pass      [362,1] TMPMBX, NETMBX only, as on the x86 node
      DISABLED       disabled-pass  DISUSER: fails, reason "account is disabled"
      EXPIRED        expired-pass   right password, but expired
+     SYSTEM         (none)         [1,4] every privilege; cannot sign in here
+
+   Reading users and identifiers follows what the x86 node showed (PHASE2.md):
+   listing SYSUAF needs SYSPRV or READALL; $GETUAI allows your own record, your
+   group's with GRPPRV, anyone's with SYSPRV, and says RNF for a user that does not
+   exist before it checks privilege; the rights database ($IDTOASC, $FIND_HELD,
+   $FIND_HOLDER) is readable by anyone. So STEWARD_ADM can list users only after
+   switching SYSPRV on (D9), as at a terminal.
 
    These are test fixtures, not credentials: nothing here touches a real system.
    Sessions are kept in memory, so the stub serves a single process. */
@@ -35,15 +43,31 @@ typedef struct {
 static const stub_user users[] = {
     { "STEWARD_ADM", "admin-pass", "Steward admin (stub)", "STEWARD", 0x00F20002u,
       { BIT(15) | BIT(20) | BIT(28) | BIT(18), BIT(2) }, { BIT(15) | BIT(20) | BIT(18), 0 },
-      0, 0, { "STEWARD_DEMO", NULL } },
+      0, 0, { "STEWARD_DEMO", "STEWARD_OPS", NULL } },
     { "STEWARD_TEST", "test-pass", "Steward test (stub)", "STEWARD", 0x00F20001u,
-      { BIT(15) | BIT(20), 0 }, { BIT(15) | BIT(20), 0 }, 0, 0, { NULL } },
+      { BIT(15) | BIT(20), 0 }, { BIT(15) | BIT(20), 0 }, 0, 0, { "STEWARD_OPS", NULL } },
     { "DISABLED", "disabled-pass", "Disabled account (stub)", "", 0x00F20003u,
       { BIT(15) | BIT(20), 0 }, { BIT(15) | BIT(20), 0 }, 1, 0, { NULL } },
     { "EXPIRED", "expired-pass", "Expired password (stub)", "", 0x00F20004u,
       { BIT(15) | BIT(20), 0 }, { BIT(15) | BIT(20), 0 }, 0, 1, { NULL } },
+    { "SYSTEM", NULL, "SYSTEM MANAGER", "SYSTEM", 0x00010004u,
+      { 0xFFFFFFFFu, 0x7Fu }, { 0xFFFFFFFFu, 0x7Fu }, 0, 0, { NULL } },
 };
 #define NUSERS (sizeof users / sizeof users[0])
+
+/* General identifiers. Holdings come from the users' ids lists above. */
+static const st_ident idents[] = {
+    { "STEWARD_DEMO", 0x80010001u, 1u << ST_IA_RESOURCE },
+    { "STEWARD_OPS",  0x80010002u, 0 },
+    { "BATCH",        0x80000001u, 0 },
+    { "INTERACTIVE",  0x80000003u, 0 },
+    { "NETWORK",      0x80000005u, 0 },
+};
+#define NIDENTS (sizeof idents / sizeof idents[0])
+
+/* Condition values the stub reports, so problems carry vms_status as on OpenVMS. */
+#define C_NOSYSPRV 0x2964u
+#define C_NOSUCHID 0x1CA4u
 
 #define NSESSIONS 256
 static st_session sessions[NSESSIONS];
@@ -84,7 +108,7 @@ int st_plat_authenticate(const char *username, const char *password,
 {
     const stub_user *u = find_user(username);
     (void) client;
-    if (!u || strcmp(u->password, password)) {
+    if (!u || !u->password || strcmp(u->password, password)) {
         set_err(e, ST_OK, u ? "invalid password" : "no such user");
         return ST_AUTH_FAILED;
     }
@@ -136,6 +160,162 @@ int st_plat_whoami(st_whoami *w, st_err *e)
     w->priv_cur[0] = persona_cur[0];
     w->priv_cur[1] = persona_cur[1];
     for (i = 0; i < 4 && persona->ids[i]; i++) st_copy(w->ids[w->nids++], sizeof w->ids[0], persona->ids[i]);
+    return 0;
+}
+
+/* ================================================================ users, identifiers */
+
+static int cur_has(int bit) { return persona && (persona_cur[bit / 32] & (1u << (bit % 32))); }
+#define P_SYSPRV  28
+#define P_GRPPRV  34
+#define P_READALL 35
+
+static int refuse(st_err *e)
+{
+    set_err(e, ST_E_NOPRIV, "%SYSTEM-F-NOSYSPRV, operation requires SYSPRV privilege");
+    e->cond = C_NOSYSPRV;
+    return -1;
+}
+
+/* SYSUAF is (S:RWED,O:RWED,G,W) and owned by group 1. */
+static int may_read_uaf(void)
+{
+    return cur_has(P_SYSPRV) || cur_has(P_READALL) || (persona && (persona->uic >> 16) == 1);
+}
+
+static int cmp_users(const void *a, const void *b)
+{
+    return strcmp((*(const stub_user *const *) a)->username, (*(const stub_user *const *) b)->username);
+}
+
+int st_plat_user_enum(const char *after, st_name_cb fn, void *ctx, st_err *e)
+{
+    const stub_user *sorted[NUSERS];
+    size_t i;
+    if (!may_read_uaf()) return refuse(e);
+    for (i = 0; i < NUSERS; i++) sorted[i] = &users[i];
+    qsort(sorted, NUSERS, sizeof sorted[0], cmp_users);
+    for (i = 0; i < NUSERS; i++) {
+        if (after && *after && strcmp(sorted[i]->username, after) <= 0) continue;
+        if (fn(sorted[i]->username, ctx)) break;
+    }
+    return 0;
+}
+
+int st_plat_user_get(const char *username, st_user *out, st_err *e)
+{
+    const stub_user *u = find_user(username);
+    int i;
+    if (!persona) { set_err(e, ST_E_INTERNAL, "no persona"); return -1; }
+    /* As $GETUAI on the node: a missing record is RNF whoever asks. */
+    if (!u) { set_err(e, ST_E_NOTFOUND, "%RMS-E-RNF, record not found"); e->cond = 0x182B2u; return -1; }
+    if (!(u == persona || cur_has(P_SYSPRV) ||
+          (cur_has(P_GRPPRV) && (u->uic >> 16) == (persona->uic >> 16))))
+        return refuse(e);
+    memset(out, 0, sizeof *out);
+    st_copy(out->username, sizeof out->username, u->username);
+    st_copy(out->owner, sizeof out->owner, u->owner);
+    st_copy(out->account, sizeof out->account, u->account);
+    out->uic = u->uic;
+    if (u->disabled) out->flags |= 1u << ST_UF_DISUSER;
+    if (u->expired) out->flags |= 1u << ST_UF_PWD_EXPIRED;
+    if (!strcmp(u->username, "STEWARD_ADM")) out->flags |= 1u << ST_UF_DISCTLY;
+    st_copy(out->cli, sizeof out->cli, "DCL");
+    st_copy(out->clitables, sizeof out->clitables, "DCLTABLES");
+    st_copy(out->defdev, sizeof out->defdev, "SYS$SYSDEVICE:");
+    snprintf(out->defdir, sizeof out->defdir, "[%s]", u->username);
+    out->last_login_i = u->password ? 1791700000LL : 0;
+    out->pwd_date = u->expired ? -1 : 1791000000LL;
+    out->pwd_lifetime = 90LL * 86400;
+    out->pwd_minimum = 15;
+    out->secondary_days = 0x60;              /* Saturday and Sunday */
+    if (!strcmp(u->username, "STEWARD_TEST"))
+        out->access_p[ST_ACC_DIALUP] = out->access_s[ST_ACC_DIALUP] = 0xFFFFFFu;   /* no dialup */
+    out->priv_auth[0] = u->priv_auth[0]; out->priv_auth[1] = u->priv_auth[1];
+    out->priv_def[0] = u->priv_def[0];   out->priv_def[1] = u->priv_def[1];
+    {
+        static const unsigned long q[ST_Q_COUNT] = { 4, 4, 0, 0, 0, 8, 150, 150, 300, 100, 4000,
+            128, 0, 128000, 0, 4096, 4096, 8192, 16384, 256000, 0 };
+        for (i = 0; i < ST_Q_COUNT; i++) out->quota[i] = q[i];
+    }
+    return 0;
+}
+
+static const st_ident *find_ident(const char *name)
+{
+    size_t i;
+    for (i = 0; i < NIDENTS; i++)
+        if (!strcmp(idents[i].name, name)) return &idents[i];
+    return NULL;
+}
+
+int st_plat_ident_enum(st_ident_cb fn, void *ctx, st_err *e)
+{
+    size_t i;
+    (void) e;
+    for (i = 0; i < NIDENTS; i++)
+        if (fn(&idents[i], ctx)) return 0;
+    for (i = 0; i < NUSERS; i++) {   /* a UIC identifier for every user */
+        st_ident id;
+        memset(&id, 0, sizeof id);
+        st_copy(id.name, sizeof id.name, users[i].username);
+        id.value = users[i].uic;
+        if (fn(&id, ctx)) return 0;
+    }
+    return 0;
+}
+
+int st_plat_ident_get(const char *name, st_ident *out, st_err *e)
+{
+    const st_ident *id = find_ident(name);
+    const stub_user *u = find_user(name);
+    if (id) { *out = *id; return 0; }
+    if (u) {
+        memset(out, 0, sizeof *out);
+        st_copy(out->name, sizeof out->name, u->username);
+        out->value = u->uic;
+        return 0;
+    }
+    set_err(e, ST_E_NOTFOUND, "%SYSTEM-F-NOSUCHID, unknown rights identifier");
+    e->cond = C_NOSUCHID;
+    return -1;
+}
+
+int st_plat_ident_held(unsigned int uic, st_ident_cb fn, void *ctx, st_err *e)
+{
+    size_t i;
+    int k;
+    (void) e;
+    for (i = 0; i < NUSERS; i++) {
+        if (users[i].uic != uic) continue;
+        for (k = 0; k < 4 && users[i].ids[k]; k++) {
+            const st_ident *id = find_ident(users[i].ids[k]);
+            if (id) {
+                st_ident h = *id;
+                h.attrib = 0;
+                if (fn(&h, ctx)) return 0;
+            }
+        }
+    }
+    return 0;
+}
+
+int st_plat_ident_holders(unsigned int value, st_ident_cb fn, void *ctx, st_err *e)
+{
+    size_t i;
+    int k;
+    (void) e;
+    for (i = 0; i < NUSERS; i++)
+        for (k = 0; k < 4 && users[i].ids[k]; k++) {
+            const st_ident *id = find_ident(users[i].ids[k]);
+            if (id && id->value == value) {
+                st_ident h;
+                memset(&h, 0, sizeof h);
+                st_copy(h.name, sizeof h.name, users[i].username);
+                h.value = users[i].uic;
+                if (fn(&h, ctx)) return 0;
+            }
+        }
     return 0;
 }
 

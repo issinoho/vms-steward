@@ -78,6 +78,91 @@ typedef struct {
 
 int  st_plat_whoami(st_whoami *w, st_err *e);
 
+/* ---- users (SYSUAF), read as the current persona ----
+
+   OpenVMS decides what the persona may see: SYSUAF has no group or world access,
+   and $GETUAI allows the caller's own record, its UIC group's with GRPPRV, and
+   anyone's with SYSPRV. A refusal comes back as ST_E_NOPRIV with the OS's text. */
+
+/* User flags, as bit numbers. On OpenVMS these are the UAI$_FLAGS bits, mapped one
+   by one from the UAI$M_ constants (st_plat_vms.c), never assumed. */
+enum {
+    ST_UF_DISCTLY, ST_UF_DEFCLI, ST_UF_LOCKPWD, ST_UF_RESTRICTED, ST_UF_DISUSER,
+    ST_UF_DISWELCOME, ST_UF_DISNEWMAIL, ST_UF_DISMAIL, ST_UF_GENPWD, ST_UF_PWD_EXPIRED,
+    ST_UF_PWD2_EXPIRED, ST_UF_AUDIT, ST_UF_DISREPORT, ST_UF_DISRECONNECT,
+    ST_UF_AUTOLOGIN, ST_UF_DISFORCE_PWD_CHANGE, ST_UF_CAPTIVE, ST_UF_DISIMAGE,
+    ST_UF_DISPWDDIC, ST_UF_DISPWDHIS, ST_UF_DEFCLSVAL, ST_UF_EXTAUTH,
+    ST_UF_MIGRATEPWD, ST_UF_VMSAUTH, ST_UF_DISPWDSYNCH, ST_UF_PWDMIX,
+    ST_UF_COUNT
+};
+
+/* Access restrictions by kind of login, as AUTHORIZE shows them. */
+enum { ST_ACC_NETWORK, ST_ACC_BATCH, ST_ACC_LOCAL, ST_ACC_DIALUP, ST_ACC_REMOTE, ST_ACC_COUNT };
+
+/* Quotas and limits, in AUTHORIZE's units. ST_Q_CPU is in 10 ms ticks, 0 = none. */
+enum {
+    ST_Q_PRIO, ST_Q_QUEPRIO, ST_Q_MAXJOBS, ST_Q_MAXACCTJOBS, ST_Q_MAXDETACH, ST_Q_PRCLM,
+    ST_Q_BIOLM, ST_Q_DIOLM, ST_Q_ASTLM, ST_Q_TQELM, ST_Q_ENQLM, ST_Q_FILLM, ST_Q_SHRFILLM,
+    ST_Q_BYTLM, ST_Q_PBYTLM, ST_Q_JTQUOTA, ST_Q_WSDEF, ST_Q_WSQUO, ST_Q_WSEXTENT,
+    ST_Q_PGFLQUO, ST_Q_CPU,
+    ST_Q_COUNT
+};
+
+typedef struct {
+    char          username[13];
+    char          owner[32];
+    char          account[9];
+    unsigned int  uic;                 /* group << 16 | member */
+    unsigned int  flags;               /* 1 << ST_UF_* */
+    char          cli[32], clitables[32];
+    char          defdev[32], defdir[64], lgicmd[64];
+    /* Times in seconds since 1970-01-01 UTC; 0 = none or never. */
+    long long     expiration;
+    long long     last_login_i, last_login_n;   /* interactive, non-interactive */
+    long long     pwd_date, pwd2_date;          /* -1: pre-expired */
+    long long     pwd_lifetime;                 /* seconds; 0 = none */
+    int           pwd_minimum;
+    int           login_fails;
+    unsigned int  secondary_days;      /* bit 0 Monday .. bit 6 Sunday */
+    /* bit h set: no access in hour h (0-23), on primary and on secondary days */
+    unsigned int  access_p[ST_ACC_COUNT], access_s[ST_ACC_COUNT];
+    unsigned int  priv_auth[2], priv_def[2];
+    unsigned long quota[ST_Q_COUNT];
+} st_user;
+
+/* Calls fn with each username in SYSUAF order (alphabetical), starting after `after`
+   ("" for the start), until fn returns nonzero or the file ends. */
+typedef int (*st_name_cb)(const char *username, void *ctx);
+int st_plat_user_enum(const char *after, st_name_cb fn, void *ctx, st_err *e);
+int st_plat_user_get(const char *username, st_user *u, st_err *e);
+
+/* ---- rights identifiers (RIGHTSLIST), read as the current persona ---- */
+
+/* Identifier attributes, as bit numbers (KGB$M_* on OpenVMS, mapped one by one). */
+enum {
+    ST_IA_RESOURCE, ST_IA_DYNAMIC, ST_IA_NOACCESS, ST_IA_SUBSYSTEM, ST_IA_IMPERSONATE,
+    ST_IA_HOLDER_HIDDEN, ST_IA_NAME_HIDDEN,
+    ST_IA_COUNT
+};
+
+#define ST_IDENT_GENERAL 0x80000000u   /* value bit 31: general; clear: a UIC */
+
+typedef struct {
+    char         name[32];     /* "" when the OS gave none (a holder with no name) */
+    unsigned int value;        /* the identifier, or for a holder its UIC */
+    unsigned int attrib;       /* 1 << ST_IA_* */
+} st_ident;
+
+typedef int (*st_ident_cb)(const st_ident *id, void *ctx);
+/* Every identifier, general and UIC, in the database's own order. */
+int st_plat_ident_enum(st_ident_cb fn, void *ctx, st_err *e);
+int st_plat_ident_get(const char *name, st_ident *id, st_err *e);
+/* The identifiers the holder with this UIC holds; attrib is the holding's. */
+int st_plat_ident_held(unsigned int uic, st_ident_cb fn, void *ctx, st_err *e);
+/* The holders of an identifier: value is the holder's UIC, name its UIC identifier
+   (normally the username), attrib the holding's. */
+int st_plat_ident_holders(unsigned int value, st_ident_cb fn, void *ctx, st_err *e);
+
 /* ---- crypto and time ---- */
 int  st_plat_random(void *p, size_t n);
 void st_plat_sha256(const void *p, size_t n, unsigned char out[32]);

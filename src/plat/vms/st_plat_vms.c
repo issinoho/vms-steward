@@ -6,8 +6,9 @@
    - $ACM, non-dialogue, authenticates; intrusion records name the client when
      ACME$_REMOTE_HOST_NAME and ACME$_REMOTE_USERNAME are given (probe_acm_host).
    - It accepts an expired password (probe_acm), so expiry is checked here, as the
-     user: an unprivileged persona may $GETUAI its own record (probe_selfuai), so the
-     service account needs no SYSPRV.
+     user: an unprivileged persona may $GETUAI its own record (probe_selfuai).
+   - $PERSONA_CREATE reads the user's UAF record, so the service holds SYSPRV as
+     authorized and enables it only around that call (D2 amendment, PHASE1.md).
    - Under a persona the OS checks the persona's rights and privileges, and $SETPRV
      is limited by the persona's authorized mask (probe_persona, probe_setprv).
    - Privilege masks above bit 31 are 64-bit; they are carried as two longwords.
@@ -21,6 +22,7 @@
 #include <time.h>
 #include <descrip.h>
 #include <jpidef.h>
+#include <kgbdef.h>
 #include <lnmdef.h>
 #include <prvdef.h>
 #include <rms.h>
@@ -567,6 +569,340 @@ int st_plat_whoami(st_whoami *w, st_err *e)
         }
         sys$finish_rdb(&ctx);
     }
+    return 0;
+}
+
+/* ================================================================ users
+
+   Everything here runs under the caller's persona, so RMS and $GETUAI apply that
+   user's rights: SYSUAF is (S:RWED,O:RWED,G,W), so listing needs SYSPRV or
+   READALL, and $GETUAI allows the caller's own record, its group's with GRPPRV,
+   anyone's with SYSPRV (PHASE0 #3, #4). */
+
+/* VMS times: 100 ns units since 17-NOV-1858, in *local* time: SYSUAF stores them as
+   the system clock read (PHASE2.md). OpenVMS keeps only the current offset from UTC
+   (SYS$TIMEZONE_DIFFERENTIAL), and the C RTL here has no time zone rules
+   (decc$fix_time returned local time unchanged), so the current offset is applied
+   to every date: one from the other side of a daylight-saving change is an hour
+   out, as it would be in any OpenVMS tool. 0 stays 0 ("none"), -1 stays -1
+   (pre-expired). */
+#define VMS_EPOCH_OFFSET 0x007C95674BEB4000ull   /* 1970-01-01 in VMS time */
+
+static long long local_offset(void)
+{
+    unsigned int nowq[2] = { 0, 0 };
+    unsigned long long v;
+    long long local, diff;
+    sys$gettim((void *) nowq);
+    v = ((unsigned long long) nowq[1] << 32) | nowq[0];
+    local = (long long) ((v - VMS_EPOCH_OFFSET) / 10000000ull);
+    diff = local - (long long) time(NULL);
+    /* Zones are whole quarter hours; rounding absorbs the gap between the reads. */
+    return (diff >= 0 ? (diff + 450) / 900 : -((-diff + 450) / 900)) * 900;
+}
+
+static long long unix_time(const unsigned int q[2])
+{
+    unsigned long long v = ((unsigned long long) q[1] << 32) | q[0];
+    if (v == 0) return 0;
+    if (v == ~0ull) return -1;
+    if (v < VMS_EPOCH_OFFSET) return 0;
+    return (long long) ((v - VMS_EPOCH_OFFSET) / 10000000ull) - local_offset();
+}
+
+/* A counted string (length byte first) from $GETUAI, into out. */
+static void counted(const char *buf, unsigned short retlen, char *out, size_t outlen)
+{
+    size_t n = retlen ? (unsigned char) buf[0] : 0;
+    if (n > retlen - 1u) n = retlen ? retlen - 1u : 0;
+    if (n >= outlen) n = outlen - 1;
+    memcpy(out, buf + 1, n);
+    out[n] = '\0';
+    while (n && out[n - 1] == ' ') out[--n] = '\0';
+}
+
+static void blank_trim(const char *buf, size_t len, char *out, size_t outlen)
+{
+    size_t n = len < outlen - 1 ? len : outlen - 1;
+    memcpy(out, buf, n);
+    out[n] = '\0';
+    while (n && (out[n - 1] == ' ' || out[n - 1] == '\0')) out[--n] = '\0';
+}
+
+/* UAI$_FLAGS bit by bit, from UAIDEF's own masks (DISUSER is UAI$M_DISACNT). */
+static const struct { unsigned int mask; int bit; } uaf_flags[] = {
+    { UAI$M_DISCTLY, ST_UF_DISCTLY }, { UAI$M_DEFCLI, ST_UF_DEFCLI },
+    { UAI$M_LOCKPWD, ST_UF_LOCKPWD }, { UAI$M_RESTRICTED, ST_UF_RESTRICTED },
+    { UAI$M_DISACNT, ST_UF_DISUSER }, { UAI$M_DISWELCOM, ST_UF_DISWELCOME },
+    { UAI$M_DISMAIL, ST_UF_DISNEWMAIL }, { UAI$M_NOMAIL, ST_UF_DISMAIL },
+    { UAI$M_GENPWD, ST_UF_GENPWD }, { UAI$M_PWD_EXPIRED, ST_UF_PWD_EXPIRED },
+    { UAI$M_PWD2_EXPIRED, ST_UF_PWD2_EXPIRED }, { UAI$M_AUDIT, ST_UF_AUDIT },
+    { UAI$M_DISREPORT, ST_UF_DISREPORT }, { UAI$M_DISRECONNECT, ST_UF_DISRECONNECT },
+    { UAI$M_AUTOLOGIN, ST_UF_AUTOLOGIN }, { UAI$M_DISFORCE_PWD_CHANGE, ST_UF_DISFORCE_PWD_CHANGE },
+    { UAI$M_CAPTIVE, ST_UF_CAPTIVE }, { UAI$M_DISIMAGE, ST_UF_DISIMAGE },
+    { UAI$M_DISPWDDIC, ST_UF_DISPWDDIC }, { UAI$M_DISPWDHIS, ST_UF_DISPWDHIS },
+    { UAI$M_DEFCLSVAL, ST_UF_DEFCLSVAL }, { UAI$M_EXTAUTH, ST_UF_EXTAUTH },
+    { UAI$M_MIGRATEPWD, ST_UF_MIGRATEPWD }, { UAI$M_VMSAUTH, ST_UF_VMSAUTH },
+    { UAI$M_DISPWDSYNCH, ST_UF_DISPWDSYNCH }, { UAI$M_PWDMIX, ST_UF_PWDMIX },
+};
+
+int st_plat_user_enum(const char *after, st_name_cb fn, void *ctx, st_err *e)
+{
+    struct FAB fab = cc$rms_fab;
+    struct RAB rab = cc$rms_rab;
+    static char rec[1412];   /* UAF$C_LENGTH is 644; room for longer records */
+    char key[32], user[33];
+    unsigned int st;
+
+    fab.fab$l_fna = "SYSUAF";            fab.fab$b_fns = 6;
+    fab.fab$l_dna = "SYS$SYSTEM:.DAT";   fab.fab$b_dns = 15;
+    fab.fab$b_fac = FAB$M_GET;
+    /* Shared, never locking a record: AUTHORIZE and LOGINOUT are never held up. */
+    fab.fab$b_shr = FAB$M_SHRGET | FAB$M_SHRPUT | FAB$M_SHRUPD | FAB$M_SHRDEL;
+    st = sys$open(&fab);
+    if (!(st & 1)) { set_cond(e, st); return -1; }
+    rab.rab$l_fab = &fab;
+    rab.rab$l_rop = RAB$M_RRL | RAB$M_NLK;
+    rab.rab$l_ubf = rec;
+    rab.rab$w_usz = sizeof rec;
+    st = sys$connect(&rab);
+    if (!(st & 1)) { sys$close(&fab); set_cond(e, st); return -1; }
+
+    if (after && *after) {   /* the first record past the cursor, by username (key 0) */
+        size_t n = strlen(after);
+        memset(key, ' ', sizeof key);
+        memcpy(key, after, n > sizeof key ? sizeof key : n);
+        rab.rab$b_rac = RAB$C_KEY;
+        rab.rab$b_krf = 0;
+        rab.rab$l_kbf = key;
+        rab.rab$b_ksz = sizeof key;
+        rab.rab$l_rop |= RAB$M_KGT;
+        st = sys$get(&rab);
+        rab.rab$b_rac = RAB$C_SEQ;
+    } else {
+        rab.rab$b_rac = RAB$C_SEQ;
+        st = sys$get(&rab);
+    }
+    for (; st & 1; st = sys$get(&rab)) {
+        if (rab.rab$w_rsz < 36) continue;
+        blank_trim(rec + 4, 32, user, sizeof user);   /* UAF$T_USERNAME */
+        if (!*user || strlen(user) > 12) continue;
+        if (fn(user, ctx)) { st = RMS$_EOF; break; }
+    }
+    sys$disconnect(&rab);
+    sys$close(&fab);
+    if (st != RMS$_EOF && st != RMS$_RNF) { set_cond(e, st); return -1; }
+    return 0;
+}
+
+int st_plat_user_get(const char *username, st_user *u, st_err *e)
+{
+    /* Quotas, in ST_Q_* order, with their item sizes. */
+    static const struct { unsigned short code, size; } quotas[ST_Q_COUNT] = {
+        { UAI$_PRI, 1 }, { UAI$_QUEPRI, 1 }, { UAI$_MAXJOBS, 2 }, { UAI$_MAXACCTJOBS, 2 },
+        { UAI$_MAXDETACH, 2 }, { UAI$_PRCCNT, 2 }, { UAI$_BIOLM, 2 }, { UAI$_DIOLM, 2 },
+        { UAI$_ASTLM, 2 }, { UAI$_TQCNT, 2 }, { UAI$_ENQLM, 2 }, { UAI$_FILLM, 2 },
+        { UAI$_SHRFILLM, 2 }, { UAI$_BYTLM, 4 }, { UAI$_PBYTLM, 4 }, { UAI$_JTQUOTA, 4 },
+        { UAI$_DFWSCNT, 4 }, { UAI$_WSQUOTA, 4 }, { UAI$_WSEXTENT, 4 }, { UAI$_PGFLQUOTA, 4 },
+        { UAI$_CPUTIM, 4 },
+    };
+    static const unsigned short access_p[ST_ACC_COUNT] = {
+        UAI$_NETWORK_ACCESS_P, UAI$_BATCH_ACCESS_P, UAI$_LOCAL_ACCESS_P,
+        UAI$_DIALUP_ACCESS_P, UAI$_REMOTE_ACCESS_P };
+    static const unsigned short access_s[ST_ACC_COUNT] = {
+        UAI$_NETWORK_ACCESS_S, UAI$_BATCH_ACCESS_S, UAI$_LOCAL_ACCESS_S,
+        UAI$_DIALUP_ACCESS_S, UAI$_REMOTE_ACCESS_S };
+    char owner[32] = { 0 }, account[32] = { 0 }, cli[32] = { 0 }, tables[32] = { 0 };
+    char defdev[32] = { 0 }, defdir[64] = { 0 }, lgicmd[256] = { 0 };
+    unsigned short l_owner = 0, l_cli = 0, l_tables = 0, l_dev = 0, l_dir = 0, l_lgi = 0;
+    unsigned int uic = 0, flags = 0, st, i, n = 0;
+    unsigned int expq[2] = { 0, 0 }, lli[2] = { 0, 0 }, lln[2] = { 0, 0 };
+    unsigned int pwd[2] = { 0, 0 }, pwd2[2] = { 0, 0 }, life[2] = { 0, 0 };
+    unsigned int pwdlen = 0, logfails = 0, primedays = 0;
+    unsigned int acc_p[ST_ACC_COUNT] = { 0 }, acc_s[ST_ACC_COUNT] = { 0 };
+    unsigned int q[ST_Q_COUNT] = { 0 };
+    struct dsc$descriptor_s d;
+    st_ile3 items[30 + 2 * ST_ACC_COUNT + ST_Q_COUNT];
+
+    memset(u, 0, sizeof *u);
+    item(&items[n++], UAI$_OWNER, owner, sizeof owner, &l_owner);
+    item(&items[n++], UAI$_ACCOUNT, account, sizeof account, 0);
+    item(&items[n++], UAI$_UIC, &uic, 4, 0);
+    item(&items[n++], UAI$_FLAGS, &flags, 4, 0);
+    item(&items[n++], UAI$_DEFCLI, cli, sizeof cli, &l_cli);
+    item(&items[n++], UAI$_CLITABLES, tables, sizeof tables, &l_tables);
+    item(&items[n++], UAI$_DEFDEV, defdev, sizeof defdev, &l_dev);
+    item(&items[n++], UAI$_DEFDIR, defdir, sizeof defdir, &l_dir);
+    item(&items[n++], UAI$_LGICMD, lgicmd, sizeof lgicmd, &l_lgi);
+    item(&items[n++], UAI$_EXPIRATION, expq, 8, 0);
+    item(&items[n++], UAI$_LASTLOGIN_I, lli, 8, 0);
+    item(&items[n++], UAI$_LASTLOGIN_N, lln, 8, 0);
+    item(&items[n++], UAI$_PWD_DATE, pwd, 8, 0);
+    item(&items[n++], UAI$_PWD2_DATE, pwd2, 8, 0);
+    item(&items[n++], UAI$_PWD_LIFETIME, life, 8, 0);
+    /* Smaller items land in the low bytes of a zeroed longword: little-endian on
+       every OpenVMS architecture. */
+    item(&items[n++], UAI$_PWD_LENGTH, &pwdlen, 1, 0);
+    item(&items[n++], UAI$_LOGFAILS, &logfails, 2, 0);
+    item(&items[n++], UAI$_PRIMEDAYS, &primedays, 1, 0);
+    item(&items[n++], UAI$_PRIV, u->priv_auth, 8, 0);
+    item(&items[n++], UAI$_DEF_PRIV, u->priv_def, 8, 0);
+    for (i = 0; i < ST_ACC_COUNT; i++) {
+        item(&items[n++], access_p[i], &acc_p[i], 3, 0);
+        item(&items[n++], access_s[i], &acc_s[i], 3, 0);
+    }
+    for (i = 0; i < ST_Q_COUNT; i++) item(&items[n++], quotas[i].code, &q[i], quotas[i].size, 0);
+    item_end(&items[n]);
+
+    desc(&d, username, (unsigned short) strlen(username));
+    st = sys$getuai(0, 0, &d, items, 0, 0, 0);
+    if (!(st & 1)) { set_cond(e, st); return -1; }
+
+    st_copy(u->username, sizeof u->username, username);
+    counted(owner, l_owner, u->owner, sizeof u->owner);
+    blank_trim(account, 8, u->account, sizeof u->account);   /* blank-padded, not counted */
+    counted(cli, l_cli, u->cli, sizeof u->cli);
+    counted(tables, l_tables, u->clitables, sizeof u->clitables);
+    counted(defdev, l_dev, u->defdev, sizeof u->defdev);
+    counted(defdir, l_dir, u->defdir, sizeof u->defdir);
+    counted(lgicmd, l_lgi, u->lgicmd, sizeof u->lgicmd);
+    u->uic = uic;
+    for (i = 0; i < sizeof uaf_flags / sizeof uaf_flags[0]; i++)
+        if (flags & uaf_flags[i].mask) u->flags |= 1u << uaf_flags[i].bit;
+    u->expiration = unix_time(expq);
+    u->last_login_i = unix_time(lli);
+    u->last_login_n = unix_time(lln);
+    u->pwd_date = unix_time(pwd);
+    u->pwd2_date = unix_time(pwd2);
+    {
+        long long lt = (long long) (((unsigned long long) life[1] << 32) | life[0]);
+        if (lt < 0) lt = -lt;   /* a delta time */
+        u->pwd_lifetime = lt / 10000000LL;
+    }
+    u->pwd_minimum = (int) pwdlen;
+    u->login_fails = (int) logfails;
+    u->secondary_days = primedays & 0x7F;   /* a set bit is a secondary day */
+    for (i = 0; i < ST_ACC_COUNT; i++) {
+        u->access_p[i] = acc_p[i] & 0xFFFFFF;
+        u->access_s[i] = acc_s[i] & 0xFFFFFF;
+    }
+    for (i = 0; i < ST_Q_COUNT; i++) u->quota[i] = q[i];
+    return 0;
+}
+
+/* ================================================================ identifiers
+
+   $IDTOASC, $ASCTOID, $FIND_HELD and $FIND_HOLDER, under the persona. RIGHTSLIST
+   is (S:RWED,O:RWED,G,W), so OpenVMS lets an unprivileged user see only the
+   identifiers it holds. Every wildcard walk ends with $FINISH_RDB. */
+
+static const struct { unsigned int mask; int bit; } kgb_attrs[] = {
+    { KGB$M_RESOURCE, ST_IA_RESOURCE }, { KGB$M_DYNAMIC, ST_IA_DYNAMIC },
+    { KGB$M_NOACCESS, ST_IA_NOACCESS }, { KGB$M_SUBSYSTEM, ST_IA_SUBSYSTEM },
+    { KGB$M_IMPERSONATE, ST_IA_IMPERSONATE }, { KGB$M_HOLDER_HIDDEN, ST_IA_HOLDER_HIDDEN },
+    { KGB$M_NAME_HIDDEN, ST_IA_NAME_HIDDEN },
+};
+
+static unsigned int attrib_bits(unsigned int kgb)
+{
+    unsigned int i, out = 0;
+    for (i = 0; i < sizeof kgb_attrs / sizeof kgb_attrs[0]; i++)
+        if (kgb & kgb_attrs[i].mask) out |= 1u << kgb_attrs[i].bit;
+    return out;
+}
+
+/* The name of one identifier, or "" if the OS will not say. */
+static void ident_name(unsigned int id, char out[32])
+{
+    char name[32] = { 0 };
+    unsigned short nlen = 0;
+    unsigned int resid = 0, attrib = 0, ctx = 0;
+    struct dsc$descriptor_s d;
+    desc(&d, name, sizeof name - 1);
+    out[0] = '\0';
+    if (sys$idtoasc(id, &nlen, &d, &resid, &attrib, &ctx) & 1) {
+        name[nlen] = '\0';
+        st_copy(out, 32, name);
+    }
+    sys$finish_rdb(&ctx);
+}
+
+int st_plat_ident_enum(st_ident_cb fn, void *ctx, st_err *e)
+{
+    unsigned int rdb = 0, st;
+    for (;;) {
+        char name[32] = { 0 };
+        unsigned short nlen = 0;
+        unsigned int id = 0, attrib = 0;
+        struct dsc$descriptor_s d;
+        st_ident out;
+        desc(&d, name, sizeof name - 1);
+        st = sys$idtoasc(0xFFFFFFFFu, &nlen, &d, &id, &attrib, &rdb);
+        if (!(st & 1)) break;
+        memset(&out, 0, sizeof out);
+        name[nlen] = '\0';
+        st_copy(out.name, sizeof out.name, name);
+        out.value = id;
+        out.attrib = attrib_bits(attrib);
+        if (fn(&out, ctx)) { st = SS$_NOSUCHID; break; }
+    }
+    sys$finish_rdb(&rdb);
+    if (st != SS$_NOSUCHID) { set_cond(e, st); return -1; }
+    return 0;
+}
+
+int st_plat_ident_get(const char *name, st_ident *out, st_err *e)
+{
+    unsigned int id = 0, attrib = 0, st;
+    struct dsc$descriptor_s d;
+    desc(&d, name, (unsigned short) strlen(name));
+    st = sys$asctoid(&d, &id, &attrib);
+    if (!(st & 1)) { set_cond(e, st); return -1; }
+    memset(out, 0, sizeof *out);
+    st_copy(out->name, sizeof out->name, name);
+    out->value = id;
+    out->attrib = attrib_bits(attrib);
+    return 0;
+}
+
+int st_plat_ident_held(unsigned int uic, st_ident_cb fn, void *ctx, st_err *e)
+{
+    unsigned int holder[2], rdb = 0, st;
+    holder[0] = uic;
+    holder[1] = 0;
+    for (;;) {
+        unsigned int id = 0, attrib = 0;
+        st_ident out;
+        st = sys$find_held((void *) holder, &id, &attrib, &rdb);
+        if (!(st & 1)) break;
+        memset(&out, 0, sizeof out);
+        ident_name(id, out.name);
+        out.value = id;
+        out.attrib = attrib_bits(attrib);
+        if (fn(&out, ctx)) { st = SS$_NOSUCHID; break; }
+    }
+    sys$finish_rdb(&rdb);
+    if (st != SS$_NOSUCHID) { set_cond(e, st); return -1; }
+    return 0;
+}
+
+int st_plat_ident_holders(unsigned int value, st_ident_cb fn, void *ctx, st_err *e)
+{
+    unsigned int holder[2], rdb = 0, st;
+    for (;;) {
+        unsigned int attrib = 0;
+        st_ident out;
+        holder[0] = holder[1] = 0;
+        st = sys$find_holder(value, (void *) holder, &attrib, &rdb);
+        if (!(st & 1)) break;
+        memset(&out, 0, sizeof out);
+        ident_name(holder[0], out.name);
+        out.value = holder[0];
+        out.attrib = attrib_bits(attrib);
+        if (fn(&out, ctx)) { st = SS$_NOSUCHID; break; }
+    }
+    sys$finish_rdb(&rdb);
+    if (st != SS$_NOSUCHID) { set_cond(e, st); return -1; }
     return 0;
 }
 
