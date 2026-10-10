@@ -31,6 +31,9 @@ product.
   so IA64 stays cheap later.
 - **D7 Reverse proxies:** must work behind nginx proxy manager. `X-Forwarded-*` is
   believed only from configured trusted proxies, and the front end uses relative URLs.
+- **D8 Security auditing of the code:** `make audit` and CI on every push (analyzers,
+  sanitizers, fuzzing, project rules), a security review gate at every phase exit, and
+  an independent external review before the first release (docs/security.md).
 - **D4 Front end:** vanilla ES modules with no build step and no npm. Static files are served
   by lighttpd, and the deploy is a file copy.
 
@@ -107,6 +110,10 @@ board's lighttpd alone.
 
 ## Phases (stop and review with you at each exit)
 
+Every phase exit includes the security gate in docs/security.md (D8): threat-model
+update, a checklist review of every changed file, VMS-side checks, and findings with
+regression tests. A phase does not close until it passes.
+
 **Phase 0: scaffolding and probes.** Create the repo, CLAUDE.md, docs and tooling. Then
 answer with probes on `<x86-host>` rather than speculation:
 - the ACM non-interactive authenticate call, and what privileges it needs;
@@ -145,7 +152,8 @@ Exit: round-trip create, copy and delete, consistent with AUTHORIZE.
 
 **Phase 5: hardening and kit.** Load run with no crashes or leaked personas, idle and
 absolute session expiry, security review (headers, CSP, cookie flags, input limits),
-PCSI kit and startup, README status table. Exit: the kit is installed on x86, and you run
+PCSI kit and startup, README status table, and the independent external review and
+penetration test (D8). Exit: the kit is installed on x86, and you run
 it before we declare use case 1 stable.
 
 **Later areas, one at a time and each with the same read-only → modify split:** logical

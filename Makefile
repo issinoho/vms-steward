@@ -48,10 +48,31 @@ api-test-asan: $(B)/steward-asan
 fuzz: $(B)/fuzz_parsers
 	$(B)/fuzz_parsers 200000
 
+# Code security audit (D8, docs/security.md). Runs every check available on this
+# machine; CI runs the same target with the extra analyzers installed.
+#   - GCC's static analyzer over all sources, warnings as errors
+#   - cppcheck and flawfinder when installed
+#   - project rules (tools/audit_rules.sh)
+#   - the sanitizer API run and the fuzzer
+ANALYZE_SRC = $(CORE) $(SVC) $(STUB) src/main/steward_main.c
+audit: api-test-asan fuzz
+	@# A real compile per file: under -fsyntax-only the analyzer silently does
+	@# nothing (checked with a planted double free, 2026-10-10).
+	@for f in $(ANALYZE_SRC); do \
+	  $(CC) $(CFLAGS) -fanalyzer -Werror -c $$f -o /dev/null || exit 1; \
+	done; echo "audit: gcc -fanalyzer clean"
+	@if command -v cppcheck >/dev/null; then \
+	  cppcheck --std=c99 --enable=warning,portability --error-exitcode=1 --inline-suppr -q src; \
+	else echo "audit: cppcheck not installed, skipped (CI runs it)"; fi
+	@if command -v flawfinder >/dev/null; then \
+	  flawfinder --minlevel=4 --error-level=4 -Q src; \
+	else echo "audit: flawfinder not installed, skipped (CI runs it)"; fi
+	tools/audit_rules.sh
+
 dev: $(B)/steward
 	python3 tools/devserver.py $(B)/steward
 
 clean:
 	rm -rf $(B)
 
-.PHONY: all test api-test api-test-asan fuzz dev clean
+.PHONY: all test api-test api-test-asan fuzz audit dev clean

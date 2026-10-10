@@ -1,0 +1,43 @@
+# CI: build, tests and the code security audit (DECISIONS D8) on every push and PR.
+# OpenVMS itself cannot run here; this covers everything that is portable C99, the
+# front end and the repository rules. VMS builds are run by hand (tools/vms.sh).
+name: ci
+on:
+  push:
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  build-test-audit:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Tools
+        run: sudo apt-get update && sudo apt-get install -y libssl-dev cppcheck flawfinder
+      - name: Unit tests
+        run: make test
+      - name: API tests
+        run: make api-test
+      - name: Security audit (analyzer, cppcheck, flawfinder, rules, ASan/UBSan, fuzz)
+        run: make audit
+      - name: Front-end syntax
+        run: for f in www/js/*.js; do node --check "$f"; done
+  semgrep:
+    runs-on: ubuntu-24.04
+    container:
+      image: semgrep/semgrep
+    steps:
+      - uses: actions/checkout@v4
+      - name: Semgrep (C and JavaScript security rules)
+        run: semgrep scan --error --config p/c --config p/javascript --config p/secrets
+  secrets:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

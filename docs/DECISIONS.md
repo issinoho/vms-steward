@@ -125,3 +125,24 @@ Alternative: lighttpd's `mod_extforward`, which rewrites `REMOTE_ADDR` before St
 sees it. It is a good second layer, but it would make Steward's security depend on a
 web-server setting it cannot check. Steward also needs the scheme, host and prefix, which
 mod_extforward does not provide.
+
+## D8. Strict security auditing of the code
+
+**Status:** required by the user (2026-10-10).
+
+Every change is audited by machine, and every phase by a person, against a written
+threat model (`docs/security.md`):
+- **Continuously** (`make audit`, and CI on every push): GCC `-fanalyzer` with
+  warnings as errors, cppcheck, flawfinder, Semgrep, gitleaks, project-specific rules
+  (`tools/audit_rules.sh`), the API suite under ASan/UBSan, and parser fuzzing.
+- **At every phase exit, as a gate:** threat-model update, line-by-line review
+  against the checklist, VMS-side checks (link severity, image privileges, file
+  protections, service-account privileges), and findings recorded with a regression
+  test that fails without the fix.
+- **Before the first release:** independent external review of the
+  authentication, session and persona code, and a penetration test behind nginx
+  proxy manager.
+
+The checks are verified to fail when they should. The project rules and the
+analyzer were each shown a planted violation; the analyzer step had been a no-op
+under `-fsyntax-only` until that test.
