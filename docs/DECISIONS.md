@@ -184,8 +184,7 @@ Alternatives:
 
 ## D10. Read views show what OpenVMS shows, no more and no less
 
-**Status:** taken in Phase 2 (2026-10-10). It follows from D2. Raise it at the phase
-exit if you want it otherwise.
+**Status:** approved by the user (2026-10-10): keep as built. Phase 2.
 
 Phase 2 found two places where OpenVMS is more open than its file protections
 suggest (docs/PHASE2.md):

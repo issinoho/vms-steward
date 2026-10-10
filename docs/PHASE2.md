@@ -79,3 +79,20 @@ come in the same order. APACHE$READ's holders match.
 A non-privileged sign-in gets a 403 with the OpenVMS message for the user list and
 for others' records, and its own record in full (exit criterion: "403 or reduced
 data").
+
+## Phase exit (2026-10-10, x86 node, through nginx proxy manager over HTTPS)
+
+The user signed in as STEWARD_TEST and confirmed each check in the browser:
+- the user list was refused with `%RMS-E-PRV`, and the page linked to the user's
+  own record;
+- that record matched `AUTHORIZE SHOW STEWARD_TEST`, with times in local clock time;
+- with GRPPRV switched on, STEWARD's record (same group) opened;
+- APACHE$READ showed its holder, APACHE$WWW.
+
+D10 was approved as built. Gate: the threat model is updated (security.md, "Phase 2
+additions"). The review of the Phase 2 code against the checklist found three
+issues, each fixed with a test (security.md audit record). `make audit` and CI are
+clean. On VMS the pool runs as STEWARD with current privileges
+`DETACH,TMPMBX,NETMBX`, and no LINK reported a warning.
+
+**Phase 2 closed on 2026-10-10 with the user's approval.**
