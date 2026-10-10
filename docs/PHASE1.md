@@ -1,0 +1,54 @@
+# Phase 1: platform skeleton
+
+## Probes (2026-10-10, x86 node)
+
+### Intrusion source: closed (`probe_acm_host`)
+
+Wrong-password attempts against `STEWARD_TEST`, each describing a client from
+192.0.2.0/24 (RFC 5737), and then `SHOW INTRUSION`:
+
+| Items passed | Intrusion source |
+|---|---|
+| `REMOTE_HOST_NAME "192.0.2.11"` | `192.0.2.11::IAIN` (the calling process's username) |
+| `REMOTE_HOST_NAME` + `REMOTE_USERNAME "steward"` | `192.0.2.12::steward` |
+| the same, logon type REMOTE instead of NETWORK | `192.0.2.13::steward` (still class NETWORK) |
+| plus `REMOTE_HOST_ADDRESS` (4 bytes) + `_TYPE` (IPv4) | refused before authentication: BADBUFLEN in the ACMESB |
+
+So Steward passes the client's IP from lighttpd (`REMOTE_ADDR`) as
+`ACME$_REMOTE_HOST_NAME` and the constant `STEWARD` as `ACME$_REMOTE_USERNAME`. Each
+browser address then gets its own record, and OpenVMS breakin evasion applies per
+client, as it does for telnet. Steward needs no rate limiter of its own (this
+supersedes the stop-gap noted in D2).
+
+Notes:
+- `ACME$_REMOTE_HOST_ADDRESS_TYPE` must be a **longword**. With a 2-byte buffer `$ACMW`
+  itself returns BADBUFLEN, although the header comment says "16-bit". With a longword the
+  service accepts the list, and then the VMS ACME rejects a 4-byte IPv4 address
+  (BADBUFLEN in the ACMESB). We don't need the binary address, so this is not pursued.
+- No attempt reached a password check while the item list was wrong, so the failed
+  runs left no intrusion records.
+
+### Privileges under a persona: mostly closed (`probe_setprv`)
+
+Under the persona of an unprivileged account (TMPMBX, NETMBX), with the work process
+itself holding every privilege, `$SETPRV` refuses GRPPRV and SYSPRV with NOTALLPRIV and
+enables nothing. The persona's authorized mask is what limits `$SETPRV`; the process's
+own privileges do not leak through. This is what D2 depends on.
+
+**Pitfall found on the way:** `PRV$M_` masks for privileges 32-63 are 64-bit constants
+(`PRV$M_GRPPRV` is `0x400000000`). Assigned to an `unsigned int`, the mask becomes 0, and
+`$SETPRV` of an empty mask returns SS$_NORMAL. A request for GRPPRV therefore "succeeds"
+while enabling nothing. Privilege masks are always carried as a full quadword.
+
+Still open: whether a persona can enable a privilege that is authorized but not
+default. That needs `STEWARD_TEST` given such a privilege, for example
+`mcr authorize modify STEWARD_TEST /privileges=(tmpmbx,netmbx,grpprv)` with the default
+privileges unchanged. Asked of the user, together with the service account.
+
+### Expired passwords
+
+Phase 0 showed that non-dialogue `$ACM` accepts a pre-expired password. The VMS
+platform layer therefore checks, after a successful `$ACM`, `UAI$_FLAGS`
+(PWD_EXPIRED, PWD2_EXPIRED) and `UAI$_PWD_DATE`/`UAI$_PWD_LIFETIME`, and reports an
+expired password in place of a session. To be verified at the phase exit with
+`STEWARD_TEST /PWDEXPIRED`.

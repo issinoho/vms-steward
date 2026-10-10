@@ -44,8 +44,10 @@ Additions from Phase 0:
 - Non-dialogue `$ACM` accepts a pre-expired password, so Steward checks expiry itself
   (UAI flags and password date/lifetime) and refuses the session until the password is
   changed.
-- Intrusion records name the calling process, so the client's address must be passed
-  to ACM (`ACME$_REMOTE_HOST_*`). Steward also rate-limits failed logins per client IP.
+- Intrusion records name the calling process unless told otherwise. Steward passes the
+  client IP as `ACME$_REMOTE_HOST_NAME` and `STEWARD` as `ACME$_REMOTE_USERNAME`, which
+  gives one record per browser address (docs/PHASE1.md). Breakin evasion then works
+  per client, and Steward keeps no rate limiter of its own.
 - Usernames are upcased and validated before `$ACM` or `$PERSONA_CREATE` (persona
   creation accepts lowercase as given).
 
