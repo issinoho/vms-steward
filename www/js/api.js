@@ -18,8 +18,8 @@ export class ApiError extends Error {
   get slug() { return (this.problem.type || '').split('/').pop(); }
 }
 
-async function call(method, path, body) {
-  const headers = { Accept: 'application/json' };
+async function call(method, path, body, extra) {
+  const headers = { Accept: 'application/json', ...(extra || {}) };
   const init = { method, headers, credentials: 'same-origin', cache: 'no-store' };
   if (body !== undefined) {
     headers['Content-Type'] = 'application/json';
@@ -61,5 +61,20 @@ export const api = {
   identifiers: (q) => call('GET', `identifiers${query(q)}`),
   identifier: (name) => call('GET', `identifiers/${encodeURIComponent(name)}`),
   holders: (name) => call('GET', `identifiers/${encodeURIComponent(name)}/holders`),
+  // Phase 3: changes. OpenVMS decides who may make them; Steward checks the input.
+  // patchUser needs the etag from user(): a change made meanwhile gives 412.
+  patchUser: (name, changes, etag) => call('PATCH', `users/${encodeURIComponent(name)}`, changes, { 'If-Match': etag }),
+  setPassword: (name, password, preExpired) =>
+    call('POST', `users/${encodeURIComponent(name)}/password`, { password, pre_expired: !!preExpired }),
+  grant: (name, ident, attributes) =>
+    call('POST', `users/${encodeURIComponent(name)}/identifiers`, { name: ident, attributes }),
+  setHolding: (name, ident, attributes) =>
+    call('PUT', `users/${encodeURIComponent(name)}/identifiers/${encodeURIComponent(ident)}`, { attributes }),
+  revoke: (name, ident) => call('DELETE', `users/${encodeURIComponent(name)}/identifiers/${encodeURIComponent(ident)}`),
+  createIdentifier: (fields) => call('POST', 'identifiers', fields),
+  modifyIdentifier: (name, fields) => call('PATCH', `identifiers/${encodeURIComponent(name)}`, fields),
+  deleteIdentifier: (name) => call('DELETE', `identifiers/${encodeURIComponent(name)}`),
+  // Anyone's own password, signed in or not (an expired one cannot sign in).
+  changePassword: (username, current, next) => call('POST', 'session/password', { username, current, new: next }),
   signOut: async () => { try { await call('DELETE', 'session'); } finally { csrf = null; } },
 };

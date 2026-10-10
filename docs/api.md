@@ -184,7 +184,114 @@ One identifier, in the same form as a list entry.
 `username` is the holder's UIC identifier, which is normally the username. It is
 `null` if the UIC has none.
 
+## Endpoints (Phase 3): changes
+
+Each change runs as you, so OpenVMS decides (D2): changing a UAF record needs
+SYSPRV (or GRPPRV for another member of your group), and changing the rights database
+needs SYSPRV. Without them the answer is `403` with the OpenVMS message, e.g.
+`%SYSTEM-F-NOPRIV` or `%RMS-E-PRV`. All of these need the CSRF header, and every
+change is audited, never with a password.
+
+Bad input is `422 invalid-value`, with a `detail` naming the field. Unknown members
+are refused, not ignored.
+
+### `PATCH api/v1/users/{username}`, with `If-Match: <ETag>`
+
+The `ETag` comes from `GET api/v1/users/{username}`, as a header and as `etag` in
+the body. Without it the answer is `428 precondition-required`. If the record has
+changed since, it is `412 changed`, with the current `ETag`.
+
+Members, all optional:
+- `owner` (≤31), `account` (≤8), `cli`, `clitables`, `default_device` (≤31 each),
+  `default_directory`, `lgicmd` (≤63 each). Printable characters only; the device,
+  directory, CLI, tables and account may not contain spaces.
+- `flags`, `secondary_days`, `authorized_privileges`, `default_privileges`: lists
+  that replace the whole set.
+- `expiration`: seconds since 1970 (UTC), or `null` for none.
+- `password`: `{"lifetime_days": 1-9999 | null, "minimum_length": 0-32}`.
+- `restricted_hours`: `{"batch": {"primary": [0, 1], "secondary": []}, ...}`; the
+  kinds of login you leave out are unchanged.
+- `quotas`: `{"prio": 0-31, "queprio": 0-255, the others 0-65535 or 0-4294967295 by
+  their size}`.
+
+`200`: the record as it now is, with its new ETag.
+
+### `POST api/v1/users/{username}/password`
+
+```json
+{"password": "...", "pre_expired": true}
+```
+
+An administrator sets a password. OpenVMS hashes it, applies the account's minimum
+length (`422` with `%SYSTEM-F-INVPWDLEN` if it is too short), and sets the password
+date to now. `pre_expired` marks it expired, as AUTHORIZE `/PWDEXPIRED` does. `204`.
+
+### `POST api/v1/session/password` (public): change your own password
+
+```json
+{"username": "STEWARD_TEST", "current": "...", "new": "..."}
+```
+
+This works signed in or not, which includes a user whose password has expired (sign
+in gives `403 password-expired`). The current password is checked first, as at sign
+in (D11):
+- `401 sign-in-failed`: a wrong username or current password, indistinguishable, as
+  at sign in;
+- `422 password-refused`: the current password was right, but OpenVMS refused the
+  new one (too short, in the history list or the dictionary), with its message;
+- `204`: changed.
+
+### `POST api/v1/users/{username}/identifiers`: grant
+
+```json
+{"name": "STEWARD_OPS", "attributes": ["RESOURCE"]}
+```
+
+A holding can have only attributes its identifier has; anything else is refused
+(`422`), because OpenVMS would accept it and drop it silently (PHASE3.md). Granting
+one already held is `409` (`%SYSTEM-F-DUPIDENT`). `201`, with the user's
+identifiers.
+
+### `PUT api/v1/users/{username}/identifiers/{name}`
+
+```json
+{"attributes": []}
+```
+
+Sets a holding's attributes. `200`, with the user's identifiers.
+
+### `DELETE api/v1/users/{username}/identifiers/{name}`: revoke
+
+`204`. `404` (`%SYSTEM-F-NOSUCHID`) if it is not held.
+
+### `POST api/v1/identifiers`
+
+```json
+{"name": "PROJECT_X", "value": "%X80010099", "attributes": ["RESOURCE"]}
+```
+
+`value` is optional; without it OpenVMS chooses the next free one. A value must have
+the top bit set (a general identifier). A name already in use is `409`. `201`, with
+the identifier.
+
+### `PATCH api/v1/identifiers/{name}`
+
+```json
+{"name": "NEW_NAME", "attributes": ["NOACCESS"]}
+```
+
+Rename it, or replace its attributes, or both. Clearing an attribute here also clears
+it on every holding. `200`, with the identifier.
+
+### `DELETE api/v1/identifiers/{name}`
+
+`204`. OpenVMS removes the holdings with it, as AUTHORIZE does.
+
+UIC identifiers belong to accounts and cannot be granted, renamed or deleted
+through these endpoints (`422 uic-identifier`). Creating and deleting users is
+Phase 4.
+
 ## Coming
 
-Changing users and identifiers (Phases 3-4) is listed in `docs/PLAN.md`. Access
-history is Phase 6.
+Creating, copying and deleting users is Phase 4 (`docs/PLAN.md`). Access history is
+Phase 6.

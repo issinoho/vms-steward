@@ -167,6 +167,25 @@ def main(binary):
         check(st == 403 and doc.get("vms_status") == "%X0001829A",
               "with SYSPRV switched off again, the OS refuses the list (RMS-E-PRV, as on the node)")
 
+        # Phase 3: a password set and a password change; neither may reach the log.
+        p.call("PUT", "/api/v1/session/privileges", {"enabled": ["SYSPRV"]})
+        st, _, _ = p.call("POST", "/api/v1/users/EXPIRED/password",
+                          {"password": "Phase3-admin-set-pw", "pre_expired": True})
+        check(st == 204, "an administrator sets a password")
+        st, _, doc = p.call("POST", "/api/v1/session/password",
+                            {"username": "EXPIRED", "current": "Phase3-admin-set-pw", "new": "Phase3-user-chosen-pw"})
+        check(st == 204, "the user changes it, without being signed in")
+        st, _, doc = p.call("GET", "/api/v1/users/EXPIRED")
+        etag = doc.get("etag")
+        st, h, doc = p.call("PATCH", "/api/v1/users/EXPIRED", {"owner": "edited"},
+                            headers={"HTTP_IF_MATCH": etag})
+        check(st == 200 and doc["owner"] == "edited" and h.get("ETag") not in (None, etag),
+              "PATCH with If-Match, through FastCGI, returns the new ETag")
+        st, _, _ = p.call("POST", "/api/v1/users/EXPIRED/password",   # the fixture back, for later checks
+                          {"password": "expired-pass", "pre_expired": True})
+        check(st == 204, "fixture restored")
+        p.call("PUT", "/api/v1/session/privileges", {"enabled": []})
+
         # The same headers from a peer we do not trust are ignored: the https Origin
         # no longer matches what lighttpd saw, so the request is refused.
         spoof = Client(addr, remote="198.51.100.1", extra=npm)
@@ -200,7 +219,12 @@ def main(binary):
               "audit records why a login failed (the client is not told)")
         check('user="STEWARD_ADMINISTRATOR"' in log,
               "an over-long username is refused before $ACM and still audited")
-        check("test-pass" not in log and "admin-pass" not in log, "no password reaches the audit log")
+        check("test-pass" not in log and "admin-pass" not in log and "Phase3-" not in log and "expired-pass" not in log,
+              "no password reaches the audit log (sign-in, set, change)")
+        check('action="password-set" target="EXPIRED" outcome="ok" detail="pre-expired"' in log and
+              'action="password-change" target="EXPIRED" outcome="ok"' in log and
+              'action="user-modify" target="EXPIRED" outcome="ok" detail="owner"' in log,
+              "the changes are audited")
     finally:
         proc.terminate()
         _, err = proc.communicate(timeout=5)

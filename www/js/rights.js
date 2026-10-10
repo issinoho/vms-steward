@@ -7,6 +7,8 @@
 import { api, ApiError } from './api.js';
 import { h, mount } from './dom.js';
 import { vmsDate, keycaps, refusal } from './fmt.js';
+import { editUser, setPassword, grantIdentifier, confirmRevoke, editHolding,
+  createIdentifier, modifyIdentifier, deleteIdentifier } from './edit.js';
 
 const PAGE = 50;
 const remembered = { users: '', identifiers: '', type: 'general' };   // for the way back
@@ -165,16 +167,17 @@ export async function userView(ctx, name) {
         : null)];
   }
   const held = h('div', {}, h('span', { class: 'muted' }, 'Reading…'));
-  api.userIdentifiers(name).then((r) => {
-    ctx.touched();
-    mount(held, r.identifiers.length
-      ? h('table', { class: 'grid' },
-          h('thead', {}, h('tr', {}, h('th', {}, 'Identifier'), h('th', {}, 'Value'), h('th', {}, 'Attributes'))),
-          h('tbody', {}, r.identifiers.map((i) => h('tr', {},
-            h('td', {}, h('a', { href: identHref(i.name), class: 'mono' }, i.name)),
-            h('td', { class: 'mono' }, i.value), h('td', {}, tags(i.attributes, new Set()))))))
-      : h('span', { class: 'muted' }, 'None'));
-  }).catch((err) => {
+  const drawHeld = (r) => mount(held, r.identifiers.length
+    ? h('table', { class: 'grid' },
+        h('thead', {}, h('tr', {}, h('th', {}, 'Identifier'), h('th', {}, 'Value'), h('th', {}, 'Attributes'), h('th', {}))),
+        h('tbody', {}, r.identifiers.map((i) => h('tr', {},
+          h('td', {}, h('a', { href: identHref(i.name), class: 'mono' }, i.name)),
+          h('td', { class: 'mono' }, i.value), h('td', {}, tags(i.attributes, new Set())),
+          h('td', { class: 'rowactions' },
+            h('button', { type: 'button', class: 'ghost small', onclick: () => editHolding(u.username, i.name, i.attributes, drawHeld) }, 'Attributes'),
+            h('button', { type: 'button', class: 'ghost small', onclick: () => confirmRevoke(u.username, i.name, ctx.refresh) }, 'Revoke'))))))
+    : h('span', { class: 'muted' }, 'None'));
+  api.userIdentifiers(name).then((r) => { ctx.touched(); drawHeld(r); }).catch((err) => {
     if (err instanceof ApiError && err.status === 401) { ctx.authLost(); return; }
     mount(held, refusal(err));
   });
@@ -183,7 +186,11 @@ export async function userView(ctx, name) {
   const defaults = new Set(u.default_privileges);
   return [
     h('p', {}, h('a', { href: '#/users' }, '← Users')),
-    h('h2', { class: 'mono' }, u.username),
+    h('div', { class: 'titlebar' },
+      h('h2', { class: 'mono' }, u.username),
+      h('div', { class: 'actions' },
+        h('button', { type: 'button', onclick: () => editUser(u, ctx.refresh) }, 'Modify'),
+        h('button', { type: 'button', onclick: () => setPassword(u) }, 'Set password'))),
     u.owner ? h('p', { class: 'muted' }, u.owner) : null,
     h('div', { class: 'card' }, h('dl', { class: 'facts' },
       h('dt', {}, 'UIC'), h('dd', { class: 'mono' }, u.uic),
@@ -209,7 +216,8 @@ export async function userView(ctx, name) {
     h('h3', {}, 'Quotas and limits'),
     h('dl', { class: 'quotas' }, QUOTA_LAYOUT.map(([label, k]) => [
       h('dt', {}, label), h('dd', { class: 'mono' }, k === 'cpu' ? cpuTime(u.quotas.cpu) : String(u.quotas[k]))])),
-    h('h3', {}, 'Identifiers held'),
+    h('div', { class: 'titlebar' }, h('h3', {}, 'Identifiers held'),
+      h('button', { type: 'button', class: 'ghost small', onclick: () => grantIdentifier(u, drawHeld) }, 'Grant')),
     held,
   ];
 }
@@ -238,7 +246,8 @@ export async function identifiersView(ctx) {
 
   await table.load(true);
   return [
-    h('h2', {}, 'Rights identifiers'),
+    h('div', { class: 'titlebar' }, h('h2', {}, 'Rights identifiers'),
+      h('button', { type: 'button', onclick: () => createIdentifier((id) => { location.hash = identHref(id.name); }) }, 'New identifier')),
     h('p', { class: 'muted' }, 'The rights database, sorted by name as AUTHORIZE lists it. General identifiers by default; UIC identifiers are the users and groups.'),
     filterForm('$ authorize show/identifier', remembered.identifiers,
       (f) => { remembered.identifiers = f; mount(slot); table.load(true); }, type),
@@ -259,7 +268,13 @@ export async function identifierView(ctx, name) {
   }
   return [
     back,
-    h('h2', { class: 'mono' }, id.name),
+    h('div', { class: 'titlebar' },
+      h('h2', { class: 'mono' }, id.name),
+      id.type === 'general' ? h('div', { class: 'actions' },
+        h('button', { type: 'button', onclick: () => modifyIdentifier(id, (r) => {
+          if (r.name !== id.name) location.hash = identHref(r.name); else ctx.refresh();
+        }) }, 'Modify'),
+        h('button', { type: 'button', class: 'danger', onclick: () => deleteIdentifier(id, holders.holders.length, () => { location.hash = '#/identifiers'; }) }, 'Delete')) : null),
     h('div', { class: 'card' }, h('dl', { class: 'facts' },
       h('dt', {}, 'Value'), h('dd', { class: 'mono' }, id.value),
       h('dt', {}, 'Kind'), h('dd', {}, id.type === 'uic' ? 'UIC identifier' : 'General identifier'),

@@ -65,6 +65,11 @@ browser ─(1)─ nginx proxy manager ─(2)─ lighttpd ─(3)─ STEWARD.EXE �
 | SYSUAF is opened only under the persona, and closed before the request ends; it never takes a record lock | `st_plat_user_enum` opens, walks and closes in one call, with `RRL+NLK` | review |
 | Query parameters that are present but unusable are refused, never ignored | `svc_query` | unit "an over-long filter is refused" |
 | Names from the URL are validated before any system service sees them (usernames, identifier names) | `st_valid_username`, `st_valid_ident` | unit; API "encoded slash" |
+| Every change runs under the caller's persona; OpenVMS refuses what they may not do | dispatcher (no change route is `R_NOPERSONA` except the password change, D11) | unit "cannot change even their own record"; on VMS `phase3_live.py` as STEWARD_ADM without SYSPRV and as STEWARD_TEST |
+| CHANGE_PASSWORD is reached only after the current password has passed a sign-in check | `svc_password_change` | unit "a wrong current password looks exactly like a failed sign-in" |
+| A user edit cannot silently overwrite one made since the page was read | ETag / If-Match | unit 428, 412, "the old ETag no longer works" |
+| Holding attributes the identifier lacks are refused, not dropped | `attribs_value` | unit |
+| Every change is audited, without passwords | handlers | API suite "no password reaches the audit log" |
 
 ## Phase 2 additions (users and identifiers, read-only)
 
@@ -87,6 +92,31 @@ browser ─(1)─ nginx proxy manager ─(2)─ lighttpd ─(3)─ STEWARD.EXE �
   the pool serves one request per process, so a heavy user slows only their own
   process. Phase 5's load run measures it.
 
+## Phase 3 additions (changes)
+
+- **New endpoints:** nine changes (docs/api.md). Eight need a session, CSRF and the
+  persona. One, `POST api/v1/session/password`, is public, because an expired password
+  cannot sign in; it authenticates with the current password (D11).
+- **New system services, all under the persona except the password change:**
+  `$SETUAI`, `$ADD_IDENT`, `$MOD_IDENT`, `$REM_IDENT`, `$ADD_HOLDER`, `$MOD_HOLDER`,
+  `$REM_HOLDER`. `$ACM CHANGE_PASSWORD` runs as the service, after a sign-in check
+  of the current password.
+- **The power this adds:** a user with SYSPRV can do through Steward what AUTHORIZE
+  lets them do, including granting privileges. That is OpenVMS's model, and Steward
+  does not narrow it (D2, D10). What Steward must guarantee is that only that user's
+  own persona does it. The dispatcher's invariants, unchanged since Phase 1, are what
+  this phase relies on most.
+- **Lockout:** CHANGE_PASSWORD charges failures to the account, so it is never
+  reached with an unverified current password (D11). Sign-in-style failures are
+  charged to the client.
+- **Lost updates:** a user edit carries the ETag of what was read. The compare and
+  the `$SETUAI` are not atomic, since OpenVMS offers no lock that AUTHORIZE also
+  honours, so two edits within milliseconds could still interleave. The ETag stops
+  the common case: an edit made from a page that is minutes old.
+- **Passwords:** taken from the JSON, converted, passed to the system service and
+  scrubbed (`st_zero`), with the JSON document scrubbed when freed. They are never
+  audited, logged or echoed.
+
 ## What runs, and when
 
 **Every push (CI, `.github/workflows/ci.yml`) and `make audit` locally:**
@@ -94,7 +124,7 @@ browser ─(1)─ nginx proxy manager ─(2)─ lighttpd ─(3)─ STEWARD.EXE �
 - cppcheck (warning and portability classes) and flawfinder (level 4 and up).
 - Semgrep with the C, JavaScript and secrets rule packs; gitleaks over the history.
 - `tools/audit_rules.sh`: the project rules above, which no general tool knows.
-- The API suite against an ASan/UBSan build, and 200,000 rounds of mutation fuzzing
+- The unit tests and the API suite against ASan/UBSan builds, and 200,000 rounds of mutation fuzzing
   of the JSON and FastCGI parsers under ASan/UBSan.
 - Strict compiler flags (`-std=c99 -pedantic -Wall -Wextra`), never weakened.
 
@@ -153,3 +183,6 @@ instance behind nginx proxy manager.
 | 2026-10-10 | 2 | A query parameter too long for its buffer, or badly encoded, was treated as absent, so `?filter=<80 chars>` listed every user instead of being refused | Low (no access gained: OpenVMS still decides; violates "refuse, don't repair") | Phase 2 commit (`svc_query`) | unit "an over-long filter is refused", "a badly encoded filter is refused" |
 | 2026-10-10 | 2 | `users/{u}/identifiers` fetched the UIC with `$GETUAI`, which made Steward stricter than OpenVMS for unprivileged users | Informational (functional; D10) | Phase 2 commit: UIC from `$ASCTOID` | unit "including another user's identifiers"; on VMS as STEWARD_TEST |
 | 2026-10-10 | 2 | UAF times are local; read as UTC, they were an hour late on a BST node | Informational (correctness) | Phase 2 commit | PHASE2.md AUTHORIZE comparison |
+| 2026-10-11 | 3 | Use-after-free: `svc_user_set_password` quoted a JSON key in its error after freeing the document (the Phase 1 bug class again; `-fanalyzer` missed it) | Medium (memory safety, signed-in) | Phase 3 API commit | `make test-asan` (new: unit tests under ASan, part of `make audit`), "unknown members are refused" |
+| 2026-10-11 | 3 | A test's header list was unterminated: harmless on Linux by luck, fatal on OpenVMS. The unit tests ran without sanitizers, so nothing caught it | Process (audit gap) | `make test-asan` | the reintroduced bug is caught |
+| 2026-10-11 | 3 | Design: CHANGE_PASSWORD charges failures to the account, so a public change endpoint would let anyone lock accounts | High if built naively; found by probe before any code | D11 | unit "wrong current password looks like a failed sign-in" |

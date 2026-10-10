@@ -77,6 +77,18 @@ class Handler(http.server.BaseHTTPRequestHandler):
 
     def _static(self, path):
         rel = path.split("?")[0].lstrip("/") or "index.html"
+        if rel == "__shot.js":
+            # Dev-only: press a button by its label once the view is drawn, so a
+            # headless screenshot can show a dialog (&click=Modify on the login URL).
+            js = (b"const want = new URLSearchParams(location.search).get('click');"
+                  b"setTimeout(() => { for (const b of document.querySelectorAll('button'))"
+                  b" if (b.textContent.trim() === want) { b.click(); break; } }, 700);")
+            self.send_response(200)
+            self.send_header("Content-Type", "text/javascript")
+            self.send_header("Content-Length", str(len(js)))
+            self.end_headers()
+            self.wfile.write(js)
+            return
         if rel == "__hold":
             # Screenshot mode: an image the page waits for, so headless
             # "firefox --screenshot" (which fires at load) sees the rendered view.
@@ -92,6 +104,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
             data = f.read()
         if rel == "index.html" and "shot=1" in path:
             data = data.replace(b"</body>", b'<img src="__hold" alt="" hidden></body>')
+            if "click=" in path:
+                data = data.replace(b"</body>", b'<script type="module" src="__shot.js"></script></body>')
         self.send_response(200)
         self.send_header("Content-Type", mimetypes.guess_type(full)[0] or "application/octet-stream")
         self.send_header("Content-Length", str(len(data)))
@@ -129,7 +143,10 @@ class Handler(http.server.BaseHTTPRequestHandler):
         self.send_response(302)
         for value in cookies:
             self.send_header("Set-Cookie", value)
-        self.send_header("Location", (PREFIX or "") + "/?shot=1#/" + to)
+        click = q.get("click", "")
+        if not all(c.isalnum() or c == "+" for c in click):
+            click = ""
+        self.send_header("Location", (PREFIX or "") + "/?shot=1" + ("&click=" + click if click else "") + "#/" + to)
         self.end_headers()
 
     def _any(self):

@@ -7,6 +7,7 @@ import { api, ApiError } from './api.js';
 import { h, mount, toast } from './dom.js';
 import { vmsMessage, problemText, vmsDate } from './fmt.js';
 import { usersView, userView, identifiersView, identifierView } from './rights.js';
+import { changeOwnPassword } from './edit.js';
 
 const app = document.getElementById('app');
 let me = null;           // whoami, while signed in
@@ -55,7 +56,12 @@ function signInView(note) {
         pass.value = '';
         if (err instanceof ApiError && err.slug === 'password-expired') {
           fail(vmsMessage('E', 'PWDEXPIRED', 'your password has expired') +
-               '\n-STEWARD-I-CHANGE, change it at an OpenVMS login, then sign in here');
+               '\n-STEWARD-I-CHANGE, choose a new one to continue');
+          const who = user.value.trim().toUpperCase();
+          changeOwnPassword(who, async (next) => {
+            await api.signIn(who, next);
+            await start();
+          }, 'Your password has expired. Enter it once more, then choose a new one.');
         } else if (err instanceof ApiError && err.status === 401) {
           fail(vmsMessage('E', 'SIGNIN', 'sign-in failed; check the username and password'));
         } else {
@@ -163,6 +169,7 @@ function accountView() {
       h('dt', {}, 'UIC'), h('dd', { class: 'mono' }, me.uic),
       h('dt', {}, 'Account'), h('dd', {}, me.account || '\u2014'),
       h('dt', {}, 'Session ends'), h('dd', { class: 'mono' }, vmsDate(me.expires_at)))),
+    h('p', {}, h('button', { type: 'button', onclick: () => changeOwnPassword(me.username) }, 'Change password')),
     privilegeKeys(),
     h('h3', {}, 'Rights identifiers held'),
     keys(me.identifiers, 'None'),
@@ -190,7 +197,7 @@ async function route() {
   const view = VIEWS[area];
   if (!view || !AREAS.find((a) => a.hash === `#/${area}` && a.ready)) { location.hash = '#/account'; return; }
   const seq = ++routeSeq;
-  const ctx = { me, touched: armIdle, authLost: () => expired('Your session has ended. Sign in again.') };
+  const ctx = { me, touched: armIdle, refresh: () => route(), authLost: () => expired('Your session has ended. Sign in again.') };
   let content;
   try {
     content = await view(ctx, name);
@@ -242,4 +249,5 @@ async function start() {
 }
 
 window.addEventListener('hashchange', route);
+window.addEventListener('steward:authlost', () => expired('Your session has ended. Sign in again.'));
 start();

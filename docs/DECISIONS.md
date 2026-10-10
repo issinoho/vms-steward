@@ -207,3 +207,32 @@ Alternatives:
   rights database already reveal usernames), and it would make Steward's answers
   differ from the system's.
 - Require SYSPRV for the identifier views. Stricter than OpenVMS, for no gain.
+
+## D11. Password changes: check the current password the way sign-in does, first
+
+**Status:** taken in Phase 3 (2026-10-11), from a probe finding.
+
+`$ACM CHANGE_PASSWORD` checks the current password itself, but a failed check is
+charged to the **account** (a `USERNAME` intrusion record), even when a client
+address is given. A failed sign-in (`AUTHENTICATE_PRINCIPAL`) is charged to the
+**client** (PHASE1.md, PHASE3.md). If the change endpoint called CHANGE_PASSWORD
+directly, anyone could guess at it and push any account into break-in evasion,
+locking its owner out everywhere.
+
+Decision: `POST api/v1/session/password` first authenticates the current password as
+sign-in does, with the browser's address as the remote host. Only after that succeeds
+does it call CHANGE_PASSWORD. Wrong guesses are then charged to the guesser's
+address, as at sign-in, and a wrong username or password looks exactly like a
+failed sign-in. The endpoint is public, because a user whose password has expired
+cannot sign in until they change it, and the current password is the
+authentication.
+
+An administrator setting someone else's password (`POST api/v1/users/{u}/password`)
+uses `$SETUAI UAI$_PASSWORD` under their persona instead. The system hashes it and
+applies the minimum length, and OpenVMS requires SYSPRV, as for AUTHORIZE.
+
+Alternatives:
+- CHANGE_PASSWORD alone: simpler, but it hands an account-lockout lever to the
+  internet.
+- Change passwords only when signed in: an expired password could then never be
+  changed through Steward, which is the dead end Phase 1 left.
