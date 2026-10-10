@@ -184,7 +184,7 @@ void st_resp_problem(st_response *r, int status, const char *slug, const char *t
     if (detail && *detail) st_jw_kstr(&w, "detail", detail);
     if (cond) {
         char hex[16];
-        sprintf(hex, "%%X%08X", cond);
+        snprintf(hex, sizeof hex, "%%X%08X", cond);
         st_jw_kstr(&w, "vms_status", hex);
         if (cond_text && *cond_text) st_jw_kstr(&w, "vms_message", cond_text);
     }

@@ -57,13 +57,16 @@ static void desc(struct dsc$descriptor_s *d, const char *s, unsigned short len)
     d->dsc$a_pointer = (char *) s;
 }
 
+/* Buffers that a system service or RMS fills are zero-initialised anyway: cppcheck
+   cannot see through descriptors and RABs (D8), and an unfilled buffer then reads
+   as empty rather than as stack garbage. */
 static void msgtext(unsigned int cond, char *out, size_t outlen)
 {
-    char buf[257];
+    char buf[257] = { 0 };
     unsigned short len = 0;
     struct dsc$descriptor_s d;
     desc(&d, buf, sizeof buf - 1);
-    if (!(sys$getmsg(cond, &len, &d, 15, 0) & 1)) { sprintf(buf, "%%X%08X", cond); len = (unsigned short) strlen(buf); }
+    if (!(sys$getmsg(cond, &len, &d, 15, 0) & 1)) { snprintf(buf, sizeof buf, "%%X%08X", cond); len = (unsigned short) strlen(buf); }
     buf[len] = '\0';
     strncpy(out, buf, outlen - 1);
     out[outlen - 1] = '\0';
@@ -254,7 +257,7 @@ int st_plat_session_put(const st_session *s, st_err *e)
 
 int st_plat_session_get(const unsigned char key[32], st_session *s, st_err *e)
 {
-    unsigned char r[SR_LEN];
+    unsigned char r[SR_LEN] = { 0 };
     unsigned int st;
     srab.rab$b_rac = RAB$C_KEY;
     srab.rab$b_krf = 0;
@@ -290,7 +293,7 @@ int st_plat_session_delete(const unsigned char key[32], st_err *e)
 
 void st_plat_session_purge(long long created_before, long long seen_before)
 {
-    unsigned char r[SR_LEN];
+    unsigned char r[SR_LEN] = { 0 };
     st_session s;
     if (!(sys$rewind(&srab) & 1)) return;
     srab.rab$b_rac = RAB$C_SEQ;
@@ -448,10 +451,10 @@ int st_plat_whoami(st_whoami *w, st_err *e)
 
     user[ulen] = '\0';
     while (ulen && user[ulen - 1] == ' ') user[--ulen] = '\0';
-    strcpy(w->username, user);
+    st_copy(w->username, sizeof w->username, user);
     acct[alen] = '\0';
     while (alen && acct[alen - 1] == ' ') acct[--alen] = '\0';
-    strcpy(w->account, acct);
+    st_copy(w->account, sizeof w->account, acct);
     w->uic = uic;
 
     /* Owner: the user's own UAF record, which a persona may read (probe_selfuai). */
@@ -468,15 +471,15 @@ int st_plat_whoami(st_whoami *w, st_err *e)
     /* Identifiers held: general identifiers (bit 31) from the process rights list. */
     for (i = 0; i + 1 < rlen / 4u && w->nids < ST_MAX_IDS; i += 2) {
         unsigned int id = rights[i], resid, attrib, ctx = 0;
-        char name[32];
+        char name[32] = { 0 };
         unsigned short nlen = 0;
         if (!(id & 0x80000000u)) continue;
         desc(&d, name, sizeof name - 1);
         if (sys$idtoasc(id, &nlen, &d, &resid, &attrib, &ctx) & 1) {
             name[nlen] = '\0';
-            strcpy(w->ids[w->nids++], name);
+            st_copy(w->ids[w->nids++], sizeof w->ids[0], name);
         } else {
-            sprintf(w->ids[w->nids++], "%%X%08X", id);
+            snprintf(w->ids[w->nids++], sizeof w->ids[0], "%%X%08X", id);
         }
         sys$finish_rdb(&ctx);
     }

@@ -69,7 +69,9 @@ int st_buf_printf(st_buf *b, const char *fmt, ...)
     va_list ap;
     int n;
     va_start(ap, fmt);
-    n = vsnprintf(tmp, sizeof tmp, fmt, ap);
+    /* fmt is a parameter, but every caller passes a literal that the compiler
+       checks (the format attribute in st_buf.h). */
+    n = vsnprintf(tmp, sizeof tmp, fmt, ap);   /* flawfinder: ignore */
     va_end(ap);
     if (n < 0 || (size_t) n >= sizeof tmp) { b->overflow = 1; return 0; }
     return st_buf_append(b, tmp, (size_t) n);
@@ -91,6 +93,27 @@ const char *st_buf_cstr(st_buf *b)
 }
 
 int st_buf_ok(const st_buf *b) { return !b->overflow && !b->oom; }
+
+int st_copy(char *dst, size_t size, const char *src)
+{
+    size_t n = strlen(src);
+    if (size == 0) return 0;
+    if (n >= size) {
+        memcpy(dst, src, size - 1);
+        dst[size - 1] = '\0';
+        return 0;
+    }
+    memcpy(dst, src, n + 1);
+    return 1;
+}
+
+int st_append(char *dst, size_t size, const char *src)
+{
+    size_t have = 0;
+    while (have < size && dst[have]) have++;   /* strnlen is POSIX, not C99 */
+    if (have >= size) return 0;
+    return st_copy(dst + have, size - have, src);
+}
 
 void st_zero(void *p, size_t n)
 {

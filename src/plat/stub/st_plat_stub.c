@@ -14,6 +14,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
+#include "st_buf.h"
 #include "st_platform.h"
 
 #define BIT(n) (1u << (n))
@@ -107,13 +108,13 @@ int st_plat_whoami(st_whoami *w, st_err *e)
     int i;
     if (!persona) { set_err(e, ST_E_INTERNAL, "no persona"); return -1; }
     memset(w, 0, sizeof *w);
-    strcpy(w->username, persona->username);
-    strcpy(w->owner, persona->owner);
-    strcpy(w->account, persona->account);
+    st_copy(w->username, sizeof w->username, persona->username);
+    st_copy(w->owner, sizeof w->owner, persona->owner);
+    st_copy(w->account, sizeof w->account, persona->account);
     w->uic = persona->uic;
     w->priv_auth[0] = w->priv_cur[0] = persona->priv_auth[0];
     w->priv_auth[1] = w->priv_cur[1] = persona->priv_auth[1];
-    for (i = 0; i < 4 && persona->ids[i]; i++) strcpy(w->ids[w->nids++], persona->ids[i]);
+    for (i = 0; i < 4 && persona->ids[i]; i++) st_copy(w->ids[w->nids++], sizeof w->ids[0], persona->ids[i]);
     return 0;
 }
 

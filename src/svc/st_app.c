@@ -79,11 +79,11 @@ static void kv(char *out, size_t outlen, const char *key, const char *val)
 {
     size_t o = strlen(out);
     if (o + strlen(key) + 4 >= outlen) return;
-    o += (size_t) sprintf(out + o, "%s%s=\"", o ? " " : "", key);
+    o += (size_t) snprintf(out + o, outlen - o, "%s%s=\"", o ? " " : "", key);
     for (; val && *val && o + 6 < outlen; val++) {
         unsigned char ch = (unsigned char) *val;
         if (ch == '"' || ch == '\\') { out[o++] = '\\'; out[o++] = (char) ch; }
-        else if (ch < 0x20 || ch >= 0x7F) o += (size_t) sprintf(out + o, "\\x%02x", ch);
+        else if (ch < 0x20 || ch >= 0x7F) o += (size_t) snprintf(out + o, outlen - o, "\\x%02x", ch);
         else out[o++] = (char) ch;
     }
     out[o++] = '"';
@@ -109,7 +109,7 @@ void st_app_set_cookie(st_ctx *c, const char *token_hex, long max_age)
     char v[400];
     /* The path follows the proxy's mount point, so the cookie still reaches /api
        when the site is published under a prefix (D7). */
-    sprintf(v, "%s=%s; Path=%s/api; Max-Age=%ld; HttpOnly; SameSite=Strict%s", ST_COOKIE,
+    snprintf(v, sizeof v, "%s=%s; Path=%s/api; Max-Age=%ld; HttpOnly; SameSite=Strict%s", ST_COOKIE,
             token_hex, c->prefix, max_age, c->cfg->cookie_secure ? "; Secure" : "");
     st_resp_header(c->resp, "Set-Cookie", v);
 }
@@ -126,7 +126,7 @@ static int same_origin(const st_ctx *c)
     if (site && strcmp(site, "same-origin") && strcmp(site, "none")) return 0;
     if (!origin) return 1;
     if (!*c->host) return 0;
-    sprintf(want, "%s://%s", c->scheme, c->host);   /* as the browser saw it (D7) */
+    snprintf(want, sizeof want, "%s://%s", c->scheme, c->host);   /* as the browser saw it (D7) */
     return !strcmp(origin, want);
 }
 
@@ -257,7 +257,7 @@ void st_app_origin(st_ctx *c, const char *proxies)
     size_t n;
 
     copy_n(c->client, sizeof c->client, ra, strlen(ra));
-    strcpy(c->scheme, (https && !strcmp(https, "on")) ? "https" : "http");
+    st_copy(c->scheme, sizeof c->scheme, (https && !strcmp(https, "on")) ? "https" : "http");
     h = st_req_header(r, "HTTP_HOST");
     c->host[0] = '\0';
     if (h && host_ok(h, strlen(h))) copy_n(c->host, sizeof c->host, h, strlen(h));
@@ -284,7 +284,7 @@ void st_app_origin(st_ctx *c, const char *proxies)
                 if (n == 0 || n >= sizeof tmp) break;
                 copy_n(tmp, sizeof tmp, s, n);
                 if (!st_valid_ip(tmp)) break;   /* garbage: keep the last good hop */
-                strcpy(c->client, tmp);
+                st_copy(c->client, sizeof c->client, tmp);
                 if (!trusted(proxies, s, n)) break;
             }
             end = tok > h ? tok - 1 : h;   /* the comma before this hop */
@@ -293,8 +293,8 @@ void st_app_origin(st_ctx *c, const char *proxies)
     h = st_req_header(r, "HTTP_X_FORWARDED_PROTO");
     if (h) {
         n = first_token(h, &t);
-        if (ieq(t, n, "https", 5)) strcpy(c->scheme, "https");
-        else if (ieq(t, n, "http", 4)) strcpy(c->scheme, "http");
+        if (ieq(t, n, "https", 5)) st_copy(c->scheme, sizeof c->scheme, "https");
+        else if (ieq(t, n, "http", 4)) st_copy(c->scheme, sizeof c->scheme, "http");
     }
     h = st_req_header(r, "HTTP_X_FORWARDED_HOST");
     if (h) {
@@ -383,10 +383,8 @@ void st_app_handle(const st_request *req, int body_overflow, st_response *resp)
         if (m < 0) { problem(&c, 400, "bad-path", "Badly encoded path", NULL); return; }
         if (!m) continue;
         path_matched = 1;
-        if (strlen(allow) + strlen(routes[i].method) + 3 < sizeof allow) {
-            if (*allow) strcat(allow, ", ");
-            strcat(allow, routes[i].method);
-        }
+        if (*allow) st_append(allow, sizeof allow, ", ");
+        st_append(allow, sizeof allow, routes[i].method);
         if (!strcmp(routes[i].method, req->method)) { rt = &routes[i]; break; }
     }
     if (!rt) {

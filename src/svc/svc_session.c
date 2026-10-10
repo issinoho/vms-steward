@@ -110,9 +110,9 @@ void svc_session_login(st_ctx *c)
         return;
     }
     st_plat_sha256(token, sizeof token, s.key);
-    strcpy(s.username, user);
+    st_copy(s.username, sizeof s.username, user);
     s.created = s.last_seen = st_plat_time();
-    strcpy(s.client, c->client);
+    st_copy(s.client, sizeof s.client, c->client);
     if (st_plat_session_put(&s, &e)) {
         st_zero(token, sizeof token);
         st_app_error(c, &e);
@@ -146,7 +146,7 @@ void svc_session_get(st_ctx *c)
     int i;
 
     if (st_plat_whoami(&who, &e)) { st_app_error(c, &e); return; }
-    sprintf(uic, "[%o,%o]", who.uic >> 16, who.uic & 0xFFFF);
+    snprintf(uic, sizeof uic, "[%o,%o]", who.uic >> 16, who.uic & 0xFFFF);
     st_hex(c->session.csrf, sizeof c->session.csrf, csrf_hex);
 
     st_resp_json(c->resp, 200, &w);

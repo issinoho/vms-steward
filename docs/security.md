@@ -109,4 +109,6 @@ instance behind nginx proxy manager.
 | 2026-10-10 | 1 | Use-after-free: the malformed-login audit line read the username after the JSON document was freed and scrubbed | High (memory safety, pre-auth) | b99ac16 | API suite under ASan (`make api-test-asan`) |
 | 2026-10-10 | 1 | `X-Forwarded-For` walk lost the hop after a trusted proxy, so a chain of proxies gave the wrong client address | Medium (intrusion records misattributed) | b99ac16 | unit `test_proxy` "a chain of trusted proxies", failed before the fix |
 | 2026-10-10 | 1 | `make audit` ran `-fanalyzer` under `-fsyntax-only`, where it silently does nothing | Medium (audit gap) | this commit | planted double free is caught |
+| 2026-10-10 | 1 | First CI run: flawfinder found 16 level-4 uses of `strcpy`/`strcat`/`sprintf` (each bounded in context, none exploitable as written) | Low (hardening) | this commit: `st_copy`/`st_append`/`snprintf`; the printf wrapper gets a GCC `format` attribute | CI flawfinder at level 4 |
+| 2026-10-10 | 1 | cppcheck: four buffers filled by system services or RMS looked uninitialised to it | Informational | zero-initialised | CI cppcheck |
 | 2026-10-10 | 1 | Privilege masks above bit 31 truncated to 0 make `$SETPRV` a silent no-op that returns NORMAL (probe code) | Recorded as a rule | PHASE1.md | checklist item |
