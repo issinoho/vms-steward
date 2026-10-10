@@ -390,10 +390,10 @@ static void test_gateway(void)
     hdr good[2], bad[2];
     cfg.idle_secs = 900; cfg.absolute_secs = 28800; cfg.cookie_secure = 1;
     cfg.trusted_proxies = "";
-    cfg.gateway_secret = "0123456789abcdef0123456789abcdef";
+    cfg.gateway_secret = "unit-test-gateway-secret-not-a-real-one";
     st_app_init(&cfg);
     good[0].n = "HTTP_X_STEWARD_GATEWAY"; good[0].v = cfg.gateway_secret; good[1].n = NULL;
-    bad[0].n = "HTTP_X_STEWARD_GATEWAY"; bad[0].v = "0123456789abcdef0123456789abcdeX"; bad[1].n = NULL;
+    bad[0].n = "HTTP_X_STEWARD_GATEWAY"; bad[0].v = "unit-test-gateway-secret-not-a-real-onX"; bad[1].n = NULL;
     call("GET", "/api/v1/health", NULL, NULL, &a);
     CHECK(a.resp.status == 403, "without the gateway secret a request is refused (direct FastCGI access)");
     st_resp_free(&a.resp);

@@ -1,0 +1,12 @@
+# gitleaks configuration: the default rules, plus a narrow allowlist for test
+# fixtures that look like keys but are not (D8). Allow exact strings, never paths
+# or whole rules, so a real secret added to a test file is still caught.
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Known fake fixtures in tests"
+regexes = [
+  # Commit d994a77: tests/unit/test_core.c's original gateway-secret fixture.
+  '''0123456789abcdef0123456789abcde[fX]''',
+]
