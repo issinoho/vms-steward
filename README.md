@@ -10,15 +10,29 @@ see and change.
 
 ## Status
 
-Phase 0 (scaffolding and platform probes). Nothing is usable yet. See
-[`docs/PLAN.md`](docs/PLAN.md).
+Phase 1 (service skeleton and sign-in) is built and running on OpenVMS x86-64 behind
+lighttpd, as a least-privilege service account. Its exit checks through nginx proxy
+manager are in progress. See [`docs/PLAN.md`](docs/PLAN.md), [`docs/api.md`](docs/api.md)
+and [`docs/security.md`](docs/security.md).
 
 | Area | Status |
 | --- | --- |
-| Scaffolding, sign-in, sessions | planned (Phase 1) |
+| Scaffolding, sign-in, sessions | built; exit checks in progress (Phase 1) |
 | Users and rights identifiers | planned (Phases 2-4) |
 | Access history: who connected, when, how (SSH, TELNET, FTP, DECnet, batch, Steward) in one view | planned (Phase 6) |
 | Logical names, processes, queues, SYSGEN, licences, products, monitoring, error log, terminal | later |
+
+## Building
+
+```sh
+make test            # core unit tests (Linux, stub platform)
+make api-test        # the real server over FastCGI
+make audit           # analyzers, sanitizers, fuzzing, project rules (D8)
+make dev             # the front end at http://127.0.0.1:8080/ on the stub platform
+```
+
+On OpenVMS: `@BUILD_VMS TEST` (VSI C, OpenSSL 3). The pool is run by
+`vms/steward_pool.com` behind lighttpd (`vms/steward.conf`).
 
 ## Platform
 
