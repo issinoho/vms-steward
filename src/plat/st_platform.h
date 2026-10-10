@@ -163,6 +163,64 @@ int st_plat_ident_held(unsigned int uic, st_ident_cb fn, void *ctx, st_err *e);
    (normally the username), attrib the holding's. */
 int st_plat_ident_holders(unsigned int value, st_ident_cb fn, void *ctx, st_err *e);
 
+/* ---- changes (Phase 3), as the current persona ----
+
+   OpenVMS decides who may change what (D2): $SETUAI needs SYSPRV (or GRPPRV within
+   the group); the rights database needs write access to RIGHTSLIST. Every call
+   either changes everything it was given or reports why not. */
+
+/* Which members of st_user_change apply. */
+enum {
+    ST_UC_OWNER = 1u << 0, ST_UC_ACCOUNT = 1u << 1, ST_UC_CLI = 1u << 2,
+    ST_UC_CLITABLES = 1u << 3, ST_UC_DEFDEV = 1u << 4, ST_UC_DEFDIR = 1u << 5,
+    ST_UC_LGICMD = 1u << 6, ST_UC_FLAGS = 1u << 7, ST_UC_EXPIRATION = 1u << 8,
+    ST_UC_PWD_LIFETIME = 1u << 9, ST_UC_PWD_MINIMUM = 1u << 10,
+    ST_UC_DAYS = 1u << 11, ST_UC_ACCESS = 1u << 12, ST_UC_PRIV_AUTH = 1u << 13,
+    ST_UC_PRIV_DEF = 1u << 14, ST_UC_QUOTAS = 1u << 15
+};
+
+typedef struct {
+    unsigned int  fields;                   /* ST_UC_* */
+    char          owner[32], account[9], cli[32], clitables[32];
+    char          defdev[32], defdir[64], lgicmd[64];
+    unsigned int  flags;                    /* the whole new set, 1 << ST_UF_* */
+    long long     expiration;               /* seconds since 1970 UTC; 0 = none */
+    long long     pwd_lifetime;             /* seconds; 0 = none */
+    int           pwd_minimum;
+    unsigned int  secondary_days;
+    unsigned int  access_p[ST_ACC_COUNT], access_s[ST_ACC_COUNT];
+    unsigned int  priv_auth[2], priv_def[2];
+    unsigned int  quota_mask;               /* 1 << ST_Q_*: which quotas change */
+    unsigned long quota[ST_Q_COUNT];
+} st_user_change;
+
+int st_plat_user_modify(const char *username, const st_user_change *c, st_err *e);
+
+/* An administrator sets a password ($SETUAI): the system hashes it and applies the
+   account's minimum length. pre_expired: the user must change it at next login. */
+int st_plat_user_set_password(const char *username, const char *password, int pre_expired,
+                              st_err *e);
+
+/* A user changes their own password ($ACM CHANGE_PASSWORD), after the caller has
+   checked the current one with st_plat_authenticate: a failed change is charged to
+   the account, not the client (PHASE3.md). Returns ST_AUTH_OK, ST_AUTH_FAILED (the
+   system refused the new password; e->text says why, for the user), or
+   ST_AUTH_ERROR. Runs as the service, with no persona. */
+int st_plat_change_password(const char *username, const char *current, const char *newpw,
+                            const char *client, st_err *e);
+
+/* Rights database. value 0 to st_plat_ident_add: OpenVMS chooses. */
+int st_plat_ident_add(const char *name, unsigned int value, unsigned int attrib,
+                      st_ident *out, st_err *e);
+/* new_name NULL or "": keep the name. */
+int st_plat_ident_modify(unsigned int value, const char *new_name, unsigned int set,
+                         unsigned int clear, st_err *e);
+int st_plat_ident_remove(unsigned int value, st_err *e);
+int st_plat_holder_add(unsigned int value, unsigned int uic, unsigned int attrib, st_err *e);
+int st_plat_holder_modify(unsigned int value, unsigned int uic, unsigned int set,
+                          unsigned int clear, st_err *e);
+int st_plat_holder_remove(unsigned int value, unsigned int uic, st_err *e);
+
 /* ---- crypto and time ---- */
 int  st_plat_random(void *p, size_t n);
 void st_plat_sha256(const void *p, size_t n, unsigned char out[32]);

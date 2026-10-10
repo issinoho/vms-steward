@@ -18,17 +18,36 @@ static const char *const flag_names[ST_UF_COUNT] = {
     "VMSAUTH", "DISPWDSYNCH", "PWDMIX"
 };
 
-static const char *const access_names[ST_ACC_COUNT] = {
+/* Case-insensitive lookup in a name table; -1 if absent. */
+int svc_name_index(const char *const *table, int n, const char *name)
+{
+    int i;
+    size_t k;
+    for (i = 0; i < n; i++) {
+        const char *t = table[i];
+        for (k = 0; t[k] && name[k]; k++) {
+            char c = name[k];
+            if (c >= 'a' && c <= 'z') c = (char) (c - 'a' + 'A');
+            if (c != t[k] && !(t[k] >= 'a' && t[k] <= 'z' && c == t[k] - 'a' + 'A')) break;
+        }
+        if (!t[k] && !name[k]) return i;
+    }
+    return -1;
+}
+
+int svc_flag_bit(const char *name) { return svc_name_index(flag_names, ST_UF_COUNT, name); }
+
+const char *const svc_access_names[ST_ACC_COUNT] = {
     "network", "batch", "local", "dialup", "remote"
 };
 
-static const char *const quota_names[ST_Q_COUNT] = {
+const char *const svc_quota_names[ST_Q_COUNT] = {
     "prio", "queprio", "maxjobs", "maxacctjobs", "maxdetach", "prclm", "biolm", "diolm",
     "astlm", "tqelm", "enqlm", "fillm", "shrfillm", "bytlm", "pbytlm", "jtquota",
     "wsdef", "wsquo", "wsextent", "pgflquo", "cpu"
 };
 
-static const char *const day_names[7] = { "MON", "TUE", "WED", "THU", "FRI", "SAT", "SUN" };
+const char *const svc_day_names[7] = { "MON", "TUE", "WED", "THU", "FRI", "SAT", "SUN" };
 
 #define LIMIT_DEFAULT 50
 #define LIMIT_MAX     200
@@ -233,12 +252,17 @@ void svc_user_get(st_ctx *c)
     st_jw w;
     int i;
 
+    char etag[40];
+
     if (user_arg(c, name)) return;
     if (st_plat_user_get(name, &u, &e)) { st_app_error(c, &e); return; }
+    svc_user_etag(&u, etag);
 
     st_resp_json(c->resp, 200, &w);
+    st_resp_header(c->resp, "ETag", etag);   /* PATCH sends it back as If-Match */
     st_jw_obj(&w);
     brief_json(&w, &u);
+    st_jw_kstr(&w, "etag", etag);
     st_jw_kstr(&w, "cli", u.cli);
     st_jw_kstr(&w, "clitables", u.clitables);
     st_jw_kstr(&w, "default_device", u.defdev);
@@ -259,14 +283,14 @@ void svc_user_get(st_ctx *c)
     st_jw_key(&w, "secondary_days");
     st_jw_arr(&w);
     for (i = 0; i < 7; i++)
-        if (u.secondary_days & (1u << i)) st_jw_str(&w, day_names[i]);
+        if (u.secondary_days & (1u << i)) st_jw_str(&w, svc_day_names[i]);
     st_jw_arr_end(&w);
 
     /* Hours with no access, by kind of login: what AUTHORIZE draws as a grid. */
     st_jw_key(&w, "restricted_hours");
     st_jw_obj(&w);
     for (i = 0; i < ST_ACC_COUNT; i++) {
-        st_jw_key(&w, access_names[i]);
+        st_jw_key(&w, svc_access_names[i]);
         st_jw_obj(&w);
         hours_json(&w, "primary", u.access_p[i]);
         hours_json(&w, "secondary", u.access_s[i]);
@@ -279,7 +303,7 @@ void svc_user_get(st_ctx *c)
 
     st_jw_key(&w, "quotas");
     st_jw_obj(&w);
-    for (i = 0; i < ST_Q_COUNT; i++) st_jw_kint(&w, quota_names[i], (long long) u.quota[i]);
+    for (i = 0; i < ST_Q_COUNT; i++) st_jw_kint(&w, svc_quota_names[i], (long long) u.quota[i]);
     st_jw_obj_end(&w);
     st_jw_obj_end(&w);
 }

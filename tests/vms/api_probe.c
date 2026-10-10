@@ -2,10 +2,13 @@
    platform, as a named user, without that user's password. For checking Phase 2+
    results against AUTHORIZE on a test node.
 
-   Usage: api_probe <username> <privileges|-> <path>
+   Usage: api_probe <username> <privileges|-> <path> [<method> [<body>|- [<if-match>]]]
      privileges: comma-separated names to switch on for the session (D9), or -
      e.g.  api_probe STEWARD_TEST - /api/v1/users/STEWARD_TEST
            api_probe STEWARD_TEST GRPPRV /api/v1/users
+           api_probe IAIN SYSPRV /api/v1/users/STEWARD_TEST PATCH "{""owner"":""x""}" "<etag>"
+   A body, if any, is sent as JSON with the session's CSRF token. The ETag is printed
+   after the status when the response has one.
 
    It plants a session for <username> in a scratch store ([.BUILD]PROBE_SESSIONS.DAT),
    so the request runs under that user's persona exactly as a signed-in request does.
@@ -50,8 +53,13 @@ int main(int argc, char **argv)
     char hex[65], cookie[100], user[13], uri[1024];
     const char *q;
 
-    if (argc != 4 || !st_valid_username(argv[1], user)) {
-        fprintf(stderr, "usage: api_probe <username> <privileges|-> <path>\n");
+    const char *method = argc > 4 ? argv[4] : "GET";
+    const char *body = (argc > 5 && strcmp(argv[5], "-")) ? argv[5] : NULL;
+    char m[8], csrf_hex[65];
+    size_t k;
+
+    if (argc < 4 || argc > 7 || !st_valid_username(argv[1], user)) {
+        fprintf(stderr, "usage: api_probe <username> <privileges|-> <path> [<method> [<body>|- [<if-match>]]]\n");
         return 1;
     }
     memset(&pc, 0, sizeof pc);
@@ -91,19 +99,36 @@ int main(int argc, char **argv)
     st_copy(uri, sizeof uri, argv[3]);
     q = strchr(uri, '?');
     st_buf_init(&p, 0);
-    nv(&p, "REQUEST_METHOD", "GET");
+    for (k = 0; method[k] && k < sizeof m - 1; k++)   /* the C RTL lowercases argv */
+        m[k] = (char) ((method[k] >= 'a' && method[k] <= 'z') ? method[k] - 32 : method[k]);
+    m[k] = '\0';
+    st_hex(s.csrf, sizeof s.csrf, csrf_hex);
+    nv(&p, "REQUEST_METHOD", m);
+    nv(&p, "HTTP_X_STEWARD_CSRF", csrf_hex);
+    if (argc > 6) nv(&p, "HTTP_IF_MATCH", argv[6]);
+    if (body) {
+        char len[16];
+        snprintf(len, sizeof len, "%u", (unsigned) strlen(body));
+        nv(&p, "CONTENT_TYPE", "application/json");
+        nv(&p, "CONTENT_LENGTH", len);
+    }
     nv(&p, "REQUEST_URI", uri);
     nv(&p, "QUERY_STRING", q ? q + 1 : "");
     nv(&p, "REMOTE_ADDR", "127.0.0.1");
     nv(&p, "HTTP_HOST", "probe");
     nv(&p, "HTTP_COOKIE", cookie);
-    if (st_request_init(&r, (unsigned char *) p.data, p.len, NULL, 0)) {
+    if (st_request_init(&r, (unsigned char *) p.data, p.len, body, body ? strlen(body) : 0)) {
         fprintf(stderr, "bad request\n");
         return 1;
     }
     st_resp_init(&resp);
     st_app_handle(&r, 0, &resp);
-    printf("%d %s\n", resp.status, st_buf_cstr(&resp.body));
+    {
+        const char *et = strstr(st_buf_cstr(&resp.headers), "ETag: ");
+        printf("%d %s%.*s%s\n", resp.status, et ? "ETag=" : "", et ? (int) strcspn(et + 6, "\r\n") : 0,
+               et ? et + 6 : "", et ? " " : "");
+        printf("%s\n", st_buf_cstr(&resp.body));
+    }
     st_plat_session_delete(s.key, &e);
     st_resp_free(&resp);
     st_request_free(&r);

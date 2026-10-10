@@ -35,6 +35,18 @@ static const route routes[] = {
     { "GET",    "/api/v1/identifiers",                 svc_idents_list,      0 },
     { "GET",    "/api/v1/identifiers/{id}",            svc_ident_get,        0 },
     { "GET",    "/api/v1/identifiers/{id}/holders",    svc_ident_holders,    0 },
+    /* Phase 3: changes */
+    { "PATCH",  "/api/v1/users/{u}",                   svc_user_modify,      0 },
+    { "POST",   "/api/v1/users/{u}/password",          svc_user_set_password, 0 },
+    { "POST",   "/api/v1/users/{u}/identifiers",       svc_user_grant,       0 },
+    { "PUT",    "/api/v1/users/{u}/identifiers/{id}",  svc_user_holding,     0 },
+    { "DELETE", "/api/v1/users/{u}/identifiers/{id}",  svc_user_revoke,      0 },
+    { "POST",   "/api/v1/identifiers",                 svc_ident_create,     0 },
+    { "PATCH",  "/api/v1/identifiers/{id}",            svc_ident_modify,     0 },
+    { "DELETE", "/api/v1/identifiers/{id}",            svc_ident_delete,     0 },
+    /* Anyone, signed in or not (an expired password cannot sign in): the current
+       password is the authentication. */
+    { "POST",   "/api/v1/session/password",            svc_password_change,  R_PUBLIC | R_NOPERSONA },
 };
 #define NROUTES (sizeof routes / sizeof routes[0])
 

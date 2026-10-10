@@ -15,7 +15,7 @@ LDLIBS  ?= -lcrypto
 
 CORE = src/core/st_buf.c src/core/st_fcgi.c src/core/st_json.c src/core/st_http.c \
        src/core/st_route.c
-SVC  = src/svc/st_app.c src/svc/svc_session.c src/svc/svc_users.c src/svc/svc_idents.c
+SVC  = src/svc/st_app.c src/svc/svc_session.c src/svc/svc_users.c src/svc/svc_idents.c src/svc/svc_edit.c
 STUB = src/plat/stub/st_plat_stub.c src/plat/st_crypto_openssl.c
 
 B = build
@@ -34,6 +34,9 @@ $(B)/test_core: $(CORE) $(SVC) $(STUB) tests/unit/test_core.c | $(B)
 $(B)/steward-asan: $(CORE) $(SVC) $(STUB) src/main/steward_main.c | $(B)
 	$(CC) $(CFLAGS) -fsanitize=address,undefined -fno-omit-frame-pointer -o $@ $^ $(LDLIBS)
 
+$(B)/test_core-asan: $(CORE) $(SVC) $(STUB) tests/unit/test_core.c | $(B)
+	$(CC) $(CFLAGS) -fsanitize=address,undefined -fno-omit-frame-pointer -o $@ $^ $(LDLIBS)
+
 $(B)/fuzz_parsers: $(CORE) tests/unit/fuzz_parsers.c | $(B)
 	$(CC) $(CFLAGS) -fsanitize=address,undefined -o $@ $^
 
@@ -48,6 +51,11 @@ api-test: $(B)/steward
 api-test-asan: $(B)/steward-asan
 	python3 tests/api/test_api.py $(B)/steward-asan
 
+# The unit tests under the sanitizers too: an unterminated header list in a test
+# read past its array, harmless by luck on Linux and fatal on OpenVMS (Phase 3).
+test-asan: $(B)/test_core-asan
+	$(B)/test_core-asan
+
 fuzz: $(B)/fuzz_parsers
 	$(B)/fuzz_parsers 200000
 
@@ -58,7 +66,7 @@ fuzz: $(B)/fuzz_parsers
 #   - project rules (tools/audit_rules.sh)
 #   - the sanitizer API run and the fuzzer
 ANALYZE_SRC = $(CORE) $(SVC) $(STUB) src/main/steward_main.c
-audit: api-test-asan fuzz
+audit: test-asan api-test-asan fuzz
 	@# A real compile per file: under -fsyntax-only the analyzer silently does
 	@# nothing (checked with a planted double free, 2026-10-10).
 	@for f in $(ANALYZE_SRC); do \
@@ -78,4 +86,4 @@ dev: $(B)/steward
 clean:
 	rm -rf $(B)
 
-.PHONY: all test api-test api-test-asan fuzz audit dev clean
+.PHONY: all test test-asan api-test api-test-asan fuzz audit dev clean

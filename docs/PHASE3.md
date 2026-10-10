@@ -56,3 +56,17 @@ owner and flags were back as they were, and the identifier was gone.
   account by guessing. So Steward first checks the current password with
   AUTHENTICATE_PRINCIPAL (failures charged to the client, as at sign-in), and calls
   CHANGE_PASSWORD only after that succeeds.
+- **What the user's runs showed (probe_password, 2026-10-10):**
+  - An administrator's `$SETUAI UAI$_PASSWORD` sets the password date to *now* and
+    leaves the password valid. For "set and pre-expire" (AUTHORIZE's `/PWDEXPIRED`)
+    Steward also sets `UAI$_PWD_DATE` to -1.
+  - The user's own CHANGE_PASSWORD succeeded and recorded the time.
+  - A change with a short new password came back `AUTHFAILURE` / `LOGIN-F-INVPWD`,
+    which is also what a wrong current password gives, so the run cannot say which
+    it was. Steward's flow removes the doubt: it checks the current password first,
+    and checks the new password against the account's minimum length before calling
+    `$ACM`.
+- **The service account can call CHANGE_PASSWORD.** Run as STEWARD (IMPERSONATE,
+  TMPMBX, NETMBX; SYSPRV off) with a wrong password, `$ACMW` returned normally, and
+  the ACMESB said `AUTHFAILURE`. As with sign-in, the reason is hidden from a caller
+  without SYSPRV. A *successful* change as the service is verified at the phase exit.

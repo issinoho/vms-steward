@@ -164,8 +164,8 @@ def main(binary):
         check(st == 400, "a filter with a quote is refused, not echoed")
         st, _, _ = p.call("PUT", "/api/v1/session/privileges", {"enabled": []})
         st, _, doc = p.call("GET", "/api/v1/users")
-        check(st == 403 and doc.get("vms_status") == "%X00002964",
-              "with SYSPRV switched off again, the OS refuses the list (NOSYSPRV)")
+        check(st == 403 and doc.get("vms_status") == "%X0001829A",
+              "with SYSPRV switched off again, the OS refuses the list (RMS-E-PRV, as on the node)")
 
         # The same headers from a peer we do not trust are ignored: the https Origin
         # no longer matches what lighttpd saw, so the request is refused.

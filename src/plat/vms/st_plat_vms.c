@@ -85,7 +85,8 @@ static void set_cond(st_err *e, unsigned int cond)
         e->kind = ST_E_NOPRIV; break;
     case SS$_NOSUCHID: case RMS$_RNF:
         e->kind = ST_E_NOTFOUND; break;
-    case SS$_IVIDENT: case SS$_BADPARAM:
+    case SS$_IVIDENT: case SS$_BADPARAM: case SS$_INVPWDLEN: case SS$_PWDINHIS:
+    case SS$_PWDINDIC: case SS$_PWDWEAK: case SS$_PWDSYNTAX:
         e->kind = ST_E_INVALID; break;
     case SS$_DUPIDENT: case RMS$_DUP:
         e->kind = ST_E_CONFLICT; break;
@@ -903,6 +904,261 @@ int st_plat_ident_holders(unsigned int value, st_ident_cb fn, void *ctx, st_err 
     }
     sys$finish_rdb(&rdb);
     if (st != SS$_NOSUCHID) { set_cond(e, st); return -1; }
+    return 0;
+}
+
+/* ================================================================ changes (Phase 3)
+
+   All under the caller's persona: OpenVMS refuses what the user may not do
+   (probe_modify). Each user change is one $SETUAI call, so it applies whole or not
+   at all. */
+
+/* A counted field at its declared size: length byte, text, blank fill. A shorter
+   buffer is refused with BADPARAM (PHASE3.md, finding 1). */
+static void counted_put(char *buf, size_t size, const char *text)
+{
+    size_t n = strlen(text);
+    if (n > size - 1) n = size - 1;
+    memset(buf, ' ', size);
+    buf[0] = (char) n;
+    memcpy(buf + 1, text, n);
+}
+
+/* Seconds since 1970 UTC to a VMS local-time quadword (the reverse of unix_time). */
+static void vms_time(long long t, unsigned int q[2])
+{
+    unsigned long long v = 0;
+    if (t > 0) v = (unsigned long long) (t + local_offset()) * 10000000ull + VMS_EPOCH_OFFSET;
+    q[0] = (unsigned int) v;
+    q[1] = (unsigned int) (v >> 32);
+}
+
+int st_plat_user_modify(const char *username, const st_user_change *c, st_err *e)
+{
+    static const struct { unsigned short code, size; } quotas[ST_Q_COUNT] = {
+        { UAI$_PRI, 1 }, { UAI$_QUEPRI, 1 }, { UAI$_MAXJOBS, 2 }, { UAI$_MAXACCTJOBS, 2 },
+        { UAI$_MAXDETACH, 2 }, { UAI$_PRCCNT, 2 }, { UAI$_BIOLM, 2 }, { UAI$_DIOLM, 2 },
+        { UAI$_ASTLM, 2 }, { UAI$_TQCNT, 2 }, { UAI$_ENQLM, 2 }, { UAI$_FILLM, 2 },
+        { UAI$_SHRFILLM, 2 }, { UAI$_BYTLM, 4 }, { UAI$_PBYTLM, 4 }, { UAI$_JTQUOTA, 4 },
+        { UAI$_DFWSCNT, 4 }, { UAI$_WSQUOTA, 4 }, { UAI$_WSEXTENT, 4 }, { UAI$_PGFLQUOTA, 4 },
+        { UAI$_CPUTIM, 4 },
+    };
+    static const unsigned short access_p[ST_ACC_COUNT] = {
+        UAI$_NETWORK_ACCESS_P, UAI$_BATCH_ACCESS_P, UAI$_LOCAL_ACCESS_P,
+        UAI$_DIALUP_ACCESS_P, UAI$_REMOTE_ACCESS_P };
+    static const unsigned short access_s[ST_ACC_COUNT] = {
+        UAI$_NETWORK_ACCESS_S, UAI$_BATCH_ACCESS_S, UAI$_LOCAL_ACCESS_S,
+        UAI$_DIALUP_ACCESS_S, UAI$_REMOTE_ACCESS_S };
+    char owner[32], account[32], cli[32], tables[32], defdev[32], defdir[64], lgicmd[64];
+    unsigned int flags = 0, expq[2], life[2], pwdlen, days, acc_p[ST_ACC_COUNT], acc_s[ST_ACC_COUNT];
+    unsigned int q[ST_Q_COUNT], pa[2], pd[2], st, i, n = 0;
+    struct dsc$descriptor_s d;
+    st_ile3 items[16 + 2 * ST_ACC_COUNT + ST_Q_COUNT];
+
+    desc(&d, username, (unsigned short) strlen(username));
+    if (c->fields & ST_UC_OWNER) { counted_put(owner, sizeof owner, c->owner); item(&items[n++], UAI$_OWNER, owner, sizeof owner, 0); }
+    if (c->fields & ST_UC_ACCOUNT) {   /* blank-padded, not counted */
+        size_t l = strlen(c->account);
+        memset(account, ' ', sizeof account);
+        memcpy(account, c->account, l > 8 ? 8 : l);
+        item(&items[n++], UAI$_ACCOUNT, account, sizeof account, 0);
+    }
+    if (c->fields & ST_UC_CLI) { counted_put(cli, sizeof cli, c->cli); item(&items[n++], UAI$_DEFCLI, cli, sizeof cli, 0); }
+    if (c->fields & ST_UC_CLITABLES) { counted_put(tables, sizeof tables, c->clitables); item(&items[n++], UAI$_CLITABLES, tables, sizeof tables, 0); }
+    if (c->fields & ST_UC_DEFDEV) { counted_put(defdev, sizeof defdev, c->defdev); item(&items[n++], UAI$_DEFDEV, defdev, sizeof defdev, 0); }
+    if (c->fields & ST_UC_DEFDIR) { counted_put(defdir, sizeof defdir, c->defdir); item(&items[n++], UAI$_DEFDIR, defdir, sizeof defdir, 0); }
+    if (c->fields & ST_UC_LGICMD) { counted_put(lgicmd, sizeof lgicmd, c->lgicmd); item(&items[n++], UAI$_LGICMD, lgicmd, sizeof lgicmd, 0); }
+    if (c->fields & ST_UC_FLAGS) {
+        /* Read, then change only the bits Steward knows: a flag added in a later
+           OpenVMS version survives an edit made here. */
+        st_ile3 get[2];
+        item(&get[0], UAI$_FLAGS, &flags, 4, 0);
+        item_end(&get[1]);
+        st = sys$getuai(0, 0, &d, get, 0, 0, 0);
+        if (!(st & 1)) { set_cond(e, st); return -1; }
+        for (i = 0; i < sizeof uaf_flags / sizeof uaf_flags[0]; i++) {
+            flags &= ~uaf_flags[i].mask;
+            if (c->flags & (1u << uaf_flags[i].bit)) flags |= uaf_flags[i].mask;
+        }
+        item(&items[n++], UAI$_FLAGS, &flags, 4, 0);
+    }
+    if (c->fields & ST_UC_EXPIRATION) { vms_time(c->expiration, expq); item(&items[n++], UAI$_EXPIRATION, expq, 8, 0); }
+    if (c->fields & ST_UC_PWD_LIFETIME) {   /* a delta time: negative */
+        long long v = -(c->pwd_lifetime * 10000000LL);
+        life[0] = (unsigned int) v;
+        life[1] = (unsigned int) ((unsigned long long) v >> 32);
+        item(&items[n++], UAI$_PWD_LIFETIME, life, 8, 0);
+    }
+    if (c->fields & ST_UC_PWD_MINIMUM) { pwdlen = (unsigned int) c->pwd_minimum; item(&items[n++], UAI$_PWD_LENGTH, &pwdlen, 1, 0); }
+    if (c->fields & ST_UC_DAYS) { days = c->secondary_days & 0x7F; item(&items[n++], UAI$_PRIMEDAYS, &days, 1, 0); }
+    if (c->fields & ST_UC_ACCESS)
+        for (i = 0; i < ST_ACC_COUNT; i++) {
+            acc_p[i] = c->access_p[i] & 0xFFFFFF;
+            acc_s[i] = c->access_s[i] & 0xFFFFFF;
+            item(&items[n++], access_p[i], &acc_p[i], 3, 0);
+            item(&items[n++], access_s[i], &acc_s[i], 3, 0);
+        }
+    if (c->fields & ST_UC_PRIV_AUTH) { pa[0] = c->priv_auth[0]; pa[1] = c->priv_auth[1]; item(&items[n++], UAI$_PRIV, pa, 8, 0); }
+    if (c->fields & ST_UC_PRIV_DEF) { pd[0] = c->priv_def[0]; pd[1] = c->priv_def[1]; item(&items[n++], UAI$_DEF_PRIV, pd, 8, 0); }
+    if (c->fields & ST_UC_QUOTAS)
+        for (i = 0; i < ST_Q_COUNT; i++)
+            if (c->quota_mask & (1u << i)) {
+                q[i] = (unsigned int) c->quota[i];
+                item(&items[n++], quotas[i].code, &q[i], quotas[i].size, 0);
+            }
+    item_end(&items[n]);
+    if (n == 0) return 0;
+    st = sys$setuai(0, 0, &d, items, 0, 0, 0);
+    if (!(st & 1)) { set_cond(e, st); return -1; }
+    return 0;
+}
+
+int st_plat_user_set_password(const char *username, const char *password, int pre_expired,
+                              st_err *e)
+{
+    struct dsc$descriptor_s d;
+    st_ile3 items[2];
+    unsigned int st;
+    desc(&d, username, (unsigned short) strlen(username));
+    /* Plaintext: the system hashes it with the preferred algorithm and applies the
+       account's minimum length (PHASE3.md). It sets the password date to now. */
+    item(&items[0], UAI$_PASSWORD, (void *) password, (unsigned short) strlen(password), 0);
+    item_end(&items[1]);
+    st = sys$setuai(0, 0, &d, items, 0, 0, 0);
+    if (!(st & 1)) { set_cond(e, st); return -1; }
+    if (pre_expired) {   /* AUTHORIZE's /PWDEXPIRED: a password date of -1 */
+        unsigned int never[2] = { 0xFFFFFFFFu, 0xFFFFFFFFu };
+        item(&items[0], UAI$_PWD_DATE, never, 8, 0);
+        st = sys$setuai(0, 0, &d, items, 0, 0, 0);
+        if (!(st & 1)) {
+            set_cond(e, st);
+            st_copy(e->text, sizeof e->text, "the password was set, but marking it expired failed");
+            e->kind = ST_E_INTERNAL;
+            return -1;
+        }
+    }
+    return 0;
+}
+
+int st_plat_change_password(const char *username, const char *current, const char *newpw,
+                            const char *client, st_err *e)
+{
+    struct _acmesb sb;
+    unsigned int st, ltype = ACME$K_NETWORK, pflags = 0;
+    st_ile3 items[8];
+
+    if (persona_handle) { set_text(e, ST_E_INTERNAL, "a persona is active"); return ST_AUTH_ERROR; }
+    {
+        /* The account's minimum length, read as the user (its own record needs no
+           privilege: probe_selfuai), so a short password gets a clear answer.
+           Without SYSPRV, $ACM would say only AUTHFAILURE (PHASE3.md). */
+        static const unsigned int none[2] = { 0, 0 };
+        unsigned int minlen = 0;
+        struct dsc$descriptor_s d;
+        st_ile3 it[2];
+        if (st_plat_persona_begin(username, none, e)) return ST_AUTH_ERROR;
+        desc(&d, username, (unsigned short) strlen(username));
+        item(&it[0], UAI$_PWD_LENGTH, &minlen, 1, 0);
+        item_end(&it[1]);
+        st = sys$getuai(0, 0, &d, it, 0, 0, 0);
+        st_plat_persona_end();
+        if ((st & 1) && strlen(newpw) < minlen) {
+            set_cond(e, SS$_INVPWDLEN);
+            snprintf(e->text, sizeof e->text, "%%SYSTEM-F-INVPWDLEN, the new password must be at least %u characters", minlen);
+            return ST_AUTH_FAILED;
+        }
+    }
+    memset(&sb, 0, sizeof sb);
+    item(&items[0], ACME$_PRINCIPAL_NAME_IN, (void *) username, (unsigned short) strlen(username), 0);
+    item(&items[1], ACME$_PASSWORD_1, (void *) current, (unsigned short) strlen(current), 0);
+    item(&items[2], ACME$_NEW_PASSWORD_1, (void *) newpw, (unsigned short) strlen(newpw), 0);
+    item(&items[3], ACME$_LOGON_TYPE, &ltype, 4, 0);
+    item(&items[4], ACME$_REMOTE_HOST_NAME, (void *) client, (unsigned short) strlen(client), 0);
+    item(&items[5], ACME$_REMOTE_USERNAME, "STEWARD", 7, 0);
+    /* Required in non-dialogue mode: without it, INSFARG (probe_acmchg). */
+    item(&items[6], ACME$_NEW_PASSWORD_FLAGS, &pflags, 4, 0);
+    item_end(&items[7]);
+    st = sys$acmw(0, ACME$_FC_CHANGE_PASSWORD, 0, items, &sb, 0, 0);
+    if (!(st & 1)) { set_cond(e, st); e->kind = ST_E_INTERNAL; return ST_AUTH_ERROR; }
+    if (!(sb.acmesb$l_status & 1)) {
+        /* The caller has just checked the current password, so this is about the new
+           one: history, dictionary or another policy. Without SYSPRV the reason is
+           often only AUTHFAILURE (PHASE3.md). */
+        set_cond(e, sb.acmesb$l_secondary_status ? sb.acmesb$l_secondary_status
+                                                 : sb.acmesb$l_status);
+        e->kind = ST_E_INVALID;
+        return ST_AUTH_FAILED;
+    }
+    set_text(e, ST_OK, "");
+    return ST_AUTH_OK;
+}
+
+static unsigned int kgb_bits(unsigned int attrib)
+{
+    unsigned int i, kgb = 0;
+    for (i = 0; i < sizeof kgb_attrs / sizeof kgb_attrs[0]; i++)
+        if (attrib & (1u << kgb_attrs[i].bit)) kgb |= kgb_attrs[i].mask;
+    return kgb;
+}
+
+int st_plat_ident_add(const char *name, unsigned int value, unsigned int attrib,
+                      st_ident *out, st_err *e)
+{
+    struct dsc$descriptor_s d;
+    unsigned int id = 0, st;
+    desc(&d, name, (unsigned short) strlen(name));
+    st = sys$add_ident(&d, value, kgb_bits(attrib), &id);   /* value 0: OpenVMS chooses */
+    if (!(st & 1)) { set_cond(e, st); return -1; }
+    return st_plat_ident_get(name, out, e);
+}
+
+int st_plat_ident_modify(unsigned int value, const char *new_name, unsigned int set,
+                         unsigned int clear, st_err *e)
+{
+    struct dsc$descriptor_s d;
+    unsigned int st;
+    desc(&d, new_name ? new_name : "", (unsigned short) (new_name ? strlen(new_name) : 0));
+    st = sys$mod_ident(value, kgb_bits(set), kgb_bits(clear),
+                       (new_name && *new_name) ? &d : 0, 0);
+    if (!(st & 1)) { set_cond(e, st); return -1; }
+    return 0;
+}
+
+int st_plat_ident_remove(unsigned int value, st_err *e)
+{
+    unsigned int st = sys$rem_ident(value);   /* takes its holder records with it */
+    if (!(st & 1)) { set_cond(e, st); return -1; }
+    return 0;
+}
+
+int st_plat_holder_add(unsigned int value, unsigned int uic, unsigned int attrib, st_err *e)
+{
+    unsigned int holder[2], st;
+    holder[0] = uic;
+    holder[1] = 0;
+    st = sys$add_holder(value, (void *) holder, kgb_bits(attrib));
+    if (!(st & 1)) { set_cond(e, st); return -1; }
+    return 0;
+}
+
+int st_plat_holder_modify(unsigned int value, unsigned int uic, unsigned int set,
+                          unsigned int clear, st_err *e)
+{
+    unsigned int holder[2], st;
+    holder[0] = uic;
+    holder[1] = 0;
+    st = sys$mod_holder(value, (void *) holder, kgb_bits(set), kgb_bits(clear));
+    if (!(st & 1)) { set_cond(e, st); return -1; }
+    return 0;
+}
+
+int st_plat_holder_remove(unsigned int value, unsigned int uic, st_err *e)
+{
+    unsigned int holder[2], st;
+    holder[0] = uic;
+    holder[1] = 0;
+    st = sys$rem_holder(value, (void *) holder);
+    if (!(st & 1)) { set_cond(e, st); return -1; }
     return 0;
 }
 

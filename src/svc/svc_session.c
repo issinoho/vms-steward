@@ -21,7 +21,7 @@ const char *svc_priv_name(int bit)
 
 /* The bit for a privilege name (case-insensitive; DETACH accepted for IMPERSONATE),
    or -1. */
-static int priv_bit(const char *name)
+int svc_priv_bit(const char *name)
 {
     char up[16];
     size_t i, n = strlen(name);
@@ -229,7 +229,7 @@ void svc_session_privileges(st_ctx *c)
         return;
     }
     for (v = list->child; v; v = v->next) {
-        int bit = v->type == ST_JSTR ? priv_bit(v->str) : -1;
+        int bit = v->type == ST_JSTR ? svc_priv_bit(v->str) : -1;
         if (bit < 0) {
             char detail[96];
             snprintf(detail, sizeof detail, "Not an OpenVMS privilege: %.40s",

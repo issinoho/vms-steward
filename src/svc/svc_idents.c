@@ -18,6 +18,8 @@ static const char *const attrib_names[ST_IA_COUNT] = {
    own order is by value. Past this many the list says it is truncated. */
 #define MAX_IDENTS 8192
 
+int svc_attrib_bit(const char *name) { return svc_name_index(attrib_names, ST_IA_COUNT, name); }
+
 void svc_ident_value_text(unsigned int value, char out[24])
 {
     if (value & ST_IDENT_GENERAL) snprintf(out, 24, "%%X%08X", value);

@@ -491,7 +491,7 @@ static void test_users(void)
     st_resp_free(&b.resp);
 
     call("GET", "/api/v1/users", t, NULL, &b);
-    CHECK(b.resp.status == 403 && strstr(b.resp.body.data, "NOSYSPRV"),
+    CHECK(b.resp.status == 403 && strstr(b.resp.body.data, "RMS-E-PRV"),
           "an unprivileged user cannot list users: the OS refuses, and says why");
     st_resp_free(&b.resp);
 
@@ -599,6 +599,223 @@ static void test_users(void)
     CHECK(!st_plat_persona_active(), "no persona left active");
 }
 
+/* ------------------------------------------------- changes (Phase 3) */
+
+/* The ETag from a GET response's headers. */
+static void etag_of(const result *r, char *out, size_t n)
+{
+    const char *h = strstr(st_buf_cstr((st_buf *) &r->resp.headers), "ETag: ");
+    out[0] = '\0';
+    if (h) { h += 6; snprintf(out, n, "%.*s", (int) strcspn(h, "\r\n"), h); }
+}
+
+static void test_edit(void)
+{
+    result b;
+    char tc[140], ac[140], tcsrf[65], acsrf[65], etag[48], etag2[48];
+    hdr t[4], adm[4];   /* one slot more than the most headers used: call() stops at n == NULL */
+
+    sign_in("{\"username\":\"steward_test\",\"password\":\"test-pass\"}", tc, sizeof tc, tcsrf);
+    sign_in("{\"username\":\"steward_adm\",\"password\":\"admin-pass\"}", ac, sizeof ac, acsrf);
+    t[0].n = "HTTP_COOKIE"; t[0].v = tc; t[1].n = "HTTP_X_STEWARD_CSRF"; t[1].v = tcsrf; t[2].n = NULL; t[3].n = NULL;
+    adm[0].n = "HTTP_COOKIE"; adm[0].v = ac; adm[1].n = "HTTP_X_STEWARD_CSRF"; adm[1].v = acsrf;
+    adm[2].n = NULL; adm[3].n = NULL;
+    call("PUT", "/api/v1/session/privileges", adm, "{\"enabled\":[\"SYSPRV\"]}", &b);
+    st_resp_free(&b.resp);
+
+    /* ---- PATCH a user, with optimistic concurrency */
+    call("GET", "/api/v1/users/STEWARD_TEST", adm, NULL, &b);
+    etag_of(&b, etag, sizeof etag);
+    CHECK(b.resp.status == 200 && strlen(etag) == 34 && strstr(b.resp.body.data, "\"etag\":"),
+          "a user GET carries an ETag, in the header and the body");
+    st_resp_free(&b.resp);
+
+    call("PATCH", "/api/v1/users/STEWARD_TEST", adm, "{\"owner\":\"x\"}", &b);
+    CHECK(b.resp.status == 428, "a PATCH without If-Match is refused (428)");
+    st_resp_free(&b.resp);
+    adm[2].n = "HTTP_IF_MATCH"; adm[2].v = "\"00000000000000000000000000000000\"";
+    call("PATCH", "/api/v1/users/STEWARD_TEST", adm, "{\"owner\":\"x\"}", &b);
+    CHECK(b.resp.status == 412 && strstr(st_buf_cstr(&b.resp.headers), etag),
+          "a stale If-Match is refused (412), with the current ETag");
+    st_resp_free(&b.resp);
+
+    adm[2].v = etag;
+    call("PATCH", "/api/v1/users/STEWARD_TEST", adm, "{\"owner\":\"x\",\"shoe_size\":9}", &b);
+    CHECK(b.resp.status == 422 && strstr(b.resp.body.data, "shoe_size"), "an unknown field is refused, by name");
+    st_resp_free(&b.resp);
+    call("PATCH", "/api/v1/users/STEWARD_TEST", adm, "{\"owner\":\"0123456789012345678901234567890123\"}", &b);
+    CHECK(b.resp.status == 422, "an owner longer than 31 characters is refused, not trimmed");
+    st_resp_free(&b.resp);
+    call("PATCH", "/api/v1/users/STEWARD_TEST", adm, "{\"owner\":\"a\\u0007b\"}", &b);
+    CHECK(b.resp.status == 422, "control characters are refused");
+    st_resp_free(&b.resp);
+    call("PATCH", "/api/v1/users/STEWARD_TEST", adm, "{\"quotas\":{\"prio\":99}}", &b);
+    CHECK(b.resp.status == 422, "a quota out of range is refused (PRIO is 0-31)");
+    st_resp_free(&b.resp);
+    call("PATCH", "/api/v1/users/STEWARD_TEST", adm, "{\"flags\":[\"NOSUCHFLAG\"]}", &b);
+    CHECK(b.resp.status == 422, "an unknown flag is refused");
+    st_resp_free(&b.resp);
+    call("PATCH", "/api/v1/users/STEWARD_TEST", adm, "{\"default_directory\":\"[A B]\"}", &b);
+    CHECK(b.resp.status == 422, "a directory with a space is refused");
+    st_resp_free(&b.resp);
+
+    call("PATCH", "/api/v1/users/STEWARD_TEST", adm,
+         "{\"owner\":\"Changed owner\",\"flags\":[\"DISWELCOME\"],\"quotas\":{\"prio\":5},"
+         "\"secondary_days\":[\"SAT\"],\"restricted_hours\":{\"batch\":{\"primary\":[0,1,2]}},"
+         "\"authorized_privileges\":[\"TMPMBX\",\"NETMBX\",\"OPER\"],\"password\":{\"lifetime_days\":30}}", &b);
+    etag_of(&b, etag2, sizeof etag2);
+    CHECK(b.resp.status == 200 && strstr(b.resp.body.data, "\"owner\":\"Changed owner\"") &&
+          strstr(b.resp.body.data, "\"flags\":[\"DISWELCOME\"]") && strstr(b.resp.body.data, "\"prio\":5") &&
+          strstr(b.resp.body.data, "\"secondary_days\":[\"SAT\"]") &&
+          strstr(b.resp.body.data, "\"batch\":{\"primary\":[0,1,2]") &&
+          strstr(b.resp.body.data, "\"lifetime_days\":30") &&
+          strstr(b.resp.body.data, "\"authorized_privileges\":[\"TMPMBX\",\"OPER\",\"NETMBX\"]"),
+          "a PATCH changes what it names, and returns the record as it now is");
+    CHECK(strcmp(etag, etag2) != 0, "and the ETag changes with it");
+    st_resp_free(&b.resp);
+    call("PATCH", "/api/v1/users/STEWARD_TEST", adm, "{\"owner\":\"again\"}", &b);
+    CHECK(b.resp.status == 412, "the old ETag no longer works after a change");
+    st_resp_free(&b.resp);
+    adm[2].v = etag2;
+    call("PATCH", "/api/v1/users/STEWARD_TEST", adm,
+         "{\"owner\":\"Steward test (stub)\",\"flags\":[],\"quotas\":{\"prio\":4},"
+         "\"secondary_days\":[\"SAT\",\"SUN\"],\"restricted_hours\":{\"batch\":{\"primary\":[]}},"
+         "\"authorized_privileges\":[\"TMPMBX\",\"NETMBX\"],\"password\":{\"lifetime_days\":90}}", &b);
+    CHECK(b.resp.status == 200 && strstr(b.resp.body.data, "\"owner\":\"Steward test (stub)\""), "and it can be put back");
+    st_resp_free(&b.resp);
+    adm[2].n = NULL;
+
+    t[2].n = "HTTP_IF_MATCH"; t[2].v = etag;
+    call("GET", "/api/v1/users/STEWARD_TEST", t, NULL, &b);
+    etag_of(&b, etag, sizeof etag);
+    st_resp_free(&b.resp);
+    call("PATCH", "/api/v1/users/STEWARD_TEST", t, "{\"owner\":\"mine now\"}", &b);
+    CHECK(b.resp.status == 403 && strstr(b.resp.body.data, "NOPRIV"),
+          "a user without privilege cannot change even their own record: OpenVMS refuses");
+    st_resp_free(&b.resp);
+    t[2].n = NULL;
+
+    /* ---- passwords */
+    call("POST", "/api/v1/users/STEWARD_TEST/password", adm, "{\"password\":\"short\"}", &b);
+    CHECK(b.resp.status == 422 && strstr(b.resp.body.data, "INVPWDLEN"),
+          "setting a password below the account's minimum is refused by the system");
+    st_resp_free(&b.resp);
+    call("POST", "/api/v1/users/STEWARD_TEST/password", adm, "{\"password\":\"a-long-enough-pass\",\"extra\":1}", &b);
+    CHECK(b.resp.status == 422, "and unknown members are refused");
+    st_resp_free(&b.resp);
+    call("POST", "/api/v1/users/STEWARD_TEST/password", adm, "{\"password\":\"a-long-enough-pass\",\"pre_expired\":true}", &b);
+    CHECK(b.resp.status == 204, "an administrator sets a password, pre-expired");
+    st_resp_free(&b.resp);
+    call("POST", "/api/v1/session", NULL, "{\"username\":\"steward_test\",\"password\":\"a-long-enough-pass\"}", &b);
+    CHECK(b.resp.status == 403 && strstr(b.resp.body.data, "password-expired"),
+          "the user cannot sign in with it until they change it");
+    st_resp_free(&b.resp);
+
+    call("POST", "/api/v1/session/password", NULL,
+         "{\"username\":\"steward_test\",\"current\":\"wrong-one\",\"new\":\"another-long-password\"}", &b);
+    CHECK(b.resp.status == 401 && strstr(b.resp.body.data, "sign-in-failed"),
+          "changing with a wrong current password looks exactly like a failed sign-in");
+    st_resp_free(&b.resp);
+    call("POST", "/api/v1/session/password", NULL,
+         "{\"username\":\"steward_test\",\"current\":\"a-long-enough-pass\",\"new\":\"short\"}", &b);
+    CHECK(b.resp.status == 422 && strstr(b.resp.body.data, "password-refused") && strstr(b.resp.body.data, "INVPWDLEN"),
+          "with the right current password, a refused new one says why");
+    st_resp_free(&b.resp);
+    call("POST", "/api/v1/session/password", NULL,
+         "{\"username\":\"steward_test\",\"current\":\"a-long-enough-pass\",\"new\":\"another-long-password\"}", &b);
+    CHECK(b.resp.status == 204, "an expired password can be changed without signing in");
+    st_resp_free(&b.resp);
+    call("POST", "/api/v1/session", NULL, "{\"username\":\"steward_test\",\"password\":\"another-long-password\"}", &b);
+    CHECK(b.resp.status == 201, "and the new one signs in");
+    st_resp_free(&b.resp);
+    {   /* put the fixture back: minimum 0, the old password, minimum 15 */
+        char et[48];
+        call("GET", "/api/v1/users/STEWARD_TEST", adm, NULL, &b);
+        etag_of(&b, et, sizeof et);
+        st_resp_free(&b.resp);
+        adm[2].n = "HTTP_IF_MATCH"; adm[2].v = et;
+        call("PATCH", "/api/v1/users/STEWARD_TEST", adm, "{\"password\":{\"minimum_length\":0}}", &b);
+        etag_of(&b, et, sizeof et);
+        st_resp_free(&b.resp);
+        call("POST", "/api/v1/users/STEWARD_TEST/password", adm, "{\"password\":\"test-pass\"}", &b);
+        CHECK(b.resp.status == 204, "fixture restored: password");
+        st_resp_free(&b.resp);
+        call("PATCH", "/api/v1/users/STEWARD_TEST", adm, "{\"password\":{\"minimum_length\":15}}", &b);
+        CHECK(b.resp.status == 200, "fixture restored: minimum length");
+        st_resp_free(&b.resp);
+        adm[2].n = NULL;
+    }
+
+    /* ---- grant, change, revoke */
+    call("POST", "/api/v1/users/STEWARD_TEST/identifiers", adm, "{\"name\":\"steward_ops\",\"attributes\":[\"RESOURCE\"]}", &b);
+    CHECK(b.resp.status == 422 && strstr(b.resp.body.data, "only attributes its identifier has"),
+          "a holding attribute the identifier lacks is refused (OpenVMS would drop it silently)");
+    st_resp_free(&b.resp);
+    call("POST", "/api/v1/users/STEWARD_TEST/identifiers", adm, "{\"name\":\"steward_demo\",\"attributes\":[\"RESOURCE\"]}", &b);
+    CHECK(b.resp.status == 201 && strstr(b.resp.body.data, "{\"name\":\"STEWARD_DEMO\",\"value\":\"%X80010001\",\"attributes\":[\"RESOURCE\"]}"),
+          "grant, with an attribute the identifier has");
+    st_resp_free(&b.resp);
+    call("POST", "/api/v1/users/STEWARD_TEST/identifiers", adm, "{\"name\":\"STEWARD_DEMO\"}", &b);
+    CHECK(b.resp.status == 409 && strstr(b.resp.body.data, "DUPIDENT"), "granting it twice is a conflict");
+    st_resp_free(&b.resp);
+    call("PUT", "/api/v1/users/STEWARD_TEST/identifiers/STEWARD_DEMO", adm, "{\"attributes\":[]}", &b);
+    CHECK(b.resp.status == 200 && strstr(b.resp.body.data, "{\"name\":\"STEWARD_DEMO\",\"value\":\"%X80010001\",\"attributes\":[]}"),
+          "a holding's attributes can be changed");
+    st_resp_free(&b.resp);
+    call("POST", "/api/v1/users/STEWARD_TEST/identifiers", adm, "{\"name\":\"STEWARD_ADM\"}", &b);
+    CHECK(b.resp.status == 422, "a UIC identifier cannot be granted");
+    st_resp_free(&b.resp);
+    call("DELETE", "/api/v1/users/STEWARD_TEST/identifiers/STEWARD_DEMO", adm, NULL, &b);
+    CHECK(b.resp.status == 204, "revoke");
+    st_resp_free(&b.resp);
+    call("DELETE", "/api/v1/users/STEWARD_TEST/identifiers/STEWARD_DEMO", adm, NULL, &b);
+    CHECK(b.resp.status == 404 && strstr(b.resp.body.data, "NOSUCHID"), "revoking what is not held is 404");
+    st_resp_free(&b.resp);
+    call("POST", "/api/v1/users/STEWARD_ADM/identifiers", t, "{\"name\":\"STEWARD_DEMO\"}", &b);
+    CHECK(b.resp.status == 403 && strstr(b.resp.body.data, "RMS-E-PRV"), "an unprivileged user cannot grant: OpenVMS refuses");
+    st_resp_free(&b.resp);
+
+    /* ---- identifiers */
+    call("POST", "/api/v1/identifiers", adm, "{\"name\":\"steward_test_id\",\"attributes\":[\"RESOURCE\"]}", &b);
+    CHECK(b.resp.status == 201 && strstr(b.resp.body.data, "\"name\":\"STEWARD_TEST_ID\",\"value\":\"%X80010010\"") &&
+          strstr(b.resp.body.data, "\"attributes\":[\"RESOURCE\"]"), "create an identifier; OpenVMS chooses the value");
+    st_resp_free(&b.resp);
+    call("POST", "/api/v1/identifiers", adm, "{\"name\":\"STEWARD_TEST_ID\"}", &b);
+    CHECK(b.resp.status == 409, "a duplicate name is a conflict");
+    st_resp_free(&b.resp);
+    call("POST", "/api/v1/identifiers", adm, "{\"name\":\"OTHER_ID\",\"value\":\"%X00010001\"}", &b);
+    CHECK(b.resp.status == 422, "a value without the general bit is refused");
+    st_resp_free(&b.resp);
+    call("POST", "/api/v1/identifiers", t, "{\"name\":\"OTHER_ID\"}", &b);
+    CHECK(b.resp.status == 403, "an unprivileged user cannot create one");
+    st_resp_free(&b.resp);
+    call("POST", "/api/v1/users/STEWARD_TEST/identifiers", adm, "{\"name\":\"STEWARD_TEST_ID\"}", &b);
+    st_resp_free(&b.resp);
+    call("PATCH", "/api/v1/identifiers/STEWARD_TEST_ID", adm, "{\"name\":\"STEWARD_TEST_ID2\",\"attributes\":[\"NOACCESS\"]}", &b);
+    CHECK(b.resp.status == 200 && strstr(b.resp.body.data, "\"name\":\"STEWARD_TEST_ID2\"") &&
+          strstr(b.resp.body.data, "\"attributes\":[\"NOACCESS\"]"), "rename, and replace the attributes");
+    st_resp_free(&b.resp);
+    call("PATCH", "/api/v1/identifiers/STEWARD_TEST", adm, "{\"name\":\"X\"}", &b);
+    CHECK(b.resp.status == 422, "a UIC identifier cannot be renamed here");
+    st_resp_free(&b.resp);
+    call("DELETE", "/api/v1/identifiers/STEWARD_TEST_ID2", adm, NULL, &b);
+    CHECK(b.resp.status == 204, "delete an identifier that is still held");
+    st_resp_free(&b.resp);
+    call("GET", "/api/v1/users/STEWARD_TEST/identifiers", adm, NULL, &b);
+    CHECK(b.resp.status == 200 && !strstr(b.resp.body.data, "STEWARD_TEST_ID"),
+          "and its holdings went with it, as on OpenVMS");
+    st_resp_free(&b.resp);
+    call("DELETE", "/api/v1/identifiers/BATCH", NULL, NULL, &b);
+    CHECK(b.resp.status == 401, "changes need a session");
+    st_resp_free(&b.resp);
+    adm[1].n = NULL;
+    call("DELETE", "/api/v1/identifiers/BATCH", adm, NULL, &b);
+    CHECK(b.resp.status == 403 && strstr(b.resp.body.data, "csrf"), "and the CSRF token");
+    st_resp_free(&b.resp);
+
+    CHECK(!st_plat_persona_active(), "no persona left active");
+}
+
 static void test_gateway(void)
 {
     st_app_config cfg;
@@ -646,6 +863,7 @@ int main(void)
     test_privileges();
     test_filters();
     test_users();
+    test_edit();
     test_gateway();
     printf("%d checks, %d failed\n", checks, failures);
     return failures ? 1 : 0;

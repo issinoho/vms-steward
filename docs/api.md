@@ -19,7 +19,7 @@ is refused rather than mangled.
 
   ```json
   {"type": "/api/v1/problems/no-privilege", "title": "Not permitted by OpenVMS",
-   "status": 403, "vms_status": "%X00002964",
+   "status": 403, "vms_status": "%X000028E4",
    "vms_message": "%SYSTEM-F-NOSYSPRV, operation requires SYSPRV privilege"}
   ```
 

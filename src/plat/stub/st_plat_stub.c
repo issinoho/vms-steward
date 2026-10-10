@@ -1,25 +1,29 @@
 /* st_plat_stub.c - in-memory platform for Linux tests and front-end work.
 
-   A handful of fixed accounts stand in for SYSUAF, behaving as the x86 probes showed
-   the real thing does (docs/PHASE0.md, docs/PHASE1.md):
+   A small SYSUAF and RIGHTSLIST that behave as the x86 probes showed the real ones do
+   (docs/PHASE0.md to PHASE3.md), including their refusals, their quirks and their
+   condition values (from the node's SSDEF):
 
      STEWARD_ADM    admin-pass     [362,2] defaults TMPMBX, NETMBX, OPER; SYSPRV and
                                    GRPPRV authorized only (the habit D9 respects);
-                                   holds STEWARD_DEMO
-     STEWARD_TEST   test-pass      [362,1] TMPMBX, NETMBX only, as on the x86 node
+                                   holds STEWARD_DEMO and STEWARD_OPS
+     STEWARD_TEST   test-pass      [362,1] TMPMBX, NETMBX only; holds STEWARD_OPS
      DISABLED       disabled-pass  DISUSER: fails, reason "account is disabled"
-     EXPIRED        expired-pass   right password, but expired
+     EXPIRED        expired-pass   right password, but pre-expired
      SYSTEM         (none)         [1,4] every privilege; cannot sign in here
 
-   Reading users and identifiers follows what the x86 node showed (PHASE2.md):
-   listing SYSUAF needs SYSPRV or READALL; $GETUAI allows your own record, your
-   group's with GRPPRV, anyone's with SYSPRV, and says RNF for a user that does not
-   exist before it checks privilege; the rights database ($IDTOASC, $FIND_HELD,
-   $FIND_HOLDER) is readable by anyone. So STEWARD_ADM can list users only after
-   switching SYSPRV on (D9), as at a terminal.
+   Reading: listing SYSUAF needs SYSPRV or READALL (or group 1, its owner); $GETUAI
+   allows your own record, your group's with GRPPRV, anyone's with SYSPRV, and says
+   RNF for a missing user before it checks privilege; the rights database is readable
+   by anyone (PHASE2.md).
+   Changing: $SETUAI needs SYSPRV, or GRPPRV for another member of your group, and
+   never your own record without one of them (PHASE3.md); the rights database needs
+   SYSPRV. A holding's attributes are masked by its identifier's, and removing an
+   identifier removes its holdings (PHASE3.md).
 
-   These are test fixtures, not credentials: nothing here touches a real system.
-   Sessions are kept in memory, so the stub serves a single process. */
+   These are test fixtures, not credentials: nothing here touches a real system. All
+   state lives in this process, so the stub serves a single process, and tests that
+   change it put it back. */
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -29,52 +33,37 @@
 
 #define BIT(n) (1u << (n))
 
+/* Condition values, from the x86 node's SSDEF and RMSDEF. */
+#define C_NOPRIV    0x0024u
+#define C_NOSUCHID  0x21ECu
+#define C_DUPIDENT  0x222Cu
+#define C_INVPWDLEN 0x2394u
+#define C_PWDINHIS  0x0E72u
+#define C_NOSYSPRV  0x28E4u
+#define C_RNF       0x182B2u
+#define C_RMS_PRV   0x1829Au
+
 typedef struct {
-    const char  *username, *password, *owner, *account;
-    unsigned int uic;
-    unsigned int priv_auth[2];
-    unsigned int priv_def[2];
-    int          disabled, expired;
-    const char  *ids[4];
+    st_user u;
+    char    password[80];   /* "" cannot sign in */
+    int     used;
 } stub_user;
 
-/* Privilege bits as in PRVDEF: TMPMBX 15, NETMBX 20, SYSPRV 28, OPER 18,
-   GRPPRV 34 (bit 2 of the second longword). */
-static const stub_user users[] = {
-    { "STEWARD_ADM", "admin-pass", "Steward admin (stub)", "STEWARD", 0x00F20002u,
-      { BIT(15) | BIT(20) | BIT(28) | BIT(18), BIT(2) }, { BIT(15) | BIT(20) | BIT(18), 0 },
-      0, 0, { "STEWARD_DEMO", "STEWARD_OPS", NULL } },
-    { "STEWARD_TEST", "test-pass", "Steward test (stub)", "STEWARD", 0x00F20001u,
-      { BIT(15) | BIT(20), 0 }, { BIT(15) | BIT(20), 0 }, 0, 0, { "STEWARD_OPS", NULL } },
-    { "DISABLED", "disabled-pass", "Disabled account (stub)", "", 0x00F20003u,
-      { BIT(15) | BIT(20), 0 }, { BIT(15) | BIT(20), 0 }, 1, 0, { NULL } },
-    { "EXPIRED", "expired-pass", "Expired password (stub)", "", 0x00F20004u,
-      { BIT(15) | BIT(20), 0 }, { BIT(15) | BIT(20), 0 }, 0, 1, { NULL } },
-    { "SYSTEM", NULL, "SYSTEM MANAGER", "SYSTEM", 0x00010004u,
-      { 0xFFFFFFFFu, 0x7Fu }, { 0xFFFFFFFFu, 0x7Fu }, 0, 0, { NULL } },
-};
-#define NUSERS (sizeof users / sizeof users[0])
-
-/* General identifiers. Holdings come from the users' ids lists above. */
-static const st_ident idents[] = {
-    { "STEWARD_DEMO", 0x80010001u, 1u << ST_IA_RESOURCE },
-    { "STEWARD_OPS",  0x80010002u, 0 },
-    { "BATCH",        0x80000001u, 0 },
-    { "INTERACTIVE",  0x80000003u, 0 },
-    { "NETWORK",      0x80000005u, 0 },
-};
-#define NIDENTS (sizeof idents / sizeof idents[0])
-
-/* Condition values the stub reports, so problems carry vms_status as on OpenVMS. */
-#define C_NOSYSPRV 0x2964u
-#define C_NOSUCHID 0x1CA4u
+#define MAXUSERS  16
+#define MAXIDENTS 64
+#define MAXHOLDS  256
+static stub_user users[MAXUSERS];
+static st_ident  idents[MAXIDENTS];
+static int       nidents;
+static struct { unsigned int value, uic, attrib; int used; } holds[MAXHOLDS];
 
 #define NSESSIONS 256
 static st_session sessions[NSESSIONS];
 static int        session_used[NSESSIONS];
-static const stub_user *persona;
-static unsigned int       persona_cur[2];   /* current privileges of the persona */
+static stub_user *persona;
+static unsigned int persona_cur[2];   /* current privileges of the persona */
 static FILE      *audit_fp;
+static int        seeded;
 
 static void set_err(st_err *e, int kind, const char *text)
 {
@@ -85,16 +74,139 @@ static void set_err(st_err *e, int kind, const char *text)
     e->text[sizeof e->text - 1] = '\0';
 }
 
-static const stub_user *find_user(const char *name)
+static int fail(st_err *e, int kind, unsigned int cond, const char *text)
 {
-    size_t i;
-    for (i = 0; i < NUSERS; i++)
-        if (!strcmp(users[i].username, name)) return &users[i];
+    set_err(e, kind, text);
+    if (e) e->cond = cond;
+    return -1;
+}
+
+/* ---------------------------------------------------------------- the data */
+
+static void add_user(const char *name, const char *pw, const char *owner, const char *acct,
+                     unsigned int uic, unsigned int a0, unsigned int a1, unsigned int d0,
+                     unsigned int d1, unsigned int flags, long long pwd_date)
+{
+    static const unsigned long q[ST_Q_COUNT] = { 4, 4, 0, 0, 0, 8, 150, 150, 300, 100, 4000,
+        128, 0, 128000, 0, 4096, 4096, 8192, 16384, 256000, 0 };
+    stub_user *s;
+    int i;
+    for (i = 0; i < MAXUSERS && users[i].used; i++) ;
+    if (i == MAXUSERS) return;
+    s = &users[i];
+    memset(s, 0, sizeof *s);
+    s->used = 1;
+    st_copy(s->password, sizeof s->password, pw ? pw : "");
+    st_copy(s->u.username, sizeof s->u.username, name);
+    st_copy(s->u.owner, sizeof s->u.owner, owner);
+    st_copy(s->u.account, sizeof s->u.account, acct);
+    s->u.uic = uic;
+    s->u.flags = flags;
+    st_copy(s->u.cli, sizeof s->u.cli, "DCL");
+    st_copy(s->u.clitables, sizeof s->u.clitables, "DCLTABLES");
+    st_copy(s->u.defdev, sizeof s->u.defdev, "SYS$SYSDEVICE:");
+    snprintf(s->u.defdir, sizeof s->u.defdir, "[%s]", name);
+    s->u.last_login_i = pw ? 1791700000LL : 0;
+    s->u.pwd_date = pwd_date;
+    s->u.pwd_lifetime = 90LL * 86400;
+    s->u.pwd_minimum = 8;
+    s->u.secondary_days = 0x60;   /* Saturday and Sunday */
+    s->u.priv_auth[0] = a0; s->u.priv_auth[1] = a1;
+    s->u.priv_def[0] = d0;  s->u.priv_def[1] = d1;
+    for (i = 0; i < ST_Q_COUNT; i++) s->u.quota[i] = q[i];
+}
+
+static void add_ident_raw(const char *name, unsigned int value, unsigned int attrib)
+{
+    if (nidents == MAXIDENTS) return;
+    memset(&idents[nidents], 0, sizeof idents[0]);
+    st_copy(idents[nidents].name, sizeof idents[0].name, name);
+    idents[nidents].value = value;
+    idents[nidents].attrib = attrib;
+    nidents++;
+}
+
+static void hold_raw(unsigned int value, unsigned int uic, unsigned int attrib)
+{
+    int i;
+    for (i = 0; i < MAXHOLDS && holds[i].used; i++) ;
+    if (i == MAXHOLDS) return;
+    holds[i].value = value; holds[i].uic = uic; holds[i].attrib = attrib; holds[i].used = 1;
+}
+
+/* Privilege bits as in PRVDEF: TMPMBX 15, OPER 18, NETMBX 20, SYSPRV 28,
+   GRPPRV 34 (bit 2 of the second longword). */
+static void seed(void)
+{
+    if (seeded) return;
+    seeded = 1;
+    add_user("STEWARD_ADM", "admin-pass", "Steward admin (stub)", "STEWARD", 0x00F20002u,
+             BIT(15) | BIT(20) | BIT(28) | BIT(18), BIT(2), BIT(15) | BIT(20) | BIT(18), 0,
+             1u << ST_UF_DISCTLY, 1791000000LL);
+    add_user("STEWARD_TEST", "test-pass", "Steward test (stub)", "STEWARD", 0x00F20001u,
+             BIT(15) | BIT(20), 0, BIT(15) | BIT(20), 0, 0, 1791000000LL);
+    add_user("DISABLED", "disabled-pass", "Disabled account (stub)", "", 0x00F20003u,
+             BIT(15) | BIT(20), 0, BIT(15) | BIT(20), 0, 1u << ST_UF_DISUSER, 1791000000LL);
+    add_user("EXPIRED", "expired-pass", "Expired password (stub)", "", 0x00F20004u,
+             BIT(15) | BIT(20), 0, BIT(15) | BIT(20), 0, 0, -1);
+    add_user("SYSTEM", NULL, "SYSTEM MANAGER", "SYSTEM", 0x00010004u,
+             0xFFFFFFFFu, 0x7Fu, 0xFFFFFFFFu, 0x7Fu, 0, 1791000000LL);
+    /* STEWARD_TEST: no dialup access at all, to give the hour grid something to show. */
+    users[1].u.access_p[ST_ACC_DIALUP] = users[1].u.access_s[ST_ACC_DIALUP] = 0xFFFFFFu;
+    users[1].u.pwd_minimum = 15;   /* as on the x86 node */
+    add_ident_raw("STEWARD_DEMO", 0x80010001u, 1u << ST_IA_RESOURCE);
+    add_ident_raw("STEWARD_OPS",  0x80010002u, 0);
+    add_ident_raw("BATCH",        0x80000001u, 0);
+    add_ident_raw("INTERACTIVE",  0x80000003u, 0);
+    add_ident_raw("NETWORK",      0x80000005u, 0);
+    hold_raw(0x80010001u, 0x00F20002u, 0);
+    hold_raw(0x80010002u, 0x00F20002u, 0);
+    hold_raw(0x80010002u, 0x00F20001u, 0);
+}
+
+static stub_user *find_user(const char *name)
+{
+    int i;
+    seed();
+    for (i = 0; i < MAXUSERS; i++)
+        if (users[i].used && !strcmp(users[i].u.username, name)) return &users[i];
     return NULL;
 }
 
+static stub_user *user_by_uic(unsigned int uic)
+{
+    int i;
+    for (i = 0; i < MAXUSERS; i++)
+        if (users[i].used && users[i].u.uic == uic) return &users[i];
+    return NULL;
+}
+
+static st_ident *ident_by_value(unsigned int value)
+{
+    int i;
+    for (i = 0; i < nidents; i++)
+        if (idents[i].value == value) return &idents[i];
+    return NULL;
+}
+
+static st_ident *ident_by_name(const char *name)
+{
+    int i;
+    for (i = 0; i < nidents; i++)
+        if (!strcmp(idents[i].name, name)) return &idents[i];
+    return NULL;
+}
+
+static int expired_pwd(const stub_user *s)
+{
+    return s->u.pwd_date == -1 || (s->u.flags & (1u << ST_UF_PWD_EXPIRED));
+}
+
+/* ---------------------------------------------------------------- start-up, sign-in */
+
 int st_plat_init(const st_plat_config *cfg, st_err *e)
 {
+    seed();
     if (cfg && cfg->audit_file && *cfg->audit_file) {
         audit_fp = fopen(cfg->audit_file, "a");
         if (!audit_fp) { set_err(e, ST_E_INTERNAL, "cannot open audit file"); return -1; }
@@ -108,15 +220,17 @@ int st_plat_authenticate(const char *username, const char *password,
 {
     const stub_user *u = find_user(username);
     (void) client;
-    if (!u || !u->password || strcmp(u->password, password)) {
+    if (!u || !u->password[0] || strcmp(u->password, password)) {
         set_err(e, ST_OK, u ? "invalid password" : "no such user");
         return ST_AUTH_FAILED;
     }
-    if (u->disabled) { set_err(e, ST_OK, "account is disabled"); return ST_AUTH_FAILED; }
-    if (u->expired) { set_err(e, ST_OK, "password has expired"); return ST_AUTH_EXPIRED; }
+    if (u->u.flags & (1u << ST_UF_DISUSER)) { set_err(e, ST_OK, "account is disabled"); return ST_AUTH_FAILED; }
+    if (expired_pwd(u)) { set_err(e, ST_OK, "password has expired"); return ST_AUTH_EXPIRED; }
     set_err(e, ST_OK, "");
     return ST_AUTH_OK;
 }
+
+/* ---------------------------------------------------------------- personas */
 
 /* As $SETPRV under a persona: defaults, plus what is asked for and authorized. */
 int st_plat_persona_set_privs(const unsigned int enable[2], st_err *e)
@@ -124,13 +238,13 @@ int st_plat_persona_set_privs(const unsigned int enable[2], st_err *e)
     int i;
     if (!persona) { set_err(e, ST_E_INTERNAL, "no persona"); return -1; }
     for (i = 0; i < 2; i++)
-        persona_cur[i] = persona->priv_def[i] | (enable[i] & persona->priv_auth[i]);
+        persona_cur[i] = persona->u.priv_def[i] | (enable[i] & persona->u.priv_auth[i]);
     return 0;
 }
 
 int st_plat_persona_begin(const char *username, const unsigned int enable[2], st_err *e)
 {
-    const stub_user *u;
+    stub_user *u;
     if (persona) { set_err(e, ST_E_INTERNAL, "a persona is already active"); return -1; }
     u = find_user(username);
     if (!u) { set_err(e, ST_E_NOTFOUND, "no such user"); return -1; }
@@ -149,17 +263,21 @@ int st_plat_whoami(st_whoami *w, st_err *e)
     int i;
     if (!persona) { set_err(e, ST_E_INTERNAL, "no persona"); return -1; }
     memset(w, 0, sizeof *w);
-    st_copy(w->username, sizeof w->username, persona->username);
-    st_copy(w->owner, sizeof w->owner, persona->owner);
-    st_copy(w->account, sizeof w->account, persona->account);
-    w->uic = persona->uic;
-    w->priv_auth[0] = persona->priv_auth[0];
-    w->priv_auth[1] = persona->priv_auth[1];
-    w->priv_def[0] = persona->priv_def[0];
-    w->priv_def[1] = persona->priv_def[1];
+    st_copy(w->username, sizeof w->username, persona->u.username);
+    st_copy(w->owner, sizeof w->owner, persona->u.owner);
+    st_copy(w->account, sizeof w->account, persona->u.account);
+    w->uic = persona->u.uic;
+    w->priv_auth[0] = persona->u.priv_auth[0];
+    w->priv_auth[1] = persona->u.priv_auth[1];
+    w->priv_def[0] = persona->u.priv_def[0];
+    w->priv_def[1] = persona->u.priv_def[1];
     w->priv_cur[0] = persona_cur[0];
     w->priv_cur[1] = persona_cur[1];
-    for (i = 0; i < 4 && persona->ids[i]; i++) st_copy(w->ids[w->nids++], sizeof w->ids[0], persona->ids[i]);
+    for (i = 0; i < MAXHOLDS && w->nids < ST_MAX_IDS; i++)
+        if (holds[i].used && holds[i].uic == persona->u.uic) {
+            const st_ident *id = ident_by_value(holds[i].value);
+            if (id) st_copy(w->ids[w->nids++], sizeof w->ids[0], id->name);
+        }
     return 0;
 }
 
@@ -172,32 +290,32 @@ static int cur_has(int bit) { return persona && (persona_cur[bit / 32] & (1u << 
 
 static int refuse(st_err *e)
 {
-    set_err(e, ST_E_NOPRIV, "%SYSTEM-F-NOSYSPRV, operation requires SYSPRV privilege");
-    e->cond = C_NOSYSPRV;
-    return -1;
+    return fail(e, ST_E_NOPRIV, C_NOSYSPRV, "%SYSTEM-F-NOSYSPRV, operation requires SYSPRV privilege");
 }
 
-/* SYSUAF is (S:RWED,O:RWED,G,W) and owned by group 1. */
-static int may_read_uaf(void)
+/* SYSUAF and RIGHTSLIST are (S:RWED,O:RWED,G,W) and owned by group 1. */
+static int system_access(void)
 {
-    return cur_has(P_SYSPRV) || cur_has(P_READALL) || (persona && (persona->uic >> 16) == 1);
+    return cur_has(P_SYSPRV) || (persona && (persona->u.uic >> 16) == 1);
 }
+
+static int may_read_uaf(void) { return system_access() || cur_has(P_READALL); }
 
 static int cmp_users(const void *a, const void *b)
 {
-    return strcmp((*(const stub_user *const *) a)->username, (*(const stub_user *const *) b)->username);
+    return strcmp((*(const stub_user *const *) a)->u.username, (*(const stub_user *const *) b)->u.username);
 }
 
 int st_plat_user_enum(const char *after, st_name_cb fn, void *ctx, st_err *e)
 {
-    const stub_user *sorted[NUSERS];
-    size_t i;
-    if (!may_read_uaf()) return refuse(e);
-    for (i = 0; i < NUSERS; i++) sorted[i] = &users[i];
-    qsort(sorted, NUSERS, sizeof sorted[0], cmp_users);
-    for (i = 0; i < NUSERS; i++) {
-        if (after && *after && strcmp(sorted[i]->username, after) <= 0) continue;
-        if (fn(sorted[i]->username, ctx)) break;
+    const stub_user *sorted[MAXUSERS];
+    int i, n = 0;
+    if (!may_read_uaf()) return fail(e, ST_E_NOPRIV, C_RMS_PRV, "%RMS-E-PRV, insufficient privilege or file protection violation");
+    for (i = 0; i < MAXUSERS; i++) if (users[i].used) sorted[n++] = &users[i];
+    qsort(sorted, (size_t) n, sizeof sorted[0], cmp_users);
+    for (i = 0; i < n; i++) {
+        if (after && *after && strcmp(sorted[i]->u.username, after) <= 0) continue;
+        if (fn(sorted[i]->u.username, ctx)) break;
     }
     return 0;
 }
@@ -205,61 +323,107 @@ int st_plat_user_enum(const char *after, st_name_cb fn, void *ctx, st_err *e)
 int st_plat_user_get(const char *username, st_user *out, st_err *e)
 {
     const stub_user *u = find_user(username);
-    int i;
     if (!persona) { set_err(e, ST_E_INTERNAL, "no persona"); return -1; }
     /* As $GETUAI on the node: a missing record is RNF whoever asks. */
-    if (!u) { set_err(e, ST_E_NOTFOUND, "%RMS-E-RNF, record not found"); e->cond = 0x182B2u; return -1; }
+    if (!u) return fail(e, ST_E_NOTFOUND, C_RNF, "%RMS-E-RNF, record not found");
     if (!(u == persona || cur_has(P_SYSPRV) ||
-          (cur_has(P_GRPPRV) && (u->uic >> 16) == (persona->uic >> 16))))
+          (cur_has(P_GRPPRV) && (u->u.uic >> 16) == (persona->u.uic >> 16))))
         return refuse(e);
-    memset(out, 0, sizeof *out);
-    st_copy(out->username, sizeof out->username, u->username);
-    st_copy(out->owner, sizeof out->owner, u->owner);
-    st_copy(out->account, sizeof out->account, u->account);
-    out->uic = u->uic;
-    if (u->disabled) out->flags |= 1u << ST_UF_DISUSER;
-    if (u->expired) out->flags |= 1u << ST_UF_PWD_EXPIRED;
-    if (!strcmp(u->username, "STEWARD_ADM")) out->flags |= 1u << ST_UF_DISCTLY;
-    st_copy(out->cli, sizeof out->cli, "DCL");
-    st_copy(out->clitables, sizeof out->clitables, "DCLTABLES");
-    st_copy(out->defdev, sizeof out->defdev, "SYS$SYSDEVICE:");
-    snprintf(out->defdir, sizeof out->defdir, "[%s]", u->username);
-    out->last_login_i = u->password ? 1791700000LL : 0;
-    out->pwd_date = u->expired ? -1 : 1791000000LL;
-    out->pwd_lifetime = 90LL * 86400;
-    out->pwd_minimum = 15;
-    out->secondary_days = 0x60;              /* Saturday and Sunday */
-    if (!strcmp(u->username, "STEWARD_TEST"))
-        out->access_p[ST_ACC_DIALUP] = out->access_s[ST_ACC_DIALUP] = 0xFFFFFFu;   /* no dialup */
-    out->priv_auth[0] = u->priv_auth[0]; out->priv_auth[1] = u->priv_auth[1];
-    out->priv_def[0] = u->priv_def[0];   out->priv_def[1] = u->priv_def[1];
-    {
-        static const unsigned long q[ST_Q_COUNT] = { 4, 4, 0, 0, 0, 8, 150, 150, 300, 100, 4000,
-            128, 0, 128000, 0, 4096, 4096, 8192, 16384, 256000, 0 };
-        for (i = 0; i < ST_Q_COUNT; i++) out->quota[i] = q[i];
-    }
+    *out = u->u;
     return 0;
 }
 
-static const st_ident *find_ident(const char *name)
+/* $SETUAI: SYSPRV, or GRPPRV for another member of the caller's group. Not even
+   your own record without one of them (probe_modify). */
+static stub_user *writable_user(const char *username, st_err *e)
 {
-    size_t i;
-    for (i = 0; i < NIDENTS; i++)
-        if (!strcmp(idents[i].name, name)) return &idents[i];
-    return NULL;
+    stub_user *u = find_user(username);
+    if (!persona) { set_err(e, ST_E_INTERNAL, "no persona"); return NULL; }
+    if (!u) { fail(e, ST_E_NOTFOUND, C_RNF, "%RMS-E-RNF, record not found"); return NULL; }
+    if (!(cur_has(P_SYSPRV) || (cur_has(P_GRPPRV) && (u->u.uic >> 16) == (persona->u.uic >> 16)))) {
+        fail(e, ST_E_NOPRIV, C_NOPRIV, "%SYSTEM-F-NOPRIV, insufficient privilege or object protection violation");
+        return NULL;
+    }
+    return u;
 }
+
+int st_plat_user_modify(const char *username, const st_user_change *c, st_err *e)
+{
+    stub_user *s = writable_user(username, e);
+    st_user *u;
+    int i;
+    if (!s) return -1;
+    u = &s->u;
+    if (c->fields & ST_UC_OWNER) st_copy(u->owner, sizeof u->owner, c->owner);
+    if (c->fields & ST_UC_ACCOUNT) st_copy(u->account, sizeof u->account, c->account);
+    if (c->fields & ST_UC_CLI) st_copy(u->cli, sizeof u->cli, c->cli);
+    if (c->fields & ST_UC_CLITABLES) st_copy(u->clitables, sizeof u->clitables, c->clitables);
+    if (c->fields & ST_UC_DEFDEV) st_copy(u->defdev, sizeof u->defdev, c->defdev);
+    if (c->fields & ST_UC_DEFDIR) st_copy(u->defdir, sizeof u->defdir, c->defdir);
+    if (c->fields & ST_UC_LGICMD) st_copy(u->lgicmd, sizeof u->lgicmd, c->lgicmd);
+    if (c->fields & ST_UC_FLAGS) u->flags = c->flags;
+    if (c->fields & ST_UC_EXPIRATION) u->expiration = c->expiration;
+    if (c->fields & ST_UC_PWD_LIFETIME) u->pwd_lifetime = c->pwd_lifetime;
+    if (c->fields & ST_UC_PWD_MINIMUM) u->pwd_minimum = c->pwd_minimum;
+    if (c->fields & ST_UC_DAYS) u->secondary_days = c->secondary_days;
+    if (c->fields & ST_UC_ACCESS)
+        for (i = 0; i < ST_ACC_COUNT; i++) { u->access_p[i] = c->access_p[i]; u->access_s[i] = c->access_s[i]; }
+    if (c->fields & ST_UC_PRIV_AUTH) { u->priv_auth[0] = c->priv_auth[0]; u->priv_auth[1] = c->priv_auth[1]; }
+    if (c->fields & ST_UC_PRIV_DEF) { u->priv_def[0] = c->priv_def[0]; u->priv_def[1] = c->priv_def[1]; }
+    if (c->fields & ST_UC_QUOTAS)
+        for (i = 0; i < ST_Q_COUNT; i++) if (c->quota_mask & (1u << i)) u->quota[i] = c->quota[i];
+    return 0;
+}
+
+int st_plat_user_set_password(const char *username, const char *password, int pre_expired,
+                              st_err *e)
+{
+    stub_user *s = writable_user(username, e);
+    if (!s) return -1;
+    if ((int) strlen(password) < s->u.pwd_minimum || strlen(password) > 64)
+        return fail(e, ST_E_INVALID, C_INVPWDLEN, "%SYSTEM-F-INVPWDLEN, password length must be between the minimum and 64 characters");
+    st_copy(s->password, sizeof s->password, password);
+    s->u.pwd_date = pre_expired ? -1 : (long long) time(NULL);
+    return 0;
+}
+
+/* Called by the service, with no persona, after the current password was checked. */
+int st_plat_change_password(const char *username, const char *current, const char *newpw,
+                            const char *client, st_err *e)
+{
+    stub_user *s = find_user(username);
+    (void) client;
+    if (!s || strcmp(s->password, current)) { set_err(e, ST_OK, "invalid password"); return ST_AUTH_FAILED; }
+    if ((int) strlen(newpw) < s->u.pwd_minimum || strlen(newpw) > 64) {
+        fail(e, ST_E_INVALID, C_INVPWDLEN, "%SYSTEM-F-INVPWDLEN, password length must be between the minimum and 64 characters");
+        return ST_AUTH_FAILED;
+    }
+    if (!strcmp(newpw, current)) {
+        fail(e, ST_E_INVALID, C_PWDINHIS, "%SYSTEM-F-PWDINHIS, password found in history list, please choose another");
+        return ST_AUTH_FAILED;
+    }
+    st_copy(s->password, sizeof s->password, newpw);
+    s->u.pwd_date = (long long) time(NULL);
+    s->u.flags &= ~(1u << ST_UF_PWD_EXPIRED);
+    set_err(e, ST_OK, "");
+    return ST_AUTH_OK;
+}
+
+/* ---------------------------------------------------------------- rights database */
 
 int st_plat_ident_enum(st_ident_cb fn, void *ctx, st_err *e)
 {
-    size_t i;
+    int i;
     (void) e;
-    for (i = 0; i < NIDENTS; i++)
+    seed();
+    for (i = 0; i < nidents; i++)
         if (fn(&idents[i], ctx)) return 0;
-    for (i = 0; i < NUSERS; i++) {   /* a UIC identifier for every user */
+    for (i = 0; i < MAXUSERS; i++) {   /* a UIC identifier for every user */
         st_ident id;
+        if (!users[i].used) continue;
         memset(&id, 0, sizeof id);
-        st_copy(id.name, sizeof id.name, users[i].username);
-        id.value = users[i].uic;
+        st_copy(id.name, sizeof id.name, users[i].u.username);
+        id.value = users[i].u.uic;
         if (fn(&id, ctx)) return 0;
     }
     return 0;
@@ -267,57 +431,147 @@ int st_plat_ident_enum(st_ident_cb fn, void *ctx, st_err *e)
 
 int st_plat_ident_get(const char *name, st_ident *out, st_err *e)
 {
-    const st_ident *id = find_ident(name);
+    const st_ident *id = ident_by_name(name);
     const stub_user *u = find_user(name);
     if (id) { *out = *id; return 0; }
     if (u) {
         memset(out, 0, sizeof *out);
-        st_copy(out->name, sizeof out->name, u->username);
-        out->value = u->uic;
+        st_copy(out->name, sizeof out->name, u->u.username);
+        out->value = u->u.uic;
         return 0;
     }
-    set_err(e, ST_E_NOTFOUND, "%SYSTEM-F-NOSUCHID, unknown rights identifier");
-    e->cond = C_NOSUCHID;
-    return -1;
+    return fail(e, ST_E_NOTFOUND, C_NOSUCHID, "%SYSTEM-F-NOSUCHID, unknown rights identifier");
+}
+
+/* What $FIND_HELD and $FIND_HOLDER report: the holding masked by the identifier. */
+static unsigned int effective(unsigned int value, unsigned int attrib)
+{
+    const st_ident *id = ident_by_value(value);
+    return id ? attrib & id->attrib : 0;
 }
 
 int st_plat_ident_held(unsigned int uic, st_ident_cb fn, void *ctx, st_err *e)
 {
-    size_t i;
-    int k;
+    int i;
     (void) e;
-    for (i = 0; i < NUSERS; i++) {
-        if (users[i].uic != uic) continue;
-        for (k = 0; k < 4 && users[i].ids[k]; k++) {
-            const st_ident *id = find_ident(users[i].ids[k]);
-            if (id) {
-                st_ident h = *id;
-                h.attrib = 0;
-                if (fn(&h, ctx)) return 0;
-            }
-        }
+    for (i = 0; i < MAXHOLDS; i++) {
+        const st_ident *id;
+        st_ident h;
+        if (!holds[i].used || holds[i].uic != uic || !(id = ident_by_value(holds[i].value))) continue;
+        h = *id;
+        h.attrib = effective(holds[i].value, holds[i].attrib);
+        if (fn(&h, ctx)) return 0;
     }
     return 0;
 }
 
 int st_plat_ident_holders(unsigned int value, st_ident_cb fn, void *ctx, st_err *e)
 {
-    size_t i;
-    int k;
+    int i;
     (void) e;
-    for (i = 0; i < NUSERS; i++)
-        for (k = 0; k < 4 && users[i].ids[k]; k++) {
-            const st_ident *id = find_ident(users[i].ids[k]);
-            if (id && id->value == value) {
-                st_ident h;
-                memset(&h, 0, sizeof h);
-                st_copy(h.name, sizeof h.name, users[i].username);
-                h.value = users[i].uic;
-                if (fn(&h, ctx)) return 0;
-            }
-        }
+    for (i = 0; i < MAXHOLDS; i++) {
+        const stub_user *u;
+        st_ident h;
+        if (!holds[i].used || holds[i].value != value) continue;
+        memset(&h, 0, sizeof h);
+        u = user_by_uic(holds[i].uic);
+        if (u) st_copy(h.name, sizeof h.name, u->u.username);
+        h.value = holds[i].uic;
+        h.attrib = effective(value, holds[i].attrib);
+        if (fn(&h, ctx)) return 0;
+    }
     return 0;
 }
+
+static int rdb_writable(st_err *e)
+{
+    if (!persona) { set_err(e, ST_E_INTERNAL, "no persona"); return 0; }
+    if (!system_access()) {
+        fail(e, ST_E_NOPRIV, C_RMS_PRV, "%RMS-E-PRV, insufficient privilege or file protection violation");
+        return 0;
+    }
+    return 1;
+}
+
+int st_plat_ident_add(const char *name, unsigned int value, unsigned int attrib,
+                      st_ident *out, st_err *e)
+{
+    unsigned int v = value;
+    if (!rdb_writable(e)) return -1;
+    if (ident_by_name(name) || find_user(name) || (v && ident_by_value(v)))
+        return fail(e, ST_E_CONFLICT, C_DUPIDENT, "%SYSTEM-F-DUPIDENT, duplicate identifier");
+    if (nidents == MAXIDENTS) return fail(e, ST_E_INTERNAL, 0, "stub rights database full");
+    if (!v) for (v = 0x80010010u; ident_by_value(v); v++) ;   /* the next free, as on the node */
+    add_ident_raw(name, v, attrib);
+    *out = idents[nidents - 1];
+    return 0;
+}
+
+int st_plat_ident_modify(unsigned int value, const char *new_name, unsigned int set,
+                         unsigned int clear, st_err *e)
+{
+    st_ident *id;
+    if (!rdb_writable(e)) return -1;
+    if (!(id = ident_by_value(value))) return fail(e, ST_E_NOTFOUND, C_NOSUCHID, "%SYSTEM-F-NOSUCHID, unknown rights identifier");
+    if (new_name && *new_name && strcmp(new_name, id->name)) {
+        if (ident_by_name(new_name) || find_user(new_name))
+            return fail(e, ST_E_CONFLICT, C_DUPIDENT, "%SYSTEM-F-DUPIDENT, duplicate identifier");
+        st_copy(id->name, sizeof id->name, new_name);
+    }
+    id->attrib = (id->attrib | set) & ~clear;
+    return 0;
+}
+
+int st_plat_ident_remove(unsigned int value, st_err *e)
+{
+    int i;
+    if (!rdb_writable(e)) return -1;
+    for (i = 0; i < nidents && idents[i].value != value; i++) ;
+    if (i == nidents) return fail(e, ST_E_NOTFOUND, C_NOSUCHID, "%SYSTEM-F-NOSUCHID, unknown rights identifier");
+    memmove(&idents[i], &idents[i + 1], (size_t) (nidents - i - 1) * sizeof idents[0]);
+    nidents--;
+    for (i = 0; i < MAXHOLDS; i++)   /* the holdings go too (probe_modify) */
+        if (holds[i].used && holds[i].value == value) holds[i].used = 0;
+    return 0;
+}
+
+static int find_hold(unsigned int value, unsigned int uic)
+{
+    int i;
+    for (i = 0; i < MAXHOLDS; i++)
+        if (holds[i].used && holds[i].value == value && holds[i].uic == uic) return i;
+    return -1;
+}
+
+int st_plat_holder_add(unsigned int value, unsigned int uic, unsigned int attrib, st_err *e)
+{
+    if (!rdb_writable(e)) return -1;
+    if (!ident_by_value(value)) return fail(e, ST_E_NOTFOUND, C_NOSUCHID, "%SYSTEM-F-NOSUCHID, unknown rights identifier");
+    if (find_hold(value, uic) >= 0) return fail(e, ST_E_CONFLICT, C_DUPIDENT, "%SYSTEM-F-DUPIDENT, duplicate identifier");
+    hold_raw(value, uic, attrib);
+    return 0;
+}
+
+int st_plat_holder_modify(unsigned int value, unsigned int uic, unsigned int set,
+                          unsigned int clear, st_err *e)
+{
+    int i;
+    if (!rdb_writable(e)) return -1;
+    if ((i = find_hold(value, uic)) < 0) return fail(e, ST_E_NOTFOUND, C_NOSUCHID, "%SYSTEM-F-NOSUCHID, unknown rights identifier");
+    holds[i].attrib = (holds[i].attrib | set) & ~clear;
+    return 0;
+}
+
+int st_plat_holder_remove(unsigned int value, unsigned int uic, st_err *e)
+{
+    int i;
+    if (!rdb_writable(e)) return -1;
+    if ((i = find_hold(value, uic)) < 0) return fail(e, ST_E_NOTFOUND, C_NOSUCHID, "%SYSTEM-F-NOSUCHID, unknown rights identifier");
+    holds[i].used = 0;
+    return 0;
+}
+
+/* ================================================================ misc */
 
 long long st_plat_time(void) { return (long long) time(NULL); }
 

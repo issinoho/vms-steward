@@ -5,6 +5,7 @@
 
 #include <stddef.h>
 #include "st_json.h"
+#include "st_platform.h"
 
 struct st_ctx;
 
@@ -18,12 +19,33 @@ void svc_users_list(struct st_ctx *c);
 void svc_user_get(struct st_ctx *c);
 void svc_user_identifiers(struct st_ctx *c);
 
+/* Phase 3: changes. */
+void svc_user_modify(struct st_ctx *c);
+void svc_user_set_password(struct st_ctx *c);
+void svc_user_grant(struct st_ctx *c);
+void svc_user_holding(struct st_ctx *c);
+void svc_user_revoke(struct st_ctx *c);
+void svc_password_change(struct st_ctx *c);
+void svc_ident_create(struct st_ctx *c);
+void svc_ident_modify(struct st_ctx *c);
+void svc_ident_delete(struct st_ctx *c);
+
 void svc_idents_list(struct st_ctx *c);
 void svc_ident_get(struct st_ctx *c);
 void svc_ident_holders(struct st_ctx *c);
 
 /* The name of OpenVMS privilege bit n (0-63), or NULL. */
 const char *svc_priv_name(int bit);
+/* Name to bit, case-insensitive; -1 if unknown. */
+int svc_priv_bit(const char *name);
+int svc_flag_bit(const char *name);     /* ST_UF_* */
+int svc_attrib_bit(const char *name);   /* ST_IA_* */
+int svc_name_index(const char *const *table, int n, const char *name);
+extern const char *const svc_access_names[];   /* ST_ACC_COUNT */
+extern const char *const svc_quota_names[];    /* ST_Q_COUNT */
+extern const char *const svc_day_names[];      /* 7, Monday first */
+/* The user record's ETag: a hash of every field a change can touch (svc_edit.c). */
+void svc_user_etag(const st_user *u, char out[40]);
 /* key: [names of the privileges set in q] */
 void svc_privs_json(st_jw *w, const char *key, const unsigned int q[2]);
 /* "[g,m]" in octal, as OpenVMS writes a UIC. */
