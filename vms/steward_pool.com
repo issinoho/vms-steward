@@ -97,12 +97,12 @@ $ write w "$ if f$search(""", stopfile, """) .nes. """" then exit"
 $ write w "$ wait 00:00:01"
 $ write w "$ goto loop"
 $ close w
-$ run/detached sys$system:loginout.exe /input='com' -
+$! /AUTHORIZE: a full login, so the process takes its privileges and quotas from the
+$! UAF. Without it, LOGINOUT copies the creator's privileges, and SYSPRV (authorized,
+$! normally off: D2) would be missing from the authorized mask. LOGIN.COM must exist.
+$ run/detached sys$system:loginout.exe /authorize /input='com' -
       /output='logs''name'.LOG /error='logs''name'.LOG -
-      /process_name='name' -
-      /buffer_limit=200000 /file_limit=100 /io_buffered=200 /io_direct=200 -
-      /queue_limit=64 /enqueue_limit=2000 /ast_limit=100 /subprocess_limit=0 -
-      /page_file=200000 /working_set=4096 /maximum_working_set=16384 /extent=32768
+      /process_name='name'
 $ if .not. $status
 $ then
 $   say "STEWARD_POOL: could not create ", name
