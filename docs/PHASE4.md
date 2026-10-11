@@ -90,3 +90,5 @@ group, which on the x86 node is a real user's group: STEWARD_NEW landed in [200,
 The dialog now leaves the group empty for a new user (as AUTHORIZE ADD makes you
 choose a UIC) and suggests a member only once a group is entered. A copy still starts
 in the source's group.
+
+**Phase 4 closed on 2026-10-11 with the user's approval.** The dialog fix ships in 0.3.1.
