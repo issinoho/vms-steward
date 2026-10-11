@@ -52,3 +52,57 @@ asks first.
 - A name a viewer may not read is not shown.
 - Hostile tables and patterns are refused by both Steward and the procedure.
 - No helper process is left behind, on timeout or error.
+
+## Where this stands (2026-10-11, end of session): resume here
+
+**Built (7a, read-only), not yet released or installed by kit:**
+- **Core:** `src/core/st_lnm.{h,c}`: the input checks, which refuse process and job
+  tables and search lists through them, and the SHOW LOGICAL/FULL parser. It is unit
+  tested and fuzzed; the fuzzer gives each line a buffer of exactly its length, and
+  caught an overread that has since been fixed.
+- **Platform:**
+  - `st_plat_lnm_list`, the D14 helper process. It sends table, pattern and the
+    session's enabled privileges as data, and waits on a blocking read with a 30 s
+    timer, deleting the helper on timeout.
+  - `st_plat_lnm_get`, in-process `$TRNLNM`, only in a real table of
+    LNM$SYSTEM_DIRECTORY.
+  - The stub, with sample tables.
+- **API:** `GET api/v1/logicals/tables`, `GET api/v1/logicals?table=&filter=` and
+  `GET api/v1/logicals/{table}/{name}`, with a translation chain through the viewer's
+  group, system and cluster tables.
+- **View:** `www/js/logicals.js`: tables grouped down the side, a DCL filter line, the
+  table header, names, and the chain on click.
+- **Kit:** `vms/steward_lnm.com` and `LOGICALS.JS` are in the kit, and the
+  `kit-has-files` audit rule checks them.
+- **Tests:** 250 unit checks pass. `tests/vms/phase7_live.py` on x86 gives 15 ok,
+  1 failed (below).
+
+Found on the node and handled:
+- `$STATUS` is a string: the procedure uses `F$INTEGER`.
+- RMS puts end-of-file messages in the mailbox: they are skipped.
+- SHOW LOGICAL answers IVLOGTAB, at *warning* severity (%X158), both for a table that
+  does not exist and for one not readable. Steward compares without the severity and
+  gives a 404.
+- The helper is a fresh login, with only the account's defaults. The session's D9
+  privileges are passed to it, and it runs `SET PROCESS/PRIVILEGE`.
+- Timing on x86: the whole system table in 0.50s, one name 0.31s, the tables list
+  0.37s.
+
+**Next, in order:**
+1. **The one failing live check:** `GET logicals/LNM$SYSTEM_DIRECTORY/LNM$FILE_DEV`
+   returns 200. The directory passes the "real table" check, since it has the table
+   attribute. It does no harm: nothing is translated through the process table, and
+   the chain is empty. But decide whether single-name lookups in the *directories*
+   should be refused for consistency (then refuse LNM$SYSTEM_DIRECTORY in
+   st_plat_lnm_get, VMS and stub), or the test relaxed.
+2. **Docs:** api.md (the three endpoints), security.md (Phase 7: the helper process,
+   data-only mailboxes, the process-table refusal, the D9 privileges, IVLOGTAB), and
+   the PHASE7 exit record.
+3. **Release:** `make audit`, then commit. Build the kit (bump to 0.5.0, T0.5-0),
+   install it on x86, and remove the hand-copied `STEWARD$ROOT:[COM]STEWARD_LNM.COM;*`
+   versions first, or purge after the kit puts its own there.
+4. **Exit:** ask the user for the 7a browser exit checks, then commit, push and release
+   per the standing pattern. 7b (define, deassign) comes after.
+
+Also open from earlier: 0.4.1, the Phase 5 review fixes, was never released on its
+own. It will go out with 0.5.0 unless the user wants it sooner.

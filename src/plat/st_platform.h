@@ -10,6 +10,7 @@
 #define ST_PLATFORM_H
 
 #include <stddef.h>
+#include "st_lnm.h"
 
 /* What went wrong, in terms the HTTP layer can map to a status. */
 enum {
@@ -352,6 +353,27 @@ int  st_plat_session_delete(const unsigned char key[32], st_err *e);
 /* Remove sessions created before created_before or last used before seen_before.
    Called at sign-in, so expired records do not accumulate. */
 void st_plat_session_purge(long long created_before, long long seen_before);
+
+/* ---- logical names (Phase 7, D14), as the current persona ---- */
+
+/* The names in a table matching a SHOW LOGICAL pattern, as SHOW LOGICAL/FULL lists
+   them for the viewer: in a short-lived detached process created under the persona
+   (D14), so OpenVMS decides what is shown. The table has passed st_valid_lnm_table.
+   A table that is a search list (e.g. LNM$GROUP, LNM$SYSTEM) gives every table it
+   names. privs: the privileges switched on in the session (D9), comma-separated
+   names, or "-": the helper is a fresh login, with only the account's defaults, and
+   switches these on as the user could at a terminal. On failure e has OpenVMS's
+   condition: IVLOGTAB (no such table, or not the viewer's to read), a timeout. */
+int st_plat_lnm_list(const char *table, const char *pattern, const char *privs,
+                     st_lnm_cb fn, void *ctx, st_err *e);
+
+/* One name, in-process ($TRNLNM), every equivalence. The table must be a real
+   shareable table (a table in LNM$SYSTEM_DIRECTORY, never a search list, never a
+   process or job table: st_valid_lnm_table), or LNM$GROUP, which means the
+   *viewer's* group table. table_out gets the table it was found in. Returns 1 if
+   found, 0 if not (e->kind ST_E_NOTFOUND), -1 on error. */
+int st_plat_lnm_get(const char *table, const char *name, st_lnm *out,
+                    char table_out[ST_LNM_TABLE_MAX + 1], st_err *e);
 
 /* ---- audit and diagnostics ---- */
 void st_plat_audit(const char *line);    /* one record; the platform adds a timestamp */

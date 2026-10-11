@@ -47,8 +47,8 @@ $ ccq = "/STANDARD=C99/POINTER_SIZE=32/PREFIX_LIBRARY_ENTRIES=ALL_ENTRIES" + -
         "/INCLUDE_DIRECTORY=([.src.core],[.src.svc],[.src.plat])"
 $ failed = 0
 $ sources = "[.src.core]st_buf,[.src.core]st_fcgi,[.src.core]st_json,[.src.core]st_http," + -
-            "[.src.core]st_route,[.src.svc]st_app,[.src.svc]svc_session," + -
-            "[.src.svc]svc_users,[.src.svc]svc_idents,[.src.svc]svc_edit,[.src.svc]svc_system,[.src.svc]svc_access," + -
+            "[.src.core]st_route,[.src.core]st_lnm,[.src.svc]st_app,[.src.svc]svc_session," + -
+            "[.src.svc]svc_users,[.src.svc]svc_idents,[.src.svc]svc_edit,[.src.svc]svc_system,[.src.svc]svc_access,[.src.svc]svc_logicals," + -
             "[.src.plat]st_crypto_openssl,[.src.plat.vms]st_plat_vms," + -
             "[.src.plat.stub]st_plat_stub,[.src.main]steward_main,[.tests.unit]test_core," + -
             "[.tests.vms]api_probe"
@@ -78,7 +78,7 @@ $ endif
 $!
 $ core = "[.build]st_buf,[.build]st_fcgi,[.build]st_json,[.build]st_http,[.build]st_route," + -
          "[.build]st_app,[.build]svc_session,[.build]svc_users,[.build]svc_idents,[.build]svc_edit," + -
-         "[.build]svc_system,[.build]svc_access," + -
+         "[.build]svc_system,[.build]svc_access,[.build]svc_logicals,[.build]st_lnm," + -
          "[.build]st_crypto_openssl"
 $ link/executable=[.build]steward.exe 'core',[.build]st_plat_vms,[.build]steward_main,[.build]ssl.opt/options
 $ if $severity .ne. 1

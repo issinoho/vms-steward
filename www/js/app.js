@@ -10,6 +10,7 @@ import { usersView, userView, identifiersView, identifierView } from './rights.j
 import { changeOwnPassword } from './edit.js';
 import { dashboardView, stopDashboard } from './dashboard.js';
 import { accessView } from './access.js';
+import { logicalsView } from './logicals.js';
 
 const app = document.getElementById('app');
 let me = null;           // whoami, while signed in
@@ -22,7 +23,7 @@ const AREAS = [
   { hash: '#/users', label: 'Users', ready: true },
   { hash: '#/identifiers', label: 'Rights identifiers', ready: true },
   { hash: '#/access', label: 'Access history', ready: true },
-  { hash: '#/logicals', label: 'Logical names', phase: 'later' },
+  { hash: '#/logicals', label: 'Logical names', ready: true },
   { hash: '#/processes', label: 'Processes', phase: 'later' },
   { hash: '#/queues', label: 'Queues', phase: 'later' },
 ];
@@ -199,6 +200,7 @@ const VIEWS = {
   users: (ctx, name) => (name ? userView(ctx, name) : usersView(ctx)),
   identifiers: (ctx, name) => (name ? identifierView(ctx, name) : identifiersView(ctx)),
   access: (ctx) => accessView(ctx),
+  logicals: (ctx) => logicalsView(ctx),
 };
 
 let routeSeq = 0;

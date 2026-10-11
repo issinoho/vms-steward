@@ -420,3 +420,26 @@ table.access tr.member td:first-child { padding-left: 1.8em; }
 .run { font: 600 .66rem/1 var(--mono); letter-spacing: .06em; padding: .35em .5em; white-space: nowrap; }
 .run::before { content: '▸ '; }
 .run[aria-expanded="true"]::before { content: '▾ '; }
+
+/* ---- Phase 7: logical names ---- */
+.lnm { display: grid; grid-template-columns: minmax(200px, 260px) minmax(0, 1fr); gap: 16px; align-items: start; }
+.lnm .panel.tables { padding: 12px 14px; max-height: 80vh; overflow-y: auto; }
+.lnm .panel.tables h4:first-child { margin-top: 0; }
+.lnm .panel.tables ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; }
+.lnm .panel.tables a, .lnm .panel.tables span { display: block; font-size: .78rem; padding: .25em .4em; border-radius: 4px; text-decoration: none; overflow-wrap: anywhere; }
+.lnm .panel.tables a.current { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
+.lnm .panel.tables a:hover { background: var(--accent-soft); }
+.lnm-main .cmdline { margin-top: 0; }
+.tablehead { display: flex; flex-wrap: wrap; align-items: baseline; gap: .5em 2em; margin: .2em 0 .8em; }
+.tablehead h3 { margin: 0; }
+table.logicals td.eqs div + div { margin-top: .25em; }
+table.logicals td { overflow-wrap: anywhere; }
+table.logicals td:first-child, table.logicals td:nth-child(2) { overflow-wrap: normal; white-space: nowrap; }
+table.logicals .tag { white-space: nowrap; }
+button.linkish { background: none; border: 0; padding: 0; color: var(--accent); font-weight: 600; cursor: pointer; text-align: left; text-transform: none; letter-spacing: 0; font-size: .9rem; }
+button.linkish:hover { text-decoration: underline; }
+tr.detail td { background: var(--panel-2); }
+.chain { display: grid; gap: .4em; }
+.chainrow { display: flex; flex-wrap: wrap; align-items: center; gap: .4em .6em; }
+.chainrow .arrow { color: var(--muted); }
+@media (max-width: 720px) { .lnm { grid-template-columns: minmax(0, 1fr); } .lnm .panel.tables { max-height: 40vh; } }

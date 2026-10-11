@@ -156,7 +156,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
             self.send_header("Set-Cookie", value)
         click = q.get("click", "")
         fill = q.get("fill", "")
-        if not all(c.isalnum() or c in "+_:" for c in click + fill):
+        if not all(c.isalnum() or c in "+_:$" for c in click + fill):
             click = fill = ""
         extra = ("&click=" + click if click else "") + ("&fill=" + fill if fill else "")
         self.send_header("Location", (PREFIX or "") + "/?shot=1" + extra + "#/" + to)

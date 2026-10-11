@@ -30,6 +30,7 @@
 #include <time.h>
 #include "st_buf.h"
 #include "st_platform.h"
+#include "st_route.h"
 
 #define BIT(n) (1u << (n))
 
@@ -42,6 +43,9 @@
 #define C_NOSYSPRV  0x28E4u
 #define C_RNF       0x182B2u
 #define C_RMS_PRV   0x1829Au
+#define C_NOLOGNAM  0x01BCu   /* SS$_NOLOGNAM 444 */
+#define C_NOLOGTAB  0x2294u   /* SS$_NOLOGTAB 8852 */
+#define C_IVLOGTAB  0x015Cu   /* SS$_IVLOGTAB 348 (SHOW LOGICAL returns it as a warning, %X158) */
 
 typedef struct {
     st_user u;
@@ -766,6 +770,148 @@ int st_plat_access(long long since, long long until, st_access_cb fn, void *ctx,
         if (fn(&a, ctx)) break;
     }
     return 0;
+}
+
+/* ---------------------------------------------------------------- logical names (D14) */
+
+/* A few tables as SHOW LOGICAL/FULL prints them, so the parser in st_lnm.c is the one
+   that reads them, as on OpenVMS. Each entry is one name: its line, and its further
+   equivalences on lines of their own. */
+typedef struct { const char *table, *header, *protection; const char *const *names; } stub_table;
+
+static const char *const sys_names[] = {
+    "  \"DCL$PATH\" [super] = \"SYS$SYSTEM:\"\n\t= \"SYS$LIBRARY:\"",
+    "  \"MOTD\" [exec] = \"Welcome to \"\"X86VMS\"\"\"",
+    "  \"STEWARD$ROOT\" [exec] = \"X86VMS$DKA0:[SYS0.SYSCOMMON.STEWARD.]\" [concealed,terminal]",
+    "  \"SYS$COMMON\" [exec] = \"X86VMS$DKA0:[SYS0.SYSCOMMON.]\" [concealed,terminal]",
+    "  \"SYS$MANAGER\" [exec] = \"SYS$SYSROOT:[SYSMGR]\"",
+    "  \"SYS$SYSDEVICE\" [exec] = \"X86VMS$DKA0:\" [concealed,terminal]",
+    "  \"SYS$SYSROOT\" [exec] = \"X86VMS$DKA0:[SYS0.]\" [concealed,terminal]\n\t= \"SYS$COMMON:\"",
+    "  \"SYS$SYSTEM\" [exec] = \"SYS$SYSROOT:[SYSEXE]\"",
+    "  \"TCPIP$INET_HOST\" [exec] = \"x86vms\"",
+    NULL };
+static const char *const cluster_names[] = { NULL };
+static const char *const g362_names[] = {
+    "  \"PROJECT_DATA\" [super] = \"DKA100:[PROJECTS.STEWARD]\"",
+    "  \"PROJECT_LOG\" [super] = \"PROJECT_DATA:[LOG]\"",
+    NULL };
+static const char *const g1_names[] = { "  \"SYSTEM_TOOLS\" [exec] = \"SYS$SYSDEVICE:[TOOLS]\"", NULL };
+static const char *const dir_names[] = {
+    "  \"LNM$CLUSTER\" [kernel,no_alias] = \"LNM$CLUSTER_TABLE\" [terminal]",
+    "  \"LNM$FILE_DEV\" [super] = \"LNM$PROCESS\"\n\t= \"LNM$JOB\"\n\t= \"LNM$GROUP\"\n\t= \"LNM$SYSTEM\"",
+    "  \"LNM$GROUP_000001\" [kernel,no_alias,table] = \"\" [terminal]",
+    "  \"LNM$GROUP_000362\" [kernel,no_alias,table] = \"\" [terminal]",
+    "  \"LNM$JOB_8210AE00\" [kernel,no_alias,table] = \"\" [terminal]",
+    "  \"LNM$SYSCLUSTER_TABLE\" [kernel,no_alias,table,clusterwide] = \"\" [terminal]",
+    "  \"LNM$SYSTEM\" [kernel,no_alias] = \"LNM$SYSTEM_TABLE\" [terminal]",
+    "  \"LNM$SYSTEM_TABLE\" [kernel,no_alias,table] = \"\" [terminal]",
+    NULL };
+static const char *const job_names[] = { "  \"SYS$LOGIN\" [exec] = \"SYS$SYSDEVICE:[SYSMGR]\"", NULL };
+
+static const stub_table stub_tables[] = {
+    { "LNM$SYSTEM_TABLE", "[kernel]  [shareable,system]", "(RWC,RWC,R,R)]  [Owner=[SYSTEM]", sys_names },
+    { "LNM$SYSCLUSTER_TABLE", "[kernel]  [shareable,clusterwide]", "(RWC,RWC,R,R)]  [Owner=[SYSTEM]", cluster_names },
+    { "LNM$SYSTEM_DIRECTORY", "[kernel]  [shareable,directory]", "(RWC,RWC,R,R)]  [Owner=[SYSTEM]", dir_names },
+    { "LNM$GROUP_000362", "[kernel]  [shareable,group]", "(RWCD,R,R,)]  [Owner=[362,*]", g362_names },
+    { "LNM$GROUP_000001", "[kernel]  [shareable,group]", "(RWCD,R,R,)]  [Owner=[1,*]", g1_names },
+    { "LNM$JOB_8210AE00", "[kernel]  [shareable]", "(RWCD,RWCD,,)]  [Owner=[SYSTEM]", job_names },
+};
+
+/* As OpenVMS would decide: system-wide tables for anyone; a group table for its group,
+   or with SYSPRV; another job's table with SYSPRV only. */
+static int stub_may_read(const stub_table *t)
+{
+    unsigned int group;
+    if (!strncmp(t->table, "LNM$GROUP_", 10)) {
+        group = (unsigned int) strtoul(t->table + 10, NULL, 8);
+        return system_access() || (persona && (persona->u.uic >> 16) == group);
+    }
+    if (!strncmp(t->table, "LNM$JOB_", 8)) return system_access();
+    return 1;
+}
+
+/* LNM$GROUP is the viewer's group table; LNM$SYSTEM and LNM$CLUSTER name theirs. */
+static const stub_table *stub_find_table(const char *name)
+{
+    char g[24];
+    size_t i;
+    if (!strcmp(name, "LNM$GROUP")) {
+        snprintf(g, sizeof g, "LNM$GROUP_%06o", persona ? (persona->u.uic >> 16) : 0u);
+        name = g;
+    } else if (!strcmp(name, "LNM$SYSTEM")) name = "LNM$SYSTEM_TABLE";
+    else if (!strcmp(name, "LNM$CLUSTER")) name = "LNM$SYSCLUSTER_TABLE";
+    for (i = 0; i < sizeof stub_tables / sizeof stub_tables[0]; i++)
+        if (!strcmp(stub_tables[i].table, name)) return &stub_tables[i];
+    return NULL;
+}
+
+static void stub_lines(st_lnm_parser *p, const char *text)
+{
+    while (*text) {
+        const char *nl = strchr(text, '\n');
+        size_t n = nl ? (size_t) (nl - text) : strlen(text);
+        st_lnm_parse_line(p, text, n);
+        text += n + (nl ? 1 : 0);
+    }
+}
+
+int st_plat_lnm_list(const char *table, const char *pattern, const char *privs,
+                     st_lnm_cb fn, void *ctx, st_err *e)
+{
+    const stub_table *t = stub_find_table(table);
+    st_lnm_parser p;
+    char line[200];
+    int i;
+    (void) privs;   /* the stub persona already has the session's privileges */
+    /* As SHOW LOGICAL answers on the node: a table that does not exist and one the
+       viewer may not read are the same, IVLOGTAB (2026-10-11). */
+    if (!t || !stub_may_read(t))
+        return fail(e, ST_E_NOTFOUND, C_IVLOGTAB, "%SYSTEM-W-IVLOGTAB, invalid logical name table");
+    st_lnm_parse_init(&p, fn, ctx);
+    snprintf(line, sizeof line, "(%s)\t%s", t->table, t->header);
+    st_lnm_parse_line(&p, line, strlen(line));
+    snprintf(line, sizeof line, "\t\t\t[Protection=%s]", t->protection);
+    st_lnm_parse_line(&p, line, strlen(line));
+    for (i = 0; t->names[i]; i++) {
+        char name[ST_LNM_NAME_MAX + 1];
+        const char *q = strchr(t->names[i], '"'), *r = q ? strchr(q + 1, '"') : NULL;
+        size_t n = (q && r) ? (size_t) (r - q - 1) : 0;
+        if (n >= sizeof name) n = sizeof name - 1;
+        memcpy(name, q ? q + 1 : "", n);
+        name[n] = '\0';
+        if (st_wild_match(pattern, name)) stub_lines(&p, t->names[i]);
+    }
+    st_lnm_parse_end(&p);
+    return 0;
+}
+
+typedef struct { const char *want; st_lnm *out; int found; } stub_get;
+
+static int stub_get_cb(const st_lnm_table *t, const st_lnm *n, void *ctx)
+{
+    stub_get *g = ctx;
+    (void) t;
+    if (strcmp(n->name, g->want)) return 0;
+    *g->out = *n;
+    g->found = 1;
+    return 1;
+}
+
+int st_plat_lnm_get(const char *table, const char *name, st_lnm *out,
+                    char table_out[ST_LNM_TABLE_MAX + 1], st_err *e)
+{
+    const stub_table *t = stub_find_table(table);
+    stub_get g;
+    char pattern[ST_LNM_PATTERN_MAX + 1];
+    if (!t || !strcmp(t->table, "LNM$SYSTEM_DIRECTORY")) /* only real tables */
+        return fail(e, ST_E_NOTFOUND, C_NOLOGTAB, "%SYSTEM-F-NOLOGTAB, no logical name table matches the specified name");
+    if (!stub_may_read(t)) return fail(e, ST_E_NOPRIV, C_NOPRIV, "%SYSTEM-F-NOPRIV, insufficient privilege or object protection violation");
+    g.want = name; g.out = out; g.found = 0;
+    st_copy(pattern, sizeof pattern, "*");
+    if (st_plat_lnm_list(t->table, pattern, "-", stub_get_cb, &g, e)) return -1;
+    if (!g.found) { fail(e, ST_E_NOTFOUND, C_NOLOGNAM, "%SYSTEM-F-NOLOGNAM, no logical name match"); return 0; }
+    st_copy(table_out, ST_LNM_TABLE_MAX + 1, t->table);
+    return 1;
 }
 
 /* ================================================================ misc */

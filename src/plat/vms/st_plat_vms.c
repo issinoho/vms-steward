@@ -31,6 +31,8 @@
 #include <syidef.h>
 #include <kgbdef.h>
 #include <lnmdef.h>
+#include <iodef.h>
+#include <prcdef.h>
 #include <prvdef.h>
 #include <rms.h>
 #include <rmsdef.h>
@@ -96,7 +98,7 @@ static void set_cond(st_err *e, unsigned int cond)
     switch (cond) {
     case SS$_NOPRIV: case SS$_NOSYSPRV: case SS$_NOGRPPRV: case RMS$_PRV:
         e->kind = ST_E_NOPRIV; break;
-    case SS$_NOSUCHID: case RMS$_RNF:
+    case SS$_NOSUCHID: case RMS$_RNF: case SS$_NOLOGNAM: case SS$_NOLOGTAB: case SS$_IVLOGTAB:
         e->kind = ST_E_NOTFOUND; break;
     case SS$_IVIDENT: case SS$_BADPARAM: case SS$_INVPWDLEN: case SS$_PWDINHIS:
     case SS$_PWDINDIC: case SS$_PWDWEAK: case SS$_PWDSYNTAX:
@@ -231,7 +233,8 @@ static unsigned int open_sessions(const char *path)
 static unsigned int sysprv[2] = { PRV$M_SYSPRV, 0 };
 
 static char service_account[13];
-static char steward_log[256];      /* Steward's audit log, read back for access history */
+static char steward_log[256];
+static char lnm_helper[256] = "STEWARD$ROOT:[COM]STEWARD_LNM.COM";   /* D14 */      /* Steward's audit log, read back for access history */
 
 const char *st_plat_service_account(void) { return service_account; }
 
@@ -263,6 +266,7 @@ int st_plat_init(const st_plat_config *cfg, st_err *e)
         return -1;
     }
     if (cfg->audit_file) st_copy(steward_log, sizeof steward_log, cfg->audit_file);
+    if (getenv("STEWARD_LNM_HELPER") && *getenv("STEWARD_LNM_HELPER")) st_copy(lnm_helper, sizeof lnm_helper, getenv("STEWARD_LNM_HELPER"));
     st = open_sessions(cfg->session_file);
     if (!(st & 1)) { set_cond(e, st); return -1; }
 
@@ -2545,6 +2549,193 @@ int st_plat_access(long long since, long long until, st_access_cb fn, void *ctx,
     if (!((st = ax_steward(since, until, fn, ctx, &stop)) & 1)) ax_cond(&src_cond[ST_SRC_STEWARD], src_text[ST_SRC_STEWARD], st);
     if (!stop) ax_report(since, until, fn, ctx);
     return 0;
+}
+
+/* ================================================================ logical names (D14)
+
+   Listing: a short-lived detached process, created under the persona, runs the fixed
+   procedure STEWARD_LNM.COM. It reads a table and a pattern (data, never commands)
+   from a request mailbox, and SHOW LOGICAL/FULL writes the listing to a reply
+   mailbox, then "%%END%% <status>". Its process name, STW<request>_<reply>, gives it
+   the two mailbox units. Both mailboxes are the persona's, system and owner only.
+
+   As found by probe (NOTES.md): LIB$SPAWN is refused under a persona; a subprocess
+   waits for LIB$SPAWN's context; a mailbox as input makes LOGINOUT prompt; a mailbox
+   as DCL's output gives RMS-F-DEV. Hence a detached process, a procedure file as its
+   input and NLA0: as its output, and SHOW LOGICAL/OUTPUT= to the mailbox. */
+
+#define LNM_REQ_MAXMSG 512
+#define LNM_REP_MAXMSG 1024      /* reads never ask for more: MBTOOSML otherwise */
+#define LNM_TIMEOUT_S  30
+
+static unsigned int mbx_unit(unsigned short chan)
+{
+    unsigned int unit = 0, iosb[2];
+    st_ile3 it[2];
+    item(&it[0], DVI$_UNIT, &unit, 4, 0);
+    item_end(&it[1]);
+    sys$getdviw(0, chan, 0, it, (void *) iosb, 0, 0, 0);
+    return unit;
+}
+
+int st_plat_lnm_list(const char *table, const char *pattern, const char *privs,
+                     st_lnm_cb fn, void *ctx, st_err *e)
+{
+    static unsigned int efr, eft;   /* read and timer event flags, from LIB$GET_EF once */
+    static char line[LNM_REP_MAXMSG + 1];
+    unsigned short reqchan = 0, repchan = 0, iosb[4];
+    unsigned int st, pid = 0, status = 0, delta[2], mask;
+    char prc[16];
+    struct dsc$descriptor_s img, in, nl, pn;
+    st_lnm_parser p;
+    int done = 0, timed_out = 0;
+
+    if (!efr && (!(lib$get_ef(&efr) & 1) || !(lib$get_ef(&eft) & 1) || (efr / 32) != (eft / 32))) {
+        efr = 0;
+        set_text(e, ST_E_INTERNAL, "no event flags");
+        return -1;
+    }
+    /* System and owner only (deny group and world). The owner is the persona. */
+    st = sys$crembx(0, &reqchan, LNM_REQ_MAXMSG, 3 * LNM_REQ_MAXMSG, 0xFF00, 0, 0, 0, 0);
+    if (st & 1) st = sys$crembx(0, &repchan, LNM_REP_MAXMSG, 16 * LNM_REP_MAXMSG, 0xFF00, 0, 0, 0, 0);
+    if (!(st & 1)) goto fail;
+    snprintf(prc, sizeof prc, "STW%u_%u", mbx_unit(reqchan), mbx_unit(repchan));
+    st = sys$qiow(0, reqchan, IO$_WRITEVBLK | IO$M_NOW, (void *) iosb, 0, 0, (void *) table, strlen(table), 0, 0, 0, 0);
+    if (st & 1) st = sys$qiow(0, reqchan, IO$_WRITEVBLK | IO$M_NOW, (void *) iosb, 0, 0, (void *) pattern, strlen(pattern), 0, 0, 0, 0);
+    if (st & 1) st = sys$qiow(0, reqchan, IO$_WRITEVBLK | IO$M_NOW, (void *) iosb, 0, 0, (void *) privs, strlen(privs), 0, 0, 0, 0);
+    if (!(st & 1)) goto fail;
+
+    desc(&img, "SYS$SYSTEM:LOGINOUT.EXE", 23);
+    desc(&in, lnm_helper, (unsigned short) strlen(lnm_helper));
+    desc(&nl, "NLA0:", 5);
+    desc(&pn, prc, (unsigned short) strlen(prc));
+    st = sys$creprc(&pid, &img, &in, &nl, &nl, 0, 0, &pn, 4, 0, 0, PRC$M_DETACH, 0, 0);
+    if (!(st & 1)) goto fail;
+
+    /* The listing, line by line, until the procedure's last line or the deadline. */
+    delta[0] = (unsigned int) (-(long long) LNM_TIMEOUT_S * 10000000LL);
+    delta[1] = 0xFFFFFFFFu;
+    sys$clref(eft);
+    sys$setimr(eft, (void *) delta, 0, (unsigned long) &efr, 0);
+    st_lnm_parse_init(&p, fn, ctx);
+    mask = (1u << (efr % 32)) | (1u << (eft % 32));
+    while (!done) {
+        unsigned int rst;
+        memset(iosb, 0, sizeof iosb);
+        rst = sys$qio(efr, repchan, IO$_READVBLK, (void *) iosb, 0, 0, line, LNM_REP_MAXMSG, 0, 0, 0, 0);
+        if (!(rst & 1)) { st = rst; break; }
+        sys$wflor(efr, mask);
+        if (!iosb[0]) {                      /* the timer, not the read */
+            sys$cancel(repchan);
+            sys$synch(efr, (void *) iosb);
+            timed_out = 1;
+            break;
+        }
+        /* RMS writes an end-of-file message when SHOW LOGICAL/OUTPUT= closes the
+           mailbox, and again after the last line: the procedure's own last line, not
+           these, ends the listing. */
+        if (iosb[0] == SS$_ENDOFFILE) continue;
+        if (!(iosb[0] & 1)) { st = iosb[0]; break; }
+        line[iosb[1]] = '\0';
+        if (!strncmp(line, "%%END%% ", 8)) {
+            status = (unsigned int) strtoul(line + 8, NULL, 16);
+            status &= 0x0FFFFFFFu;   /* without DCL's "message already shown" bit */
+            /* SHOW LOGICAL returns IVLOGTAB as a warning (%X158), SSDEF has it fatal
+               (%X15C): the same message. Compare without the severity. */
+            if ((status & ~7u) == (SS$_IVLOGTAB & ~7u)) status = SS$_IVLOGTAB;
+            done = 1;
+            break;
+        }
+        st_lnm_parse_line(&p, line, iosb[1]);   /* once stopped, it only drains */
+    }
+    sys$cantim((unsigned long) &efr, 0);
+    if (!done && pid) sys$delprc(&pid, 0, 0);   /* never leave one behind */
+    sys$dassgn(reqchan);
+    sys$dassgn(repchan);
+    if (timed_out) { set_cond(e, SS$_TIMEOUT); return -1; }
+    if (!done) { set_cond(e, st); return -1; }
+    st_lnm_parse_end(&p);
+    if (!(status & 1)) { set_cond(e, status); return -1; }   /* SHOW LOGICAL's own failure */
+    return 0;
+
+fail:
+    if (reqchan) sys$dassgn(reqchan);
+    if (repchan) sys$dassgn(repchan);
+    set_cond(e, st);
+    return -1;
+}
+
+static void lnm_attrs(unsigned int a, int name, char *out, size_t outlen)
+{
+    out[0] = '\0';
+    if (name) {
+        if (a & LNM$M_NO_ALIAS) st_append(out, outlen, "no_alias,");
+        if (a & LNM$M_CONFINE) st_append(out, outlen, "confine,");
+        if (a & LNM$M_CRELOG) st_append(out, outlen, "crelog,");
+        if (a & LNM$M_TABLE) st_append(out, outlen, "table,");
+        if (a & LNM$M_CLUSTERWIDE) st_append(out, outlen, "clusterwide,");
+    } else {
+        if (a & LNM$M_CONCEALED) st_append(out, outlen, "concealed,");
+        if (a & LNM$M_TERMINAL) st_append(out, outlen, "terminal,");
+    }
+    if (*out) out[strlen(out) - 1] = '\0';
+}
+
+int st_plat_lnm_get(const char *table, const char *name, st_lnm *out,
+                    char table_out[ST_LNM_TABLE_MAX + 1], st_err *e)
+{
+    static const char *const modes[] = { "kernel", "exec", "super", "user" };
+    struct dsc$descriptor_s tab, dir, nam;
+    unsigned int attrs = 0, index = 0, maxidx = 0, st;
+    unsigned char acmode = 0;
+    unsigned short slen = 0, tlen = 0;
+    char string[ST_LNM_NAME_MAX + 1], tname[ST_LNM_TABLE_MAX + 1];
+    st_ile3 it[7];
+
+    /* Only a real shareable table: one listed with the table attribute in
+       LNM$SYSTEM_DIRECTORY. Not a search list of tables (which could name the
+       process table, the service's own), not a process or job table of this process. */
+    desc(&dir, "LNM$SYSTEM_DIRECTORY", 20);
+    desc(&tab, table, (unsigned short) strlen(table));
+    item(&it[0], LNM$_ATTRIBUTES, &attrs, 4, 0);
+    item_end(&it[1]);
+    st = sys$trnlnm(0, &dir, &tab, 0, it);
+    if (st == SS$_NOLOGNAM || ((st & 1) && !(attrs & LNM$M_TABLE))) { set_cond(e, SS$_NOLOGTAB); return -1; }
+    if (!(st & 1)) { set_cond(e, st); return -1; }
+
+    memset(out, 0, sizeof *out);
+    st_copy(out->name, sizeof out->name, name);
+    desc(&nam, name, (unsigned short) strlen(name));
+    for (index = 0; index <= maxidx && index < 128; index++) {
+        memset(string, 0, sizeof string);
+        attrs = 0;
+        item(&it[0], LNM$_INDEX, &index, 4, 0);
+        item(&it[1], LNM$_STRING, string, ST_LNM_NAME_MAX, &slen);
+        item(&it[2], LNM$_ATTRIBUTES, &attrs, 4, 0);
+        if (index == 0) {
+            item(&it[3], LNM$_MAX_INDEX, &maxidx, 4, 0);
+            item(&it[4], LNM$_ACMODE, &acmode, 1, 0);
+            item(&it[5], LNM$_TABLE, tname, ST_LNM_TABLE_MAX, &tlen);
+            item_end(&it[6]);
+        } else item_end(&it[3]);
+        st = sys$trnlnm(0, &tab, &nam, 0, it);
+        if (st == SS$_NOLOGNAM) { set_cond(e, st); return 0; }
+        if (!(st & 1)) { set_cond(e, st); return -1; }
+        if (index == 0) {
+            if (maxidx > 127) maxidx = 127;
+            st_copy(out->mode, sizeof out->mode, acmode < 4 ? modes[acmode] : "?");
+            lnm_attrs(attrs, 1, out->attributes, sizeof out->attributes);
+            tname[tlen] = '\0';
+            st_copy(table_out, ST_LNM_TABLE_MAX + 1, tname);
+        }
+        if (out->neq < ST_LNM_MAXEQ) {
+            st_lnm_eq *q = &out->eq[out->neq++];
+            string[slen] = '\0';
+            st_copy(q->value, sizeof q->value, string);
+            lnm_attrs(attrs, 0, q->attributes, sizeof q->attributes);
+        } else out->more++;
+    }
+    return 1;
 }
 
 /* ================================================================ misc */

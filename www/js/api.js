@@ -63,6 +63,10 @@ export const api = {
   // Phase 6: access history. q: since, until (seconds since 1970), user, route,
   // outcome, limit.
   access: (q) => call('GET', `access${query(q)}`),
+  // Phase 7: logical names (D14).
+  logicalTables: () => call('GET', 'logicals/tables'),
+  logicals: (q) => call('GET', `logicals${query(q)}`),
+  logical: (table, name) => call('GET', `logicals/${encodeURIComponent(table)}/${encodeURIComponent(name)}`),
   // Phase 2: users and rights identifiers, read-only. Lists take
   // { filter, after, limit } (and type for identifiers) and return { ..., next }.
   users: (q) => call('GET', `users${query(q)}`),

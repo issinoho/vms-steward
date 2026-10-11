@@ -13,6 +13,7 @@
 #include "st_buf.h"
 #include "st_fcgi.h"
 #include "st_json.h"
+#include "st_lnm.h"
 #include "st_http.h"
 #include "st_route.h"
 
@@ -96,6 +97,38 @@ static void run_fcgi(const unsigned char *in, size_t len)
     st_buf_free(&out);
 }
 
+/* SHOW LOGICAL/FULL output (D14): names and values are anyone's who may define one. */
+static const char lnm_seed[] =
+    "(LNM$SYSTEM_TABLE)\t[kernel]  [shareable,system]\r\n"
+    "\t\t\t[Protection=(RWC,RWC,R,R)]  [Owner=[SYSTEM]]\r\n"
+    "  \"SYS$SYSROOT\" [exec] = \"X86VMS$DKA0:[SYS0.]\" [concealed,terminal]\r\n"
+    "\t= \"SYS$COMMON:\"\r\n"
+    "  \"MOTD\" [exec,no_alias] = \"Say \"\"hi\"\"\"\r\n%SYSTEM-F-NOPRIV, x\r\n";
+
+static int lnm_cb(const st_lnm_table *t, const st_lnm *n, void *ctx)
+{
+    (void) ctx;
+    return (int) (strlen(t->name) + strlen(n->name)) < 0;
+}
+
+static void run_lnm(const unsigned char *in, size_t len)
+{
+    st_lnm_parser p;
+    size_t start = 0, i;
+    st_lnm_parse_init(&p, lnm_cb, NULL);
+    for (i = 0; i <= len; i++)
+        if (i == len || in[i] == '\n') {
+            /* each line in a buffer of exactly its length, so ASan sees any read past it */
+            char *line = malloc(i - start ? i - start : 1);
+            if (!line) return;
+            memcpy(line, in + start, i - start);
+            st_lnm_parse_line(&p, line, i - start);
+            free(line);
+            start = i + 1;
+        }
+    st_lnm_parse_end(&p);
+}
+
 int main(int argc, char **argv)
 {
     long i, rounds = argc > 1 ? atol(argv[1]) : 100000;
@@ -106,7 +139,12 @@ int main(int argc, char **argv)
         size_t len;
         st_jdoc d;
         char err[80];
-        if (i % 2 == 0) {
+        if (i % 3 == 2) {
+            len = sizeof lnm_seed - 1;
+            memcpy(buf, lnm_seed, len);
+            len = mutate(buf, len, sizeof buf);
+            run_lnm(buf, len);
+        } else if (i % 2 == 0) {
             const char *s = json_seeds[next() % (sizeof json_seeds / sizeof json_seeds[0])];
             len = strlen(s);
             memcpy(buf, s, len);

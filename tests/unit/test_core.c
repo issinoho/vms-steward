@@ -10,6 +10,7 @@
 #include "st_json.h"
 #include "st_http.h"
 #include "st_route.h"
+#include "st_lnm.h"
 #include "st_app.h"
 
 static int checks, failures;
@@ -866,6 +867,181 @@ static void test_system(void)
     CHECK(!st_plat_persona_active(), "no persona left active");
 }
 
+/* ------------------------------------------------- logical names (Phase 7) */
+
+typedef struct { int n; st_lnm last; st_lnm_table table; int tables; char seen[64]; } lnm_seen;
+
+static int lnm_collect(const st_lnm_table *t, const st_lnm *n, void *ctx)
+{
+    lnm_seen *s = ctx;
+    if (strcmp(s->seen, t->name)) { s->tables++; st_copy(s->seen, sizeof s->seen, t->name); }
+    s->table = *t;
+    s->last = *n;
+    s->n++;
+    return 0;
+}
+
+static void lnm_feed(st_lnm_parser *p, const char *text)
+{
+    while (*text) {
+        const char *nl = strchr(text, '\n');
+        size_t n = nl ? (size_t) (nl - text) : strlen(text);
+        st_lnm_parse_line(p, text, n);
+        text += n + (nl ? 1 : 0);
+    }
+    st_lnm_parse_end(p);
+}
+
+static void test_lnm_parser(void)
+{
+    st_lnm_parser p;
+    lnm_seen s;
+    char out[64];
+
+    /* As SHOW LOGICAL/FULL printed it on the x86 node (2026-10-11), with CRs. */
+    memset(&s, 0, sizeof s);
+    st_lnm_parse_init(&p, lnm_collect, &s);
+    lnm_feed(&p, "\r\n\r\n(LNM$SYSTEM_TABLE)\t[kernel]  [shareable,system]\r\n"
+                 "\t\t\t[Protection=(RWC,RWC,R,R)]  [Owner=[SYSTEM]]\r\n\r\n"
+                 "  \"SYS$DISK\" [exec] = \"X86VMS$DKA0:\" [concealed,terminal]\r\n"
+                 "  \"SYS$SYSROOT\" [exec] = \"X86VMS$DKA0:[SYS0.]\" [concealed,terminal]\r\n"
+                 "\t= \"SYS$COMMON:\"\r\n");
+    CHECK(s.n == 2 && !strcmp(s.last.name, "SYS$SYSROOT") && !strcmp(s.last.mode, "exec") && s.last.neq == 2 &&
+          !strcmp(s.last.eq[0].value, "X86VMS$DKA0:[SYS0.]") && !strcmp(s.last.eq[0].attributes, "concealed,terminal") &&
+          !strcmp(s.last.eq[1].value, "SYS$COMMON:") && !s.last.eq[1].attributes[0],
+          "SHOW LOGICAL/FULL: a search list, with each equivalence's attributes");
+    CHECK(!strcmp(s.table.name, "LNM$SYSTEM_TABLE") && !strcmp(s.table.mode, "kernel") &&
+          !strcmp(s.table.attributes, "shareable,system") && !strcmp(s.table.protection, "(RWC,RWC,R,R)") &&
+          !strcmp(s.table.owner, "[SYSTEM]"), "the table header: mode, attributes, protection, owner");
+
+    memset(&s, 0, sizeof s);
+    st_lnm_parse_init(&p, lnm_collect, &s);
+    lnm_feed(&p, "(LNM$SYSTEM_DIRECTORY)\t[kernel]  [shareable,directory]\n"
+                 "  \"LNM$CLUSTER_TABLE\" [kernel,no_alias,table,clusterwide] = \"\" [terminal]\n"
+                 "  \"MOTD\" [exec] = \"Say \"\"hello\"\"\"\n"
+                 "(LNM$GROUP_000362)\t[kernel]  [shareable,group]\n"
+                 "\t\t\t[Protection=(RWCD,R,R,)]  [Owner=[362,*]]\n"
+                 "  \"PROJECT\" [super] = \"DKA100:[P]\"\n");
+    CHECK(s.n == 3 && s.tables == 2 && !strcmp(s.table.owner, "[362,*]") && !strcmp(s.last.name, "PROJECT"),
+          "a search list of tables: each name with its own table");
+
+    memset(&s, 0, sizeof s);
+    st_lnm_parse_init(&p, lnm_collect, &s);
+    lnm_feed(&p, "  \"MOTD\" [exec] = \"Say \"\"hello\"\"\"\n");
+    CHECK(s.n == 1 && !strcmp(s.last.eq[0].value, "Say \"hello\""), "a doubled quote inside a value is one quote");
+    memset(&s, 0, sizeof s);
+    st_lnm_parse_init(&p, lnm_collect, &s);
+    lnm_feed(&p, "  \"TAB\" [kernel,no_alias,table,clusterwide] = \"\" [terminal]\n");
+    CHECK(s.n == 1 && !strcmp(s.last.mode, "kernel") && !strcmp(s.last.attributes, "no_alias,table,clusterwide") &&
+          s.last.neq == 1 && !s.last.eq[0].value[0], "mode first, then the name's attributes; an empty equivalence");
+    memset(&s, 0, sizeof s);
+    st_lnm_parse_init(&p, lnm_collect, &s);
+    lnm_feed(&p, "  \"BROKEN\" [exec] = \"no closing quote\n  \"%SYSTEM-F-NOPRIV\n%SYSTEM-F-NOLOGTAB, no logical name table matches\n");
+    CHECK(s.n <= 2 && !strncmp(p.message, "%SYSTEM-F-NOLOGTAB", 18), "malformed lines are not trusted; a message is kept");
+    {   /* more equivalences than are kept are counted, never overrun */
+        char big[4096];
+        int i;
+        st_copy(big, sizeof big, "  \"MANY\" [exec] = \"0\"\n");
+        for (i = 1; i < 40; i++) st_append(big, sizeof big, "\t= \"x\"\n");
+        memset(&s, 0, sizeof s);
+        st_lnm_parse_init(&p, lnm_collect, &s);
+        lnm_feed(&p, big);
+        CHECK(s.n == 1 && s.last.neq == ST_LNM_MAXEQ && s.last.more == 40 - ST_LNM_MAXEQ, "a long search list is capped and counted");
+    }
+
+    CHECK(st_valid_lnm_table("lnm$system_table", out) && !strcmp(out, "LNM$SYSTEM_TABLE"), "a table name, upper-cased");
+    CHECK(!st_valid_lnm_table("LNM$PROCESS", out) && !st_valid_lnm_table("lnm$process_table", out) &&
+          !st_valid_lnm_table("LNM$PROCESS_DIRECTORY", out) && !st_valid_lnm_table("LNM$JOB", out) &&
+          !st_valid_lnm_table("LNM$FILE_DEV", out) && !st_valid_lnm_table("LNM$DIRECTORIES", out),
+          "the process's own tables, and the names that search them, are refused (the service's settings)");
+    CHECK(!st_valid_lnm_table("LNM$SYSTEM_TABLE/OUTPUT=X", out) && !st_valid_lnm_table("A B", out) &&
+          !st_valid_lnm_table("", out) && !st_valid_lnm_table("ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456", out),
+          "a table name with anything DCL could read as a qualifier, or too long, is refused");
+    CHECK(st_valid_lnm_pattern("sys$*", out) && !strcmp(out, "SYS$*") && !st_valid_lnm_pattern("A'B", out) &&
+          !st_valid_lnm_pattern("A B", out) && !st_valid_lnm_pattern("*/OUT", out), "a pattern: names and wildcards only");
+    CHECK(st_valid_lnm_name("sys$sysroot") && st_valid_lnm_name("a b") && !st_valid_lnm_name("") &&
+          !st_valid_lnm_name("x\ty"), "a name to translate: printable ASCII, case kept");
+}
+
+static void test_logicals(void)
+{
+    result b;
+    char tc[140], ac[140], tcsrf[65], acsrf[65];
+    const char *body;
+    hdr t[2], adm[3];
+
+    call("GET", "/api/v1/logicals", NULL, NULL, &b);
+    CHECK(b.resp.status == 401, "logical names need a session");
+    st_resp_free(&b.resp);
+
+    sign_in("{\"username\":\"steward_test\",\"password\":\"test-pass\"}", tc, sizeof tc, tcsrf);
+    t[0].n = "HTTP_COOKIE"; t[0].v = tc; t[1].n = NULL;
+    call("GET", "/api/v1/logicals/tables", t, NULL, &b);
+    body = b.resp.body.data;
+    CHECK(b.resp.status == 200 && strstr(body, "\"your_group_table\":\"LNM$GROUP_000362\"") &&
+          strstr(body, "{\"name\":\"LNM$SYSTEM_TABLE\",\"mode\":\"kernel\",\"kind\":\"system\",\"listable\":true}") &&
+          strstr(body, "\"kind\":\"cluster\"") && strstr(body, "\"kind\":\"job\"") && !strstr(body, "LNM$FILE_DEV"),
+          "the tables: only real tables, by kind; the viewer's group table named");
+    st_resp_free(&b.resp);
+
+    call("GET", "/api/v1/logicals?table=lnm$system_table&filter=sys$s*", t, NULL, &b);
+    body = b.resp.body.data;
+    CHECK(b.resp.status == 200 && strstr(body, "\"protection\":\"(RWC,RWC,R,R)\"") &&
+          strstr(body, "{\"name\":\"SYS$SYSROOT\",\"mode\":\"exec\",\"attributes\":[],\"equivalences\":[{\"value\":\"X86VMS$DKA0:[SYS0.]\",\"attributes\":[\"concealed\",\"terminal\"]},{\"value\":\"SYS$COMMON:\",\"attributes\":[]}]}") &&
+          !strstr(body, "SYS$COMMON\",\"mode") && !strstr(body, "MOTD"),
+          "the names matching a pattern, with modes, attributes and every equivalence");
+    st_resp_free(&b.resp);
+    call("GET", "/api/v1/logicals?table=LNM$SYSTEM_TABLE&filter=motd", t, NULL, &b);
+    CHECK(b.resp.status == 200 && strstr(b.resp.body.data, "\"value\":\"Welcome to \\\"X86VMS\\\"\""),
+          "plain text matches anywhere in the name; quotes inside a value survive");
+    st_resp_free(&b.resp);
+
+    call("GET", "/api/v1/logicals?table=LNM$GROUP", t, NULL, &b);
+    CHECK(b.resp.status == 200 && strstr(b.resp.body.data, "\"name\":\"LNM$GROUP_000362\"") &&
+          strstr(b.resp.body.data, "PROJECT_DATA"), "LNM$GROUP is the viewer's own group table");
+    st_resp_free(&b.resp);
+    call("GET", "/api/v1/logicals?table=LNM$GROUP_000001", t, NULL, &b);
+    CHECK(b.resp.status == 404 && strstr(b.resp.body.data, "IVLOGTAB"),
+          "another group's table: OpenVMS answers as for no such table (IVLOGTAB, as SHOW LOGICAL does)");
+    st_resp_free(&b.resp);
+    call("GET", "/api/v1/logicals?table=LNM$NO_SUCH_TABLE", t, NULL, &b);
+    CHECK(b.resp.status == 404 && strstr(b.resp.body.data, "IVLOGTAB"), "no such table: the same IVLOGTAB");
+    st_resp_free(&b.resp);
+    call("GET", "/api/v1/logicals?table=LNM$PROCESS", t, NULL, &b);
+    CHECK(b.resp.status == 400, "the process table is never offered: it would be the service's");
+    st_resp_free(&b.resp);
+    call("GET", "/api/v1/logicals/LNM$PROCESS_TABLE/STEWARD_GATEWAY_SECRET", t, NULL, &b);
+    CHECK(b.resp.status == 400 && !strstr(b.resp.body.data, "secret"), "nor can a name be read from it");
+    st_resp_free(&b.resp);
+    call("GET", "/api/v1/logicals?table=LNM$SYSTEM_TABLE&filter=a%2Fb", t, NULL, &b);
+    CHECK(b.resp.status == 400, "a filter that is not a name or pattern is refused");
+    st_resp_free(&b.resp);
+
+    call("GET", "/api/v1/logicals/LNM$SYSTEM_TABLE/SYS$SYSROOT", t, NULL, &b);
+    body = b.resp.body.data;
+    CHECK(b.resp.status == 200 && strstr(body, "\"table\":\"LNM$SYSTEM_TABLE\"") &&
+          strstr(body, "\"translations\":[[],[{\"name\":\"SYS$COMMON\",\"table\":\"LNM$SYSTEM_TABLE\",\"value\":\"X86VMS$DKA0:[SYS0.SYSCOMMON.]\",\"attributes\":[\"concealed\",\"terminal\"]}]]"),
+          "one name: a terminal equivalence stops; SYS$COMMON: is translated in turn");
+    st_resp_free(&b.resp);
+    call("GET", "/api/v1/logicals/LNM$GROUP/PROJECT_LOG", t, NULL, &b);
+    CHECK(b.resp.status == 200 && strstr(b.resp.body.data, "\"table\":\"LNM$GROUP_000362\"") &&
+          strstr(b.resp.body.data, "\"name\":\"PROJECT_DATA\",\"table\":\"LNM$GROUP_000362\""),
+          "a group name, translated through the viewer's group table");
+    st_resp_free(&b.resp);
+    call("GET", "/api/v1/logicals/LNM$SYSTEM_TABLE/NO_SUCH_NAME", t, NULL, &b);
+    CHECK(b.resp.status == 404 && strstr(b.resp.body.data, "NOLOGNAM"), "no such name: OpenVMS's NOLOGNAM");
+    st_resp_free(&b.resp);
+
+    sign_in("{\"username\":\"steward_adm\",\"password\":\"admin-pass\"}", ac, sizeof ac, acsrf);
+    adm[0].n = "HTTP_COOKIE"; adm[0].v = ac; adm[1].n = "HTTP_X_STEWARD_CSRF"; adm[1].v = acsrf; adm[2].n = NULL;
+    call("PUT", "/api/v1/session/privileges", adm, "{\"enabled\":[\"sysprv\"]}", &b);
+    st_resp_free(&b.resp);
+    call("GET", "/api/v1/logicals?table=LNM$GROUP_000001", adm, NULL, &b);
+    CHECK(b.resp.status == 200 && strstr(b.resp.body.data, "SYSTEM_TOOLS"), "with SYSPRV another group's table is read");
+    st_resp_free(&b.resp);
+    CHECK(!st_plat_persona_active(), "no persona left active");
+}
+
 /* ------------------------------------------------- access history (Phase 6) */
 
 static void test_access(void)
@@ -1139,6 +1315,8 @@ int main(void)
     test_edit();
     test_system();
     test_access();
+    test_lnm_parser();
+    test_logicals();
     test_create();
     test_gateway();
     printf("%d checks, %d failed\n", checks, failures);
