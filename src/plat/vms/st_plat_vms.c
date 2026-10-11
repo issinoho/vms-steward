@@ -1489,7 +1489,7 @@ static void uaf_key(char key[32], const char *username)
 /* Remove a user record by username, from an open SYSUAF. */
 static unsigned int uaf_delete_open(struct RAB *rab, const char *username)
 {
-    char key[32];
+    static char key[32];   /* static: the RAB keeps pointing at it (cppcheck autoVariables) */
     unsigned int st;
     uaf_key(key, username);
     rab->rab$b_rac = RAB$C_KEY; rab->rab$b_krf = 0; rab->rab$l_kbf = key; rab->rab$b_ksz = 32;
