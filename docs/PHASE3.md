@@ -91,3 +91,24 @@ serves the generated STEWARD.CONF. Through nginx proxy manager:
 - the API answered through the gateway secret;
 - a failed sign-in was refused and audited in the new data directory, with the client
   address.
+
+## Phase exit checks (2026-10-11, x86 node, installed kit 0.1.1, through nginx proxy manager)
+
+The user did each check in the browser, signed in as STEWARD_ADM with SYSPRV switched
+on. The audit log and AUTHORIZE confirm each one:
+
+| Check | Evidence |
+|---|---|
+| Modify a user's owner, then owner plus a flag, then undo | `user-modify ... detail="owner"`, `"owner; flags+DISWELCOME"`, `"flags-DISWELCOME"`; AUTHORIZE matches each time |
+| Set a password, pre-expired | `password-set target="STEWARD_TEST" ... detail="pre-expired"`; AUTHORIZE `Pwdchange: (pre-expired)` |
+| Sign in with it: told it has expired, change it, signed in | `login ... outcome="expired"`, then `password-change ... ok` and `login ... ok` for STEWARD_TEST; AUTHORIZE shows the change and the login |
+| CHANGE_PASSWORD as the installed service account | the line above, and again for STEWARD_ADM, whose password the user had reset with AUTHORIZE (pre-expired by AUTHORIZE) |
+| Create, grant and delete an identifier | `ident-create`, `grant target="STEWARD_TEST/STEWARD_TEST_ID"`, `ident-delete ... detail="had 1 holder"`; AUTHORIZE `NOSUCHID` afterwards |
+| Refusal without SYSPRV | user list `%RMS-E-PRV` and STEWARD_TEST's record refused by OpenVMS; the write refusal was already shown by `phase3_live.py` |
+
+**The "Save did nothing" report** did not recur. With the console open, both edits
+(owner alone, then owner plus a flag key) saved and showed their confirmation. No
+cause was found, and the issue is closed as not reproduced. If it comes back, the
+console output is what to ask for.
+
+**Phase 3 closed on 2026-10-11 with the user's approval.**

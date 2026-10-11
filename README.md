@@ -15,17 +15,16 @@ see and change.
 rights identifiers, roughly what AUTHORIZE does, apart from creating and deleting
 users. Please try it on a test system first and report what you find.
 
-Phases 1 and 2 are closed. Their exit checks passed through nginx proxy manager on
-2026-10-10. Phase 3 (changes) is in this release: it was verified on the x86 node
-through the real code against AUTHORIZE (`tests/vms/phase3_live.py`), and its browser
-exit checks continue alongside the test release. See [`docs/PLAN.md`](docs/PLAN.md),
+Phases 1 to 3 are closed: sign-in, the read-only views and changes. Their exit checks
+passed in a browser through nginx proxy manager, the last on 2026-10-11 against the
+installed 0.1.1 kit. See [`docs/PLAN.md`](docs/PLAN.md),
 [`docs/api.md`](docs/api.md) and [`docs/security.md`](docs/security.md).
 
 | Area | Status |
 | --- | --- |
 | Scaffolding, sign-in, sessions | done (Phase 1, closed 2026-10-10) |
 | Users and rights identifiers: read-only views | done (Phase 2, closed 2026-10-10) |
-| Users and rights identifiers: changes, passwords, grants | in 0.1.0; browser exit checks continuing (Phase 3) |
+| Users and rights identifiers: changes, passwords, grants | done (Phase 3, closed 2026-10-11) |
 | Users: create, copy, delete | planned (Phase 4) |
 | Access history: who connected, when, how (SSH, TELNET, FTP, DECnet, batch, Steward) in one view | planned (Phase 6) |
 | Logical names, processes, queues, SYSGEN, licences, products, monitoring, error log, terminal | later |
