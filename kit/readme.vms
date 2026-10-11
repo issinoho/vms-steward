@@ -57,6 +57,8 @@ proxies to trust. It:
     default, and SYSPRV authorized but NOT default: Steward switches SYSPRV on
     only for the instant it creates a user's persona (OpenVMS needs it to read
     that user's UAF record), and checks after every request that it is off.
+    An existing account keeps its UIC and password; its privileges are set as
+    above, and its default directory becomes the data directory.
   - creates the data directory: LOGIN.COM (a RESTRICTED account must have one),
     [.RUN] (session store, audit log, settings, pool logs; private to the
     account), [.CONF] (the lighttpd rules)

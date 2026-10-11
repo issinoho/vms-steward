@@ -17,7 +17,8 @@ $! What it does (README.VMS):
 $!  - the account: batch access only, RESTRICTED, DISCTLY, an unknown password;
 $!    privileges IMPERSONATE, TMPMBX, NETMBX by default, and SYSPRV authorized but
 $!    not default: Steward switches it on only around $PERSONA_CREATE (DECISIONS D2).
-$!    An existing account keeps its UIC and password; its privileges are set as above.
+$!    An existing account keeps its UIC and password; its privileges are set as above
+$!    and its default directory becomes the data directory.
 $!  - the data directory, owned by the account: LOGIN.COM (required for a
 $!    RESTRICTED account), [.RUN] (sessions, audit log, settings, pool logs; private
 $!    to the account), [.CONF] (lighttpd rules)
@@ -102,9 +103,10 @@ $   endif
 $   say "STEWARD$CONFIGURE: created account ", account, " ", uic
 $ else
 $   define/user sys$output nla0:
-$   mcr authorize modify 'account' 'privs'
+$   mcr authorize modify 'account' 'privs' /device='datadev' /directory='datadirpart'
 $   say "STEWARD$CONFIGURE: account ", account, " exists; privileges set to IMPERSONATE, TMPMBX, NETMBX (default)"
-$   say "                   and SYSPRV (authorized only)"
+$   say "                   and SYSPRV (authorized only); its default directory is now ", datadir
+$   say "                   (the pool logs in there, and needs the LOGIN.COM written below)"
 $ endif
 $ set default 'saved'
 $ uicnum = f$identifier(account, "NAME_TO_NUMBER")
