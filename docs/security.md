@@ -172,6 +172,27 @@ browser ─(1)─ nginx proxy manager ─(2)─ lighttpd ─(3)─ STEWARD.EXE �
   A very large journal or accounting file makes this slow, as it makes ANALYZE/AUDIT and
   ACCOUNTING slow; the answer is to rotate them (PHASE6.md).
 
+## Phase 5: load run and review (2026-10-11)
+
+- **Load run, Linux** (`tests/load/load.py fcgi`). There were 8 concurrent clients, each
+  signed in, going round every read-only endpoint with a privilege switch, plus
+  hostile requests: no session, a forged cookie, no CSRF, a foreign Origin, malformed,
+  long and over-limit bodies, NUL and traversal in paths, and bad parameters.
+  - Three minutes under ASan/UBSan: 243,065 requests, every status as expected, no
+    sanitizer report.
+  - Three minutes on the plain build: 353,552 requests, resident memory flat (7.7 MB
+    after warm-up, 7.2 MB at the end).
+- **Soak, OpenVMS** (`API_PROBE_SOAK=n`: the real dispatcher, personas and files,
+  without lighttpd). It ran 2,000 requests each as STEWARD_ADM with SYSPRV and as
+  STEWARD_TEST with none, then 10,000 as STEWARD_ADM. Page-file use and the open-file
+  quota were the same after the first round and at the end, and no persona was left
+  active.
+- **Load through lighttpd** (`tests/load/load.py http`): 4 clients for 2 minutes as
+  STEWARD_TEST, 3,772 requests, every status as expected (PHASE5.md).
+- **Review:** the Phase 6 code was reviewed line by line against the checklist below;
+  findings are in the audit record. An independent review (`/security-review`) and the
+  external review and penetration test (`REVIEW-BRIEF.md`) remain the user's to run.
+
 ## What runs, and when
 
 **Every push (CI, `.github/workflows/ci.yml`) and `make audit` locally:**
@@ -242,3 +263,8 @@ instance behind nginx proxy manager.
 | 2026-10-11 | 3 | A test's header list was unterminated: harmless on Linux by luck, fatal on OpenVMS. The unit tests ran without sanitizers, so nothing caught it | Process (audit gap) | `make test-asan` | the reintroduced bug is caught |
 | 2026-10-11 | 3 | Design: CHANGE_PASSWORD charges failures to the account, so a public change endpoint would let anyone lock accounts | High if built naively; found by probe before any code | D11 | unit "wrong current password looks like a failed sign-in" |
 | 2026-10-11 | 4 | A home directory requested for an account with no default device (DEFAULT has only `[USER]`) was created relative to the serving process's default disk. The live test put `[STEWARD_NEW]` on the work disk; it was found and removed | Medium (writes in the wrong place, owned by the new UIC) | Phase 4 commit: no directory without a device, with a warning; the UI prefills a device | unit "no directory without a default device"; `phase4_live.py` |
+| 2026-10-11 | 6 | CI's no-node-details rule failed on two pushes: a probe comment and PHASE6.md quoted the client's private address. The pushes went out before `make audit` was run locally | Low (a LAN address in two commits' history) | 8c5b49c: documentation addresses | `audit_rules.sh no-node-details` (CI) |
+| 2026-10-11 | 6 | `atoll` used in a unit test is undeclared in VSI C under C99, so it would return `int` | Informational (test only) | Phase 5 commit: `strtoll` | VSI C `IMPLICITFUNC` informational at build |
+| 2026-10-11 | 5 | Phase 5 review of access history: when 6,000 process records were held, each new one scanned them all for the oldest, so a busy accounting file made a request quadratic | Low (slow responses; needs SYSPRV or READALL to reach) | Phase 5 commit: a ring | 10,000-request soak on the node |
+| 2026-10-11 | 5 | Phase 5 review: one accounting or journal record longer than the buffer (8 KB for the journal) ended the read of the whole file (`RMS-W-RTB`), silently hiding everything after it | Low (incomplete history) | Phase 5 commit: 64 KB buffers, an over-long record is skipped | code review; no such record on the node |
+| 2026-10-11 | 5 | Phase 5 review: the SSH log search left RMS's wildcard context open when it stopped early (a refusal, or 256 logs) | Informational (no channel leak measured) | Phase 5 commit: the search is ended on every exit | soak: open-file quota unchanged |

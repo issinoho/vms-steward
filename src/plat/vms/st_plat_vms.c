@@ -1799,18 +1799,35 @@ static int ax_ieq(const char *a, const char *b)
 
 static long long ax_abs(long long v) { return v < 0 ? -v : v; }
 
-/* Room for one more process record; when full, the oldest gives way. */
+/* Room for one more process record. When full, the earliest written gives way, in
+   turn: accounting is in time order, so that is the oldest. (A scan for the oldest
+   on every insert made a busy file quadratic: security review, Phase 5.) */
+static int ax_ring;
+
 static ax_proc *ax_new_proc(void)
 {
     ax_proc *p;
     if (ax_np < AX_PROCS) p = &ax_p[ax_np++];
-    else {
-        int i, old = 0;
-        for (i = 1; i < AX_PROCS; i++) if (ax_p[i].start < ax_p[old].start) old = i;
-        p = &ax_p[old];
-    }
+    else { p = &ax_p[ax_ring]; ax_ring = (ax_ring + 1) % AX_PROCS; }
     memset(p, 0, sizeof *p);
     return p;
+}
+
+/* The next record, skipping any longer than the buffer (RMS-W-RTB) rather than
+   giving up on the whole file: one odd record must not hide the rest. */
+static unsigned int ax_get(struct RAB *rab)
+{
+    unsigned int st;
+    while ((st = sys$get(rab)) == RMS$_RTB) ;
+    return st;
+}
+
+/* End a wildcard search early, releasing RMS's directory context. */
+static void ax_search_end(struct FAB *fab, struct NAM *nam)
+{
+    nam->nam$b_nop |= NAM$M_SYNCHK;
+    fab->fab$b_fns = 0;
+    sys$parse(fab);
 }
 
 static void ax_cond(unsigned int *cond, char *text, unsigned int st)
@@ -1847,12 +1864,12 @@ static unsigned int ax_open(struct FAB *fab, struct RAB *rab, struct XABDAT *dat
 
 static unsigned int ax_accounting(long long since, long long until)
 {
-    static unsigned char rec[32768];
+    static unsigned char rec[65535];
     struct FAB fab;
     struct RAB rab;
     unsigned int st = ax_open(&fab, &rab, 0, "ACCOUNTNG", "SYS$MANAGER:.DAT", rec, sizeof rec);
     if (!(st & 1)) return st;
-    while ((st = sys$get(&rab)) & 1) {
+    while ((st = ax_get(&rab)) & 1) {
         unsigned rlen = rab.rab$w_rsz, w = rec[0] | rec[1] << 8, type = (w >> 1) & 0x7F, sub = (w >> 8) & 0xF;
         unsigned long long systime = 0, login = 0;
         unsigned off = ACR$K_HDRLEN;
@@ -2062,7 +2079,7 @@ static unsigned int ax_ssh_logs(long long since, long long until)
         rsa[nam.nam$b_rsl] = '\0';
         st = ax_open(&f, &r, &dat, rsa, 0, line, sizeof line - 1);
         if (!(st & 1)) {
-            if (st == RMS$_PRV) return st;      /* the viewer may not read these */
+            if (st == RMS$_PRV) { ax_search_end(&fab, &nam); return st; }   /* the viewer may not read these */
             continue;                           /* purged under us, or busy */
         }
         c = &ax_s[ax_ns];
@@ -2079,13 +2096,14 @@ static unsigned int ax_ssh_logs(long long since, long long until)
         ax_text((unsigned char *) u1 + 1, (size_t) (u2 - u1 - 1), c->host, sizeof c->host);
         if (c->end >= since - AX_NEAR && c->start <= until) {
             ax_ns++;
-            while (lines++ < 400 && (sys$get(&r) & 1)) {
+            while (lines++ < 400 && (ax_get(&r) & 1)) {
                 line[r.rab$w_rsz] = '\0';
                 ax_ssh_line(c, (char *) line);
             }
         }
         sys$close(&f);
     }
+    if (st & 1) ax_search_end(&fab, &nam);   /* stopped at AX_SSH, not at the end */
     return (st == RMS$_NMF || st == RMS$_FNF || (st & 1)) ? SS$_NORMAL : st;
 }
 
@@ -2104,12 +2122,12 @@ static void ax_term_route(const char *term, char *route, size_t rlen, char *deta
 
 static unsigned int ax_journal(long long since, long long until)
 {
-    static unsigned char rec[8192];
+    static unsigned char rec[65535];
     struct FAB fab;
     struct RAB rab;
     unsigned int st = ax_open(&fab, &rab, 0, "SYS$MANAGER:SECURITY.AUDIT$JOURNAL", 0, rec, sizeof rec);
     if (!(st & 1)) return st;
-    while ((st = sys$get(&rab)) & 1) {
+    while ((st = ax_get(&rab)) & 1) {
         unsigned rlen = rab.rab$w_rsz, type = rec[0] | rec[1] << 8, sub = rec[2] | rec[3] << 8;
         unsigned npk = rec[6] | rec[7] << 8, off = NSA$C_MSG_HDR_LENGTH, k, status = 0;
         char user[33] = "", term[24] = "", rnode[64] = "", ruser[33] = "", rfull[64] = "";
@@ -2217,7 +2235,7 @@ static unsigned int ax_steward(long long since, long long until, st_access_cb fn
     if (!*steward_log) return SS$_NORMAL;
     st = ax_open(&fab, &rab, 0, steward_log, 0, line, sizeof line - 1);
     if (!(st & 1)) return st;
-    while (!*stop && ((st = sys$get(&rab)) & 1)) {
+    while (!*stop && ((st = ax_get(&rab)) & 1)) {
         char user[33], from[64], action[24], outcome[16], detail[96];
         int y, mo, d, h, mi, s;
         long long t;
@@ -2518,7 +2536,7 @@ int st_plat_access(long long since, long long until, st_access_cb fn, void *ctx,
     int i, stop = 0;
     (void) e;
     for (i = 0; i < ST_SRC_COUNT; i++) { src_cond[i] = 0; src_text[i][0] = '\0'; }
-    ax_np = ax_ns = ax_nf = 0;
+    ax_np = ax_ns = ax_nf = ax_ring = 0;
     ax_off = local_offset();
     if (!((st = ax_accounting(since, until)) & 1)) ax_cond(&src_cond[ST_SRC_ACCOUNTING], src_text[ST_SRC_ACCOUNTING], st);
     if (until >= st_plat_time() - 60) ax_live();

@@ -10,6 +10,11 @@
    A body, if any, is sent as JSON with the session's CSRF token. The ETag is printed
    after the status when the response has one.
 
+   With API_PROBE_SOAK=<n> defined, <path> is ignored and every read-only endpoint is
+   requested n times over (Phase 5 load run on the node, without lighttpd): it prints
+   the statuses, the process's page-file use and open-file quota after the first
+   round and at the end, and stops at once if a persona is left active.
+
    It plants a session for <username> in a scratch store ([.BUILD]PROBE_SESSIONS.DAT),
    so the request runs under that user's persona exactly as a signed-in request does.
    Creating the persona needs IMPERSONATE and SYSPRV, so this runs from a privileged
@@ -20,6 +25,8 @@
 #include <string.h>
 #include "st_app.h"
 #include "svc.h"
+#include <starlet.h>
+#include <jpidef.h>
 
 static void nv(st_buf *b, const char *n, const char *v)
 {
@@ -40,23 +47,121 @@ static void nv(st_buf *b, const char *n, const char *v)
     st_buf_append(b, v, lv);
 }
 
+/* One request through the dispatcher; prints it if print. Returns the status. */
+static int one(const char *method, const char *path, const char *body, const char *if_match,
+               const char *cookie, const char *csrf_hex, int print)
+{
+    st_buf p;
+    st_request r;
+    st_response resp;
+    char m[8], uri[1024];
+    const char *q;
+    size_t k;
+    int status;
+
+    st_copy(uri, sizeof uri, path);
+    q = strchr(uri, '?');
+    st_buf_init(&p, 0);
+    for (k = 0; method[k] && k < sizeof m - 1; k++)   /* the C RTL lowercases argv */
+        m[k] = (char) ((method[k] >= 'a' && method[k] <= 'z') ? method[k] - 32 : method[k]);
+    m[k] = '\0';
+    nv(&p, "REQUEST_METHOD", m);
+    nv(&p, "HTTP_X_STEWARD_CSRF", csrf_hex);
+    if (if_match) nv(&p, "HTTP_IF_MATCH", if_match);
+    if (body) {
+        char len[16];
+        snprintf(len, sizeof len, "%u", (unsigned) strlen(body));
+        nv(&p, "CONTENT_TYPE", "application/json");
+        nv(&p, "CONTENT_LENGTH", len);
+    }
+    nv(&p, "REQUEST_URI", uri);
+    nv(&p, "QUERY_STRING", q ? q + 1 : "");
+    nv(&p, "REMOTE_ADDR", "127.0.0.1");
+    nv(&p, "HTTP_HOST", "probe");
+    nv(&p, "HTTP_COOKIE", cookie);
+    if (st_request_init(&r, (unsigned char *) p.data, p.len, body, body ? strlen(body) : 0)) {
+        fprintf(stderr, "bad request\n");
+        st_buf_free(&p);
+        return 0;
+    }
+    st_resp_init(&resp);
+    st_app_handle(&r, 0, &resp);
+    status = resp.status;
+    if (print) {
+        const char *et = strstr(st_buf_cstr(&resp.headers), "ETag: ");
+        printf("%d %s%.*s%s\n", resp.status, et ? "ETag=" : "", et ? (int) strcspn(et + 6, "\r\n") : 0,
+               et ? et + 6 : "", et ? " " : "");
+        printf("%s\n", st_buf_cstr(&resp.body));
+    }
+    st_resp_free(&resp);
+    st_request_free(&r);
+    st_buf_free(&p);
+    return status;
+}
+
+/* Page-file pages in use, and open files still allowed: a leak shows in one or both. */
+static void usage(unsigned int *pagefile, unsigned int *files)
+{
+    unsigned int iosb[2], pgflquota = 0, pagfilcnt = 0;
+    struct { unsigned short len, code; void *buf; unsigned short *ret; } it[4];
+    it[0].len = 4; it[0].code = JPI$_PGFLQUOTA; it[0].buf = &pgflquota; it[0].ret = 0;
+    it[1].len = 4; it[1].code = JPI$_PAGFILCNT; it[1].buf = &pagfilcnt; it[1].ret = 0;
+    it[2].len = 4; it[2].code = JPI$_FILCNT; it[2].buf = files; it[2].ret = 0;
+    memset(&it[3], 0, sizeof it[3]);
+    *files = 0;
+    sys$getjpiw(0, 0, 0, it, iosb, 0, 0);
+    *pagefile = pgflquota - pagfilcnt;
+}
+
+static int soak(int rounds, const char *user, const char *cookie, const char *csrf_hex)
+{
+    static const char *const paths[] = {
+        "/api/v1/session", "/api/v1/system", "/api/v1/users?limit=50", "/api/v1/users/@",
+        "/api/v1/users/@/identifiers", "/api/v1/identifiers?type=all&limit=50",
+        "/api/v1/identifiers/STEWARD_PROBE/holders", "/api/v1/access?limit=200",
+        "/api/v1/users/NO_SUCH_USER_X", "/api/v1/uic/next?group=362",
+    };
+    unsigned int pf0 = 0, fc0 = 0, pf1, fc1;
+    unsigned long counts[600];
+    int i, j, n = 0;
+    memset(counts, 0, sizeof counts);
+    for (i = 0; i < rounds; i++) {
+        for (j = 0; j < (int) (sizeof paths / sizeof paths[0]); j++) {
+            char path[128];
+            int st;
+            const char *at = strchr(paths[j], '@');   /* @: the user; no format from a table */
+            if (at) snprintf(path, sizeof path, "%.*s%s%s", (int) (at - paths[j]), paths[j], user, at + 1);
+            else st_copy(path, sizeof path, paths[j]);
+            st = one("GET", path, NULL, NULL, cookie, csrf_hex, 0);
+            counts[st >= 0 && st < 600 ? st : 0]++;
+            n++;
+            if (st_plat_persona_active()) {
+                printf("FAIL persona left active after %s (round %d)\n", path, i + 1);
+                return 2;
+            }
+        }
+        if (i == 0) usage(&pf0, &fc0);
+    }
+    usage(&pf1, &fc1);
+    printf("%d requests:", n);
+    for (i = 0; i < 600; i++) if (counts[i]) printf(" %d=%lu", i, counts[i]);
+    printf("\npage file in use: %u after round 1, %u at the end (pagelets)\n", pf0, pf1);
+    printf("open files left: %u after round 1, %u at the end\n", fc0, fc1);
+    return counts[0] || counts[500] || fc1 < fc0 ? 1 : 0;
+}
+
 int main(int argc, char **argv)
 {
     st_plat_config pc;
     st_app_config cfg;
     st_session s;
     st_err e;
-    st_buf p;
-    st_request r;
-    st_response resp;
     unsigned char token[32];
-    char hex[65], cookie[100], user[13], uri[1024];
-    const char *q;
+    char hex[65], cookie[100], user[13];
 
     const char *method = argc > 4 ? argv[4] : "GET";
     const char *body = (argc > 5 && strcmp(argv[5], "-")) ? argv[5] : NULL;
-    char m[8], csrf_hex[65];
-    size_t k;
+    char csrf_hex[65];
 
     if (argc < 4 || argc > 7 || !st_valid_username(argv[1], user)) {
         fprintf(stderr, "usage: api_probe <username> <privileges|-> <path> [<method> [<body>|- [<if-match>]]]\n");
@@ -98,42 +203,13 @@ int main(int argc, char **argv)
     st_hex(token, sizeof token, hex);
     snprintf(cookie, sizeof cookie, "%s=%s", ST_COOKIE, hex);
 
-    st_copy(uri, sizeof uri, argv[3]);
-    q = strchr(uri, '?');
-    st_buf_init(&p, 0);
-    for (k = 0; method[k] && k < sizeof m - 1; k++)   /* the C RTL lowercases argv */
-        m[k] = (char) ((method[k] >= 'a' && method[k] <= 'z') ? method[k] - 32 : method[k]);
-    m[k] = '\0';
     st_hex(s.csrf, sizeof s.csrf, csrf_hex);
-    nv(&p, "REQUEST_METHOD", m);
-    nv(&p, "HTTP_X_STEWARD_CSRF", csrf_hex);
-    if (argc > 6) nv(&p, "HTTP_IF_MATCH", argv[6]);
-    if (body) {
-        char len[16];
-        snprintf(len, sizeof len, "%u", (unsigned) strlen(body));
-        nv(&p, "CONTENT_TYPE", "application/json");
-        nv(&p, "CONTENT_LENGTH", len);
+    if (getenv("API_PROBE_SOAK")) {
+        int rc = soak(atoi(getenv("API_PROBE_SOAK")), user, cookie, csrf_hex);
+        st_plat_session_delete(s.key, &e);
+        return rc ? 2 : 0;
     }
-    nv(&p, "REQUEST_URI", uri);
-    nv(&p, "QUERY_STRING", q ? q + 1 : "");
-    nv(&p, "REMOTE_ADDR", "127.0.0.1");
-    nv(&p, "HTTP_HOST", "probe");
-    nv(&p, "HTTP_COOKIE", cookie);
-    if (st_request_init(&r, (unsigned char *) p.data, p.len, body, body ? strlen(body) : 0)) {
-        fprintf(stderr, "bad request\n");
-        return 1;
-    }
-    st_resp_init(&resp);
-    st_app_handle(&r, 0, &resp);
-    {
-        const char *et = strstr(st_buf_cstr(&resp.headers), "ETag: ");
-        printf("%d %s%.*s%s\n", resp.status, et ? "ETag=" : "", et ? (int) strcspn(et + 6, "\r\n") : 0,
-               et ? et + 6 : "", et ? " " : "");
-        printf("%s\n", st_buf_cstr(&resp.body));
-    }
+    one(method, argv[3], body, argc > 6 ? argv[6] : NULL, cookie, csrf_hex, 1);
     st_plat_session_delete(s.key, &e);
-    st_resp_free(&resp);
-    st_request_free(&r);
-    st_buf_free(&p);
     return st_plat_persona_active() ? 2 : 0;
 }

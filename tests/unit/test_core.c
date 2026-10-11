@@ -903,7 +903,7 @@ static void test_access(void)
     /* newest first */
     p = strstr(body, "\"start\":");
     q = p ? strstr(p + 1, "\"start\":") : NULL;
-    CHECK(p && q && atoll(p + 8) >= atoll(q + 8), "newest first");
+    CHECK(p && q && strtoll(p + 8, NULL, 10) >= strtoll(q + 8, NULL, 10), "newest first");
     CHECK(strstr(body, "\"truncated\":false") != NULL, "nothing cut off");
     st_resp_free(&b.resp);
 

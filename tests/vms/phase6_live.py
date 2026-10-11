@@ -77,11 +77,14 @@ check(ours and ours <= theirs, "SSH connections are ACCOUNTING's SSH$SSH network
 st, doc, _ = access("STEWARD_ADM", "SYSPRV", "since=%d&outcome=failure&limit=2000" % (now - 86400))
 fails = doc["events"] if doc else []
 check(all(e["kind"] == "failure" for e in fails), "outcome=failure gives failures only")
-seen = {}
+# One attempt seen by two sources must be one event. (Several real attempts in the
+# same second, from one sign-in each, are several events: four load-test clients
+# whose password had expired, 2026-10-11.)
+sources = {}
 for e in fails:
-    k = (e["user"], e["from"], e["start"] // 30)
-    seen[k] = seen.get(k, 0) + 1
-check(all(n == 1 for n in seen.values()), "no failure is shown twice", [k for k, n in seen.items() if n > 1][:3])
+    sources.setdefault((e["user"], e["from"], e["start"] // 30), set()).add(e["source"])
+check(all(len(v) == 1 for v in sources.values()), "no failure is shown twice (by two sources)",
+      [k for k, v in sources.items() if len(v) > 1][:3])
 check(not any(e["user"].startswith("<") for e in fails), "LOGINOUT's <login> is replaced by the name tried")
 
 st, doc, _ = access("STEWARD_TEST", "-", "since=%d" % (now - 3600))
