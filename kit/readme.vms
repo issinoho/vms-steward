@@ -1,0 +1,116 @@
+Steward @VERSION@ for OpenVMS (vms-steward, @ARCH@) - EARLY TEST RELEASE
+=========================================================================
+
+Steward manages OpenVMS from a web browser. This first test release covers users
+and rights identifiers, roughly what AUTHORIZE does:
+
+  - sign in with your OpenVMS username and password (SYS$ACM: expiry, DISUSER,
+    login hours and break-in evasion all apply); an expired password can be
+    changed at sign-in
+  - switch your authorized privileges on and off for the session, as
+    SET PROCESS/PRIVILEGE does
+  - list, filter and read users (everything AUTHORIZE SHOW shows) and rights
+    identifiers with their holders
+  - modify users (owner, flags, days and hours, privileges, quotas, ...), set
+    passwords, grant and revoke identifiers, create, rename and delete identifiers
+
+Every request runs as you: Steward takes on your OpenVMS identity (a persona) for
+the request, so OpenVMS decides what you may see and change, exactly as at a
+terminal. Steward has no permissions of its own. Source, design and security
+records: https://github.com/issinoho/vms-steward
+
+This is a test release. It has been exercised on one x86-64 system. Please try it
+on a test system first, and report problems at the address above.
+
+Requirements: OpenVMS x86-64 (V9.2-x), VSI TCP/IP Services, VSI SSL3 (OpenSSL 3.0),
+and lighttpd for OpenVMS (vms-lighttpd, https://github.com/issinoho/vms-lighttpd),
+which serves the pages and passes the API to Steward. Browsers must reach Steward
+over HTTPS: either through a reverse proxy that ends TLS (e.g. nginx proxy
+manager), or with TLS in lighttpd.
+
+Installed files (STEWARD$ROOT, defined by STEWARD$STARTUP)
+---------------------------------------------------------
+  [BIN]STEWARD.EXE             the FastCGI server (run as a pool of processes)
+  [COM]STEWARD$CONFIGURE.COM   one-time setup, as SYSTEM
+  [COM]STEWARD$CONTROL.COM     START, STOP, RESTART, STATUS
+  [COM]STEWARD_POOL.COM        the pool (used by STEWARD$CONTROL)
+  [COM]LOGIN.COM               copied to the service account (see below)
+  [WWW]                        the browser front end (static files)
+  [CONF]                       reference copies: STEWARD.CONF (annotated lighttpd
+                               rules), STEWARD_SETTINGS.TEMPLATE
+  [DOC]README.VMS, LICENSE
+  SYS$STARTUP:STEWARD$STARTUP.COM, STEWARD$SHUTDOWN.COM
+
+Setting up
+----------
+Install and set up vms-lighttpd first. Then, as SYSTEM:
+
+    $ @STEWARD$ROOT:[COM]STEWARD$CONFIGURE
+
+It asks for (or takes as parameters) the service account (default STEWARD) and
+its UIC, a data directory (default SYS$SYSDEVICE:[STEWARD_DATA]), the port lighttpd
+should serve Steward on (default 8443), lighttpd's account, and any reverse
+proxies to trust. It:
+
+  - creates the service account: batch access only, RESTRICTED, DISCTLY, a
+    random password nobody knows. Privileges IMPERSONATE, TMPMBX and NETMBX by
+    default, and SYSPRV authorized but NOT default: Steward switches SYSPRV on
+    only for the instant it creates a user's persona (OpenVMS needs it to read
+    that user's UAF record), and checks after every request that it is off.
+  - creates the data directory: LOGIN.COM (a RESTRICTED account must have one),
+    [.RUN] (session store, audit log, settings, pool logs; private to the
+    account), [.CONF] (the lighttpd rules)
+  - makes a gateway secret (from OpenSSL's random generator), shared by the
+    pool and lighttpd. lighttpd sends it with every API request and Steward
+    refuses requests without it, so no other process on the system can talk to
+    the pool directly and pretend to be a different client.
+  - writes [.CONF]STEWARD.CONF, a lighttpd server block for the port, and the
+    site settings, SYS$MANAGER:STEWARD$CONFIG.COM
+
+Then add the line it prints to lighttpd's LIGHTTPD.CONF:
+
+    include "/<device>/STEWARD_DATA/conf/steward.conf"
+
+and:
+
+    $ @STEWARD$ROOT:[COM]STEWARD$CONTROL START
+    $ @VMSLIGHTTPD$ROOT:[COM]VMSLIGHTTPD$CONTROL RESTART
+
+Browse to https://<host>:<port>/ (or your proxy's address) and sign in.
+
+    $ @STEWARD$ROOT:[COM]STEWARD$CONTROL STATUS
+
+shows the pool's processes and their privileges (they should be DETACH,TMPMBX,NETMBX:
+SYSPRV off) and the end of the audit log.
+
+Behind a reverse proxy
+----------------------
+Point the proxy at lighttpd's Steward port, and give STEWARD$CONFIGURE the address
+the proxy connects from (it goes in STEWARD_SETTINGS.COM as
+STEWARD_TRUSTED_PROXIES). Steward then believes the proxy's X-Forwarded-For,
+-Proto, -Host and -Prefix headers, so break-in evasion and the audit log name the
+real client. Never list an address untrusted clients can connect from.
+
+The audit log
+-------------
+<data>[.RUN]AUDIT.LOG records every sign-in, sign-out, privilege switch and change,
+with the user, the client address and OpenVMS's answer. Passwords are never
+recorded.
+
+Notes for this test release
+---------------------------
+- x86-64 only for now; IA64 will follow.
+- Creating and deleting users (AUTHORIZE ADD/COPY/REMOVE) is not in this release.
+- Dates are shown in the browser's time zone. OpenVMS stores UAF dates in local
+  time and keeps only the current offset from UTC, so a date from the other side
+  of a daylight-saving change shows an hour out, as in other OpenVMS tools.
+- Steward shows what OpenVMS lets you see, no more and no less: any signed-in
+  user can read the rights database, and can tell whether a username exists,
+  as at a terminal.
+
+Removing
+--------
+    $ PRODUCT REMOVE STEWARD
+
+stops the pool and deassigns STEWARD$ROOT. The data directory, the account and the
+site settings are kept; remove the include line from LIGHTTPD.CONF by hand.

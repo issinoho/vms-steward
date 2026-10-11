@@ -1,0 +1,25 @@
+=product @PRODUCER@ @BASE@ STEWARD @PCSIVERSION@ full
+1 'PRODUCER
+=prompt @PRODUCER@
+1 'PRODUCT
+=prompt Steward @VERSION@ for OpenVMS (vms-steward): browser-based system management, early test
+1 'NOTICE
+=prompt Steward is distributed under the MIT licence. This is an early test release.
+1 RELEASE_NOTES
+=prompt Documentation is in [STEWARD.DOC]README.VMS under the installation directory.
+1 POST_INSTALL
+=prompt Post-installation tasks for Steward (vms-steward)
+    Steward runs behind lighttpd (vms-lighttpd), which must be installed and set up.
+    Once, as SYSTEM: create the service account, data directory, gateway secret and
+    the lighttpd rules (site settings in SYS$MANAGER:STEWARD$CONFIG.COM):
+    $ @STEWARD$ROOT:[COM]STEWARD$CONFIGURE
+    Then add the include line it prints to lighttpd's LIGHTTPD.CONF, and:
+    $ @STEWARD$ROOT:[COM]STEWARD$CONTROL START
+    $ @VMSLIGHTTPD$ROOT:[COM]VMSLIGHTTPD$CONTROL RESTART
+    At boot, add to SYS$MANAGER:SYSTARTUP_VMS.COM (after TCP/IP and SSL3):
+    $ @SYS$STARTUP:STEWARD$STARTUP.COM
+    At shutdown, add to SYS$MANAGER:SYSHUTDWN.COM:
+    $ @SYS$STARTUP:STEWARD$SHUTDOWN.COM
+
+PRODUCT REMOVE STEWARD stops the pool and deassigns STEWARD$ROOT; the data
+directory (sessions, audit log), the account and the site settings are kept.

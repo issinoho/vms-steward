@@ -3,3 +3,4 @@ cache/
 *.o
 tools/nodes.conf
 __pycache__/
+out/

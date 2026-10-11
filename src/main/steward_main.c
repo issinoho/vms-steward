@@ -1,7 +1,11 @@
 /* steward_main.c - the FastCGI server: one process, one connection, one request at a
    time, as a member of the pool lighttpd talks to (D1).
 
-   Usage: steward -b 127.0.0.1:<port>
+   Usage: steward -b 127.0.0.1:<port>      serve
+          steward -v                       print the version
+          steward -g                       print a new random gateway secret (64 hex
+                                           characters, from OpenSSL's generator), for
+                                           STEWARD$CONFIGURE
 
    Settings come from the environment (on OpenVMS getenv() also translates logical
    names, so STEWARD_POOL.COM defines them as process logicals):
@@ -28,6 +32,7 @@
 #include <arpa/inet.h>
 #include <unistd.h>
 #include "st_fcgi.h"
+#include "st_version.h"
 #include "st_http.h"
 #include "st_app.h"
 
@@ -173,8 +178,23 @@ int main(int argc, char **argv)
     st_err e;
     int lfd, one = 1;
 
+    if (argc == 2 && !strcmp(argv[1], "-v")) {
+        printf("steward %s\n", ST_VERSION);
+        return 0;
+    }
+    if (argc == 2 && !strcmp(argv[1], "-g")) {
+        /* DCL's F$UNIQUE is unique, not unpredictable: the secret comes from here. */
+        unsigned char r[32];
+        char hex[65];
+        if (!st_plat_random(r, sizeof r)) { fprintf(stderr, "steward: no random numbers\n"); return 1; }
+        st_hex(r, sizeof r, hex);
+        st_zero(r, sizeof r);
+        printf("%s\n", hex);
+        st_zero(hex, sizeof hex);
+        return 0;
+    }
     if (argc != 3 || strcmp(argv[1], "-b") || parse_bind(argv[2], &sa)) {
-        fprintf(stderr, "usage: steward -b 127.0.0.1:<port>\n");
+        fprintf(stderr, "usage: steward -b 127.0.0.1:<port> | -v | -g\n");
         return 2;
     }
 #ifdef SIGPIPE
@@ -207,7 +227,7 @@ int main(int argc, char **argv)
         perror("steward: bind/listen");
         return 1;
     }
-    fprintf(stderr, "steward: listening on %s\n", argv[2]);
+    fprintf(stderr, "steward %s: listening on %s\n", ST_VERSION, argv[2]);
 
     for (;;) {
         struct sockaddr_in peer;

@@ -1,0 +1,52 @@
+--
+-- PCSI product description for Steward (vms-steward) on OpenVMS.
+-- Template: tools/kit.sh substitutes @PRODUCER@, @BASE@ and @PCSIVERSION@.
+--
+product @PRODUCER@ @BASE@ STEWARD @PCSIVERSION@ full ;
+
+    -- STEWARD.EXE links VSI's OpenSSL 3.0 shared image (SYS$SHARE:SSL3$LIBCRYPTO_SHR32)
+    -- for its random numbers and hashes.
+    software VSI @BASE@ SSL3 ;
+
+    information RELEASE_NOTES phase after ;
+
+    directory [STEWARD] ;
+    directory [STEWARD.BIN] ;
+    directory [STEWARD.COM] ;
+    directory [STEWARD.CONF] ;
+    directory [STEWARD.DOC] ;
+    directory [STEWARD.WWW] ;
+    directory [STEWARD.WWW.CSS] ;
+    directory [STEWARD.WWW.IMG] ;
+    directory [STEWARD.WWW.JS] ;
+
+    file [STEWARD.BIN]STEWARD.EXE ;
+    file [STEWARD.COM]STEWARD$CONFIGURE.COM ;
+    file [STEWARD.COM]STEWARD$CONTROL.COM ;
+    file [STEWARD.COM]STEWARD_POOL.COM ;
+    file [STEWARD.COM]LOGIN.COM ;
+    file [STEWARD.CONF]STEWARD.CONF ;
+    file [STEWARD.CONF]STEWARD_SETTINGS.TEMPLATE ;
+    file [STEWARD.DOC]README.VMS ;
+    file [STEWARD.DOC]LICENSE. ;
+    file [STEWARD.WWW]INDEX.HTML ;
+    file [STEWARD.WWW.CSS]APP.CSS ;
+    file [STEWARD.WWW.IMG]STEWARD.SVG ;
+    file [STEWARD.WWW.JS]API.JS ;
+    file [STEWARD.WWW.JS]APP.JS ;
+    file [STEWARD.WWW.JS]DOM.JS ;
+    file [STEWARD.WWW.JS]EDIT.JS ;
+    file [STEWARD.WWW.JS]FMT.JS ;
+    file [STEWARD.WWW.JS]RIGHTS.JS ;
+    file [SYS$STARTUP]STEWARD$STARTUP.COM ;
+    file [SYS$STARTUP]STEWARD$SHUTDOWN.COM ;
+
+    -- Define STEWARD$ROOT now. Steward installs no privileged images: the service
+    -- account's own privileges are all it uses (README.VMS).
+    execute postinstall "@PCSI$DESTINATION:[SYS$STARTUP]STEWARD$STARTUP.COM INSTALL" interactive ;
+    -- On removal: stop the pool, deassign STEWARD$ROOT.
+    execute install "CONTINUE" remove "@PCSI$DESTINATION:[SYS$STARTUP]STEWARD$STARTUP.COM REMOVE" ;
+
+    information POST_INSTALL phase after ;
+
+end product ;
