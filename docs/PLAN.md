@@ -153,7 +153,7 @@ chooses between an RMS `$PUT` to SYSUAF (what AUTHORIZE does) and driving AUTHOR
 subprocess, based on the Phase 0 probe. Deleting a user also covers the identifier.
 Exit: round-trip create, copy and delete, consistent with AUTHORIZE.
 
-**Phase 5: hardening and kit.** Load run with no crashes or leaked personas, idle and
+**Phase 5: hardening and kit** (closed 2026-10-11 on the user's approval; see PHASE5.md. Open: an independent code review and the external review and penetration test). Load run with no crashes or leaked personas, idle and
 absolute session expiry, security review (headers, CSP, cookie flags, input limits),
 PCSI kit and startup, README status table, and the independent external review and
 penetration test (D8). Exit: the kit is installed on x86, and you run

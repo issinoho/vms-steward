@@ -67,3 +67,13 @@ unbounded copy, a string reaching the page other than as text.
 **Still to do (the user's):**
 - An independent review of the changed code, e.g. `/security-review`.
 - The external review and penetration test, for which `REVIEW-BRIEF.md` is the brief.
+
+## Closed (2026-10-11)
+
+The user closed Phase 5 on these results. Two items stay open, tracked here and in
+security.md, to be done when the user arranges them:
+1. an independent review of the code changed since Phase 1 (e.g. `/security-review`);
+2. the external review and penetration test (`REVIEW-BRIEF.md`).
+
+The review fixes are in the source but not yet in a kit: the installed and released
+kit is 0.4.0.
