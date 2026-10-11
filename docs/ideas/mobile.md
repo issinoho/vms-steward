@@ -3,6 +3,24 @@
 **Asked for by the user, 2026-10-11:** "the site is better suited to use from a mobile
 phone. It's currently not user friendly." Not scheduled yet: on the wish list.
 
+## The user's priorities (2026-10-11)
+
+1. **"The biggest issue is that you have to zoom in to see anything."** The viewport
+   tag is right (`width=device-width, initial-scale=1`), so this is not a page drawn at
+   desktop width. It is the type: the labels, keycaps, tags, nav and table headers are
+   0.58 to 0.75rem (9 to 12px), sized for a desktop. On a phone the base should be about
+   17px, nothing under about 13px, and tap targets at least 44px.
+2. **"The mobile view should look & feel more like a native app."** That means:
+   - a fixed top bar with the title of the current view and a back arrow on detail
+     pages;
+   - a bottom tab bar for the main areas, with "More" for the rest;
+   - content full-width as cards and lists, not tables;
+   - sheets that slide up from the bottom for dialogs and filters;
+   - no sideways scrolling anywhere;
+   - instant feedback on tap.
+   It could also be installable to the home screen (a web app manifest and icon), so it
+   opens without the browser's address bar.
+
 ## What the user saw (0.4.0 on a phone, My account)
 
 - **The navigation** is the desktop sidebar turned into one row of eight links. Each
