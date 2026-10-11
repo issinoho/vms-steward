@@ -260,3 +260,39 @@ the information which we gathered from vms-fastfetch").
 Alternatives: sampling CPU in the request (holds one of the pool's two processes for
 the interval, per viewer); counting polls as activity (defeats the idle timeout); a
 server-side cache shared by viewers (shows one persona's view to another, against D2).
+
+## D6. Creating and deleting users: RMS on SYSUAF, as AUTHORIZE does, under the persona
+
+**Status:** decided 2026-10-11 from the Phase 4 probes (PHASE4.md).
+
+No system service creates or deletes a UAF record. Steward does what AUTHORIZE does:
+
+- **Create and copy** read a template record: DEFAULT for a new user (AUTHORIZE ADD's
+  defaults), or the source user for a copy. Steward copies it and changes the
+  username, UIC and owner, clears the password and login history, and `$PUT`s it to
+  SYSUAF. It then sets the password with `$SETUAI` (hashed by the system, minimum
+  length enforced) and any other fields through the same path as a modify, and adds
+  the UIC identifier with `$ADD_IDENT`. If a step after the `$PUT` fails, Steward
+  removes what it added, so a create either completes or leaves nothing behind.
+- **Delete** revokes the user's holdings, removes the UIC identifier, then deletes the
+  record: AUTHORIZE REMOVE's result, verified identical by probe.
+- **Layout** comes from UAFDEF's struct in `SYS$LIB_C.TLB`, so the compiler computes
+  the offsets from the system's own definition. This is the one place Steward
+  handles a raw system record. It is the system's record, so the system's
+  definition is the right authority, rather than offsets copied by hand.
+- **All under the persona.** Writing SYSUAF needs SYSPRV, and OpenVMS refuses anyone
+  without it. Steward adds no rule of its own (D2, D10).
+- **Safety rails, not access control:** Steward refuses to delete the account you are
+  signed in as, or the service account, either of which would cut off Steward
+  itself. It refuses a UIC that another *user* already has: AUTHORIZE only warns
+  about this, but two users sharing a UIC share files and processes. A delete must
+  carry the ETag of the record shown, so you delete what you looked at.
+
+Alternatives:
+- **Run AUTHORIZE in a subprocess.** It is the reference implementation, but the pool
+  would have to spawn processes per request. Usernames and owners would have to be
+  quoted safely into a DCL command line (an injection risk), its output would have
+  to be parsed for errors, and a spawned subprocess's identity under a persona
+  needs its own proof.
+- **Build the record from nothing.** More fields to get right than copying the
+  template AUTHORIZE itself uses.
