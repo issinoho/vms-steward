@@ -38,6 +38,9 @@ static const route routes[] = {
     { "GET",    "/api/v1/identifiers/{id}/holders",    svc_ident_holders,    0 },
     /* Phase 3: changes */
     { "PATCH",  "/api/v1/users/{u}",                   svc_user_modify,      0 },
+    { "POST",   "/api/v1/users",                       svc_user_create,      0 },
+    { "DELETE", "/api/v1/users/{u}",                   svc_user_delete,      0 },
+    { "GET",    "/api/v1/uic/next",                    svc_uic_next,         0 },
     { "POST",   "/api/v1/users/{u}/password",          svc_user_set_password, 0 },
     { "POST",   "/api/v1/users/{u}/identifiers",       svc_user_grant,       0 },
     { "PUT",    "/api/v1/users/{u}/identifiers/{id}",  svc_user_holding,     0 },

@@ -349,3 +349,109 @@ export function deleteIdentifier(id, holders, done) {
       return true;
     } }]);
 }
+
+// ---------------------------------------------------------------- create, copy, delete (Phase 4)
+
+// Create a user from DEFAULT (as AUTHORIZE ADD) or copy one (as AUTHORIZE COPY). The
+// dialog starts from the template's own record, so what you see is what the new
+// account will get; only what you change is sent as a difference. done(user) gets
+// the new account's record.
+export async function createUser(templateName, done) {
+  let t;
+  try {
+    t = await api.user(templateName);
+  } catch (err) {
+    if (err instanceof ApiError && err.status === 401) { window.dispatchEvent(new CustomEvent('steward:authlost')); return; }
+    dialog(templateName === 'DEFAULT' ? 'New user' : `Copy ${templateName}`,
+      h('pre', { class: 'vmsmsg' }, `${err.problem?.title || err.message}\n${err.vmsMessage || ''}`.trim()), []);
+    return;
+  }
+  const copying = templateName !== 'DEFAULT';
+  const name = h('input', { required: true, maxlength: 12, spellcheck: 'false', autocapitalize: 'characters' });
+  const group = h('input', { required: true, maxlength: 5, inputmode: 'numeric', value: (t.uic.match(/^\[(\d+),/) || [])[1] || '' });
+  const member = h('input', { required: true, maxlength: 6, inputmode: 'numeric' });
+  const owner = h('input', { maxlength: 31, value: copying ? t.owner : '' });
+  const account = h('input', { maxlength: 8, value: t.account, spellcheck: 'false' });
+  const device = h('input', { maxlength: 31, value: t.default_device || 'SYS$SYSDEVICE:', spellcheck: 'false' });
+  const dir = h('input', { maxlength: 63, value: '', spellcheck: 'false' });
+  const p = passwordPair();
+  const pre = h('input', { type: 'checkbox', checked: true });
+  const enabled = h('input', { type: 'checkbox', checked: true });
+  const mkdir = h('input', { type: 'checkbox' });
+  const copyIds = h('input', { type: 'checkbox' });
+  let dirEdited = false;
+  dir.addEventListener('input', () => { dirEdited = true; });
+  name.addEventListener('input', () => {   // [USERNAME] until the directory is edited
+    if (!dirEdited) dir.value = name.value ? `[${name.value.trim().toUpperCase()}]` : '';
+  });
+  async function suggest() {               // the next free member of the group
+    if (!/^[0-7]{1,5}$/.test(group.value.trim())) return;
+    try {
+      const r = await api.nextUic(group.value.trim());
+      const m = r.uic.match(/,(\d+)\]$/);
+      if (m) member.value = m[1];
+    } catch { /* leave it for the user */ }
+  }
+  group.addEventListener('change', suggest);
+  suggest();
+
+  dialog(copying ? `Copy ${t.username}` : 'New user', h('div', { class: 'editor' },
+    h('p', { class: 'muted' }, copying
+      ? `As AUTHORIZE COPY: every setting of ${t.username}, with a new name, UIC and password. Its identifiers are copied only if you ask.`
+      : 'As AUTHORIZE ADD: the settings of the DEFAULT account, with a new name, UIC and password. Change the rest afterwards with Modify.'),
+    h('div', { class: 'fields' },
+      field('Username', name, 'A-Z 0-9 _ $, up to 12'),
+      h('div', { class: 'field uicpair' },
+        h('label', {}, 'UIC (octal)'),
+        h('div', { class: 'uicin' }, '[', group, ',', member, ']'),
+        h('small', { class: 'muted' }, 'the next free member is suggested')),
+      field('Owner', owner), field('Account', account),
+      field('Device', device), field('Directory', dir, 'follows the username until you edit it'),
+      field('Password', p.a, `at least ${t.password.minimum_length} characters`), field('Again', p.b)),
+    h('label', { class: 'check' }, pre, ' Pre-expired: they choose their own at first login (as /PWDEXPIRED)'),
+    t.flags.includes('DISUSER')
+      ? h('label', { class: 'check' }, enabled, ` Can log in: clear the DISUSER flag ${copying ? t.username : 'DEFAULT'} has`)
+      : null,
+    h('label', { class: 'check' }, mkdir, ' Create the default directory, owned by the new account'),
+    copying ? h('label', { class: 'check' }, copyIds, ` Also grant the identifiers ${t.username} holds`) : null),
+    [{ label: copying ? 'Copy' : 'Create', primary: true, run: async () => {
+      const body = {
+        username: name.value.trim(),
+        uic: `[${group.value.trim()},${member.value.trim()}]`,
+        password: p.check(),
+        pre_expired: pre.checked,
+        create_directory: mkdir.checked,
+      };
+      if (copying) { body.template = t.username; body.copy_identifiers = copyIds.checked; }
+      if (owner.value !== (copying ? t.owner : '')) body.owner = owner.value;
+      if (account.value !== t.account) body.account = account.value;
+      if (device.value !== t.default_device) body.default_device = device.value;
+      if (dir.value && dir.value !== t.default_directory) body.default_directory = dir.value;
+      if (t.flags.includes('DISUSER') && enabled.checked) body.flags = t.flags.filter((f) => f !== 'DISUSER');
+      const u = await api.createUser(body);
+      toast(vmsMessage('S', copying ? 'COPMSG' : 'ADDMSG', `user ${u.username} ${u.uic} ${copying ? 'copied from ' + t.username : 'added'}`));
+      if (u.warning) toast(vmsMessage('W', 'NODIR', u.warning), 'error');
+      done(u);
+      return true;
+    } }]);
+}
+
+// Delete a user, as AUTHORIZE REMOVE: the record, its UIC identifier and its holdings.
+// Its files and directory stay. The name must be typed to confirm.
+export function deleteUser(u, heldCount, done) {
+  const confirm = h('input', { required: true, spellcheck: 'false', autocapitalize: 'characters', placeholder: u.username });
+  dialog(`Delete ${u.username}`, h('div', {},
+    h('p', {}, `The account ${u.username} ${u.uic} is removed from SYSUAF, with its UIC identifier`,
+      heldCount ? ` and its ${heldCount} identifier holding${heldCount === 1 ? '' : 's'}` : '',
+      ', as AUTHORIZE REMOVE does. Its files and directory are not touched.'),
+    field(`Type ${u.username} to confirm`, confirm)),
+    [{ label: 'Delete', primary: true, danger: true, run: async () => {
+      if (confirm.value.trim().toUpperCase() !== u.username) {
+        throw new ApiError(400, { type: '/x/confirm', title: 'Type the username to confirm' });
+      }
+      await api.deleteUser(u.username, u.etag);
+      toast(vmsMessage('S', 'REMMSG', `user ${u.username} removed`));
+      done();
+      return true;
+    } }]);
+}

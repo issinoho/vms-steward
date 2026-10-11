@@ -46,3 +46,24 @@ offers that as an option, off by default to match.
 
 After the probes the node was as before: no STEWARD_NEW, STEWARD_COPY or
 STEWARD_TEST_ID, and STEWARD_TEST holding nothing.
+
+## Built, and checked on the node (2026-10-11): `tests/vms/phase4_live.py`
+
+The checks run through the real dispatcher and platform as STEWARD_ADM's persona with
+SYSPRV switched on, each confirmed with AUTHORIZE. 23 of 23 passed:
+- **Refusals:** OpenVMS refused STEWARD_TEST and STEWARD_ADM without SYSPRV.
+- **Undo:** a password OpenVMS refused (`PWDSYNTAX`, after the `$PUT`) failed the
+  create and left neither record nor identifier.
+- **Create from DEFAULT:**
+  - owner, UIC, DISUSER cleared as asked, default directory, pre-expired password;
+  - quotas and password policy as DEFAULT's;
+  - the UIC identifier;
+  - a home directory owned by the new user.
+- **Copy of STEWARD_TEST:** the source's fields, its directory included (as AUTHORIZE
+  COPY). An existing username was refused.
+- **Delete of both:** AUTHORIZE afterwards knew neither the users nor their
+  identifiers.
+
+**Found on the way:** a home directory requested for an account with no default
+device was created on the serving process's disk. Steward now refuses, with a warning,
+and the dialog prefills a device (security.md audit record).

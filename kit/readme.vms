@@ -12,6 +12,8 @@ cluster), and covers users and rights identifiers, roughly what AUTHORIZE does:
     SET PROCESS/PRIVILEGE does
   - list, filter and read users (everything AUTHORIZE SHOW shows) and rights
     identifiers with their holders
+  - create users (as AUTHORIZE ADD), copy them (as COPY) and delete them (as
+    REMOVE: with their UIC identifier and holdings)
   - modify users (owner, flags, days and hours, privileges, quotas, ...), set
     passwords, grant and revoke identifiers, create, rename and delete identifiers
 
@@ -103,7 +105,6 @@ recorded.
 Notes for this test release
 ---------------------------
 - x86-64 only for now; IA64 will follow.
-- Creating and deleting users (AUTHORIZE ADD/COPY/REMOVE) is not in this release.
 - Dates are shown in the browser's time zone. OpenVMS stores UAF dates in local
   time and keeps only the current offset from UTC, so a date from the other side
   of a daylight-saving change shows an hour out, as in other OpenVMS tools.

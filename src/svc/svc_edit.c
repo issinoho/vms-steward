@@ -179,6 +179,120 @@ static void note(st_buf *b, const char *field)
     st_buf_printf(b, "%s%s", b->len ? "; " : "", field);
 }
 
+/* One member of a user change (PATCH, or the fields of a create), into ch. Returns 0
+   if it was a change, 1 if the key is not one (the caller decides), -1 with the 422
+   set. base is the record the change applies to: a flag or privilege list is noted
+   in what as a difference from it, and restricted_hours starts from its hours. */
+static int change_member(st_ctx *c, const st_jval *m, st_user_change *ch, st_buf *what,
+                         const st_user *u)
+{
+    const char *k = m->key;
+    long long n;
+    if (!strcmp(k, "owner")) {
+        if (text_value(c, m, k, ch->owner, sizeof ch->owner, 0)) return -1;
+        ch->fields |= ST_UC_OWNER; note(what, k);
+    } else if (!strcmp(k, "account")) {
+        if (text_value(c, m, k, ch->account, sizeof ch->account, 1)) return -1;
+        ch->fields |= ST_UC_ACCOUNT; note(what, k);
+    } else if (!strcmp(k, "cli")) {
+        if (text_value(c, m, k, ch->cli, sizeof ch->cli, 1)) return -1;
+        ch->fields |= ST_UC_CLI; note(what, k);
+    } else if (!strcmp(k, "clitables")) {
+        if (text_value(c, m, k, ch->clitables, sizeof ch->clitables, 1)) return -1;
+        ch->fields |= ST_UC_CLITABLES; note(what, k);
+    } else if (!strcmp(k, "default_device")) {
+        if (text_value(c, m, k, ch->defdev, sizeof ch->defdev, 1)) return -1;
+        ch->fields |= ST_UC_DEFDEV; note(what, k);
+    } else if (!strcmp(k, "default_directory")) {
+        if (text_value(c, m, k, ch->defdir, sizeof ch->defdir, 1)) return -1;
+        ch->fields |= ST_UC_DEFDIR; note(what, k);
+    } else if (!strcmp(k, "lgicmd")) {
+        if (text_value(c, m, k, ch->lgicmd, sizeof ch->lgicmd, 0)) return -1;
+        ch->fields |= ST_UC_LGICMD; note(what, k);
+    } else if (!strcmp(k, "flags")) {
+        unsigned int f[2], was[2];
+        if (names_value(c, m, k, svc_flag_bit, f)) return -1;
+        ch->flags = f[0];
+        ch->fields |= ST_UC_FLAGS;
+        was[0] = u->flags; was[1] = 0;
+        diff_names(what, "flags", was, f, flag_name);
+    } else if (!strcmp(k, "expiration")) {
+        if (m->type == ST_JNULL) ch->expiration = 0;
+        else if (int_value(c, m, k, 0, 253402300799LL, &n)) return -1;   /* to 9999 */
+        else ch->expiration = n;
+        ch->fields |= ST_UC_EXPIRATION; note(what, k);
+    } else if (!strcmp(k, "password")) {
+        const st_jval *p;
+        if (m->type != ST_JOBJ) { TOO(c, "password: an object"); return -1; }
+        for (p = m->child; p; p = p->next) {
+            if (!strcmp(p->key, "lifetime_days")) {
+                if (p->type == ST_JNULL) ch->pwd_lifetime = 0;
+                else if (int_value(c, p, "password.lifetime_days", 1, 9999, &n)) return -1;
+                else ch->pwd_lifetime = n * 86400;
+                ch->fields |= ST_UC_PWD_LIFETIME; note(what, "password lifetime");
+            } else if (!strcmp(p->key, "minimum_length")) {
+                if (int_value(c, p, "password.minimum_length", 0, 32, &n)) return -1;
+                ch->pwd_minimum = (int) n;
+                ch->fields |= ST_UC_PWD_MINIMUM; note(what, "password minimum");
+            } else {
+                TOO(c, "password.%.40s: not something that can be changed here", p->key);
+                return -1;
+            }
+        }
+    } else if (!strcmp(k, "secondary_days")) {
+        unsigned int d[2];
+        if (names_value(c, m, k, day_bit, d)) return -1;
+        ch->secondary_days = d[0];
+        ch->fields |= ST_UC_DAYS; note(what, k);
+    } else if (!strcmp(k, "restricted_hours")) {
+        const st_jval *kind, *h;
+        int i;
+        if (m->type != ST_JOBJ) { TOO(c, "restricted_hours: an object"); return -1; }
+        for (i = 0; i < ST_ACC_COUNT; i++) { ch->access_p[i] = u->access_p[i]; ch->access_s[i] = u->access_s[i]; }
+        for (kind = m->child; kind; kind = kind->next) {
+            int ki = svc_name_index(svc_access_names, ST_ACC_COUNT, kind->key);
+            if (ki < 0 || kind->type != ST_JOBJ) {
+                TOO(c, "restricted_hours.%.20s: network, batch, local, dialup or remote, each {primary, secondary}", kind->key);
+                return -1;
+            }
+            for (h = kind->child; h; h = h->next) {
+                if (!strcmp(h->key, "primary")) { if (hours_value(c, h, "restricted_hours", &ch->access_p[ki])) return -1; }
+                else if (!strcmp(h->key, "secondary")) { if (hours_value(c, h, "restricted_hours", &ch->access_s[ki])) return -1; }
+                else { TOO(c, "restricted_hours.%s.%.20s: primary or secondary", kind->key, h->key); return -1; }
+            }
+        }
+        ch->fields |= ST_UC_ACCESS; note(what, k);
+    } else if (!strcmp(k, "authorized_privileges") || !strcmp(k, "default_privileges")) {
+        unsigned int p[2];
+        int auth = k[0] == 'a';
+        if (names_value(c, m, k, svc_priv_bit, p)) return -1;
+        if (auth) { ch->priv_auth[0] = p[0]; ch->priv_auth[1] = p[1]; ch->fields |= ST_UC_PRIV_AUTH; }
+        else { ch->priv_def[0] = p[0]; ch->priv_def[1] = p[1]; ch->fields |= ST_UC_PRIV_DEF; }
+        diff_names(what, auth ? "authorized" : "default", auth ? u->priv_auth : u->priv_def, p, svc_priv_name);
+    } else if (!strcmp(k, "quotas")) {
+        /* Ranges from the item sizes: byte, word or longword. */
+        static const long long max[ST_Q_COUNT] = { 31, 255, 65535, 65535, 65535, 65535,
+            65535, 65535, 65535, 65535, 65535, 65535, 65535, 4294967295LL, 4294967295LL,
+            4294967295LL, 4294967295LL, 4294967295LL, 4294967295LL, 4294967295LL, 4294967295LL };
+        const st_jval *q;
+        if (m->type != ST_JOBJ) { TOO(c, "quotas: an object"); return -1; }
+        for (q = m->child; q; q = q->next) {
+            int qi = svc_name_index(svc_quota_names, ST_Q_COUNT, q->key);
+            char key[40];
+            if (qi < 0) { TOO(c, "quotas.%.20s: not a quota", q->key); return -1; }
+            snprintf(key, sizeof key, "quotas.%s", svc_quota_names[qi]);
+            if (int_value(c, q, key, 0, max[qi], &n)) return -1;
+            ch->quota[qi] = (unsigned long) n;
+            ch->quota_mask |= 1u << qi;
+            note(what, key);
+        }
+        if (ch->quota_mask) ch->fields |= ST_UC_QUOTAS;
+    } else {
+        return 1;
+    }
+    return 0;
+}
+
 /* ---------------------------------------------------------------- PATCH a user */
 
 /* PATCH api/v1/users/{u}, If-Match: <ETag>. Members, all optional:
@@ -198,7 +312,6 @@ void svc_user_modify(st_ctx *c)
     const st_jval *m;
     st_err e;
     st_buf what;
-    long long n;
 
     if (user_arg(c, user)) return;
     want = st_req_header(c->req, "HTTP_IF_MATCH");
@@ -220,110 +333,9 @@ void svc_user_modify(st_ctx *c)
     memset(&ch, 0, sizeof ch);
     st_buf_init(&what, 0);
     for (m = doc.root->child; m; m = m->next) {
-        const char *k = m->key;
-        if (!strcmp(k, "owner")) {
-            if (text_value(c, m, k, ch.owner, sizeof ch.owner, 0)) goto bad;
-            ch.fields |= ST_UC_OWNER; note(&what, k);
-        } else if (!strcmp(k, "account")) {
-            if (text_value(c, m, k, ch.account, sizeof ch.account, 1)) goto bad;
-            ch.fields |= ST_UC_ACCOUNT; note(&what, k);
-        } else if (!strcmp(k, "cli")) {
-            if (text_value(c, m, k, ch.cli, sizeof ch.cli, 1)) goto bad;
-            ch.fields |= ST_UC_CLI; note(&what, k);
-        } else if (!strcmp(k, "clitables")) {
-            if (text_value(c, m, k, ch.clitables, sizeof ch.clitables, 1)) goto bad;
-            ch.fields |= ST_UC_CLITABLES; note(&what, k);
-        } else if (!strcmp(k, "default_device")) {
-            if (text_value(c, m, k, ch.defdev, sizeof ch.defdev, 1)) goto bad;
-            ch.fields |= ST_UC_DEFDEV; note(&what, k);
-        } else if (!strcmp(k, "default_directory")) {
-            if (text_value(c, m, k, ch.defdir, sizeof ch.defdir, 1)) goto bad;
-            ch.fields |= ST_UC_DEFDIR; note(&what, k);
-        } else if (!strcmp(k, "lgicmd")) {
-            if (text_value(c, m, k, ch.lgicmd, sizeof ch.lgicmd, 0)) goto bad;
-            ch.fields |= ST_UC_LGICMD; note(&what, k);
-        } else if (!strcmp(k, "flags")) {
-            unsigned int f[2], was[2];
-            if (names_value(c, m, k, svc_flag_bit, f)) goto bad;
-            ch.flags = f[0];
-            ch.fields |= ST_UC_FLAGS;
-            was[0] = u.flags; was[1] = 0;
-            diff_names(&what, "flags", was, f, flag_name);
-        } else if (!strcmp(k, "expiration")) {
-            if (m->type == ST_JNULL) ch.expiration = 0;
-            else if (int_value(c, m, k, 0, 253402300799LL, &n)) goto bad;   /* to 9999 */
-            else ch.expiration = n;
-            ch.fields |= ST_UC_EXPIRATION; note(&what, k);
-        } else if (!strcmp(k, "password")) {
-            const st_jval *p;
-            if (m->type != ST_JOBJ) { TOO(c, "password: an object"); goto bad; }
-            for (p = m->child; p; p = p->next) {
-                if (!strcmp(p->key, "lifetime_days")) {
-                    if (p->type == ST_JNULL) ch.pwd_lifetime = 0;
-                    else if (int_value(c, p, "password.lifetime_days", 1, 9999, &n)) goto bad;
-                    else ch.pwd_lifetime = n * 86400;
-                    ch.fields |= ST_UC_PWD_LIFETIME; note(&what, "password lifetime");
-                } else if (!strcmp(p->key, "minimum_length")) {
-                    if (int_value(c, p, "password.minimum_length", 0, 32, &n)) goto bad;
-                    ch.pwd_minimum = (int) n;
-                    ch.fields |= ST_UC_PWD_MINIMUM; note(&what, "password minimum");
-                } else {
-                    TOO(c, "password.%.40s: not something that can be changed here", p->key);
-                    goto bad;
-                }
-            }
-        } else if (!strcmp(k, "secondary_days")) {
-            unsigned int d[2];
-            if (names_value(c, m, k, day_bit, d)) goto bad;
-            ch.secondary_days = d[0];
-            ch.fields |= ST_UC_DAYS; note(&what, k);
-        } else if (!strcmp(k, "restricted_hours")) {
-            const st_jval *kind, *h;
-            int i;
-            if (m->type != ST_JOBJ) { TOO(c, "restricted_hours: an object"); goto bad; }
-            for (i = 0; i < ST_ACC_COUNT; i++) { ch.access_p[i] = u.access_p[i]; ch.access_s[i] = u.access_s[i]; }
-            for (kind = m->child; kind; kind = kind->next) {
-                int ki = svc_name_index(svc_access_names, ST_ACC_COUNT, kind->key);
-                if (ki < 0 || kind->type != ST_JOBJ) {
-                    TOO(c, "restricted_hours.%.20s: network, batch, local, dialup or remote, each {primary, secondary}", kind->key);
-                    goto bad;
-                }
-                for (h = kind->child; h; h = h->next) {
-                    if (!strcmp(h->key, "primary")) { if (hours_value(c, h, "restricted_hours", &ch.access_p[ki])) goto bad; }
-                    else if (!strcmp(h->key, "secondary")) { if (hours_value(c, h, "restricted_hours", &ch.access_s[ki])) goto bad; }
-                    else { TOO(c, "restricted_hours.%s.%.20s: primary or secondary", kind->key, h->key); goto bad; }
-                }
-            }
-            ch.fields |= ST_UC_ACCESS; note(&what, k);
-        } else if (!strcmp(k, "authorized_privileges") || !strcmp(k, "default_privileges")) {
-            unsigned int p[2];
-            int auth = k[0] == 'a';
-            if (names_value(c, m, k, svc_priv_bit, p)) goto bad;
-            if (auth) { ch.priv_auth[0] = p[0]; ch.priv_auth[1] = p[1]; ch.fields |= ST_UC_PRIV_AUTH; }
-            else { ch.priv_def[0] = p[0]; ch.priv_def[1] = p[1]; ch.fields |= ST_UC_PRIV_DEF; }
-            diff_names(&what, auth ? "authorized" : "default", auth ? u.priv_auth : u.priv_def, p, svc_priv_name);
-        } else if (!strcmp(k, "quotas")) {
-            /* Ranges from the item sizes: byte, word or longword. */
-            static const long long max[ST_Q_COUNT] = { 31, 255, 65535, 65535, 65535, 65535,
-                65535, 65535, 65535, 65535, 65535, 65535, 65535, 4294967295LL, 4294967295LL,
-                4294967295LL, 4294967295LL, 4294967295LL, 4294967295LL, 4294967295LL, 4294967295LL };
-            const st_jval *q;
-            if (m->type != ST_JOBJ) { TOO(c, "quotas: an object"); goto bad; }
-            for (q = m->child; q; q = q->next) {
-                int qi = svc_name_index(svc_quota_names, ST_Q_COUNT, q->key);
-                char key[40];
-                if (qi < 0) { TOO(c, "quotas.%.20s: not a quota", q->key); goto bad; }
-                snprintf(key, sizeof key, "quotas.%s", svc_quota_names[qi]);
-                if (int_value(c, q, key, 0, max[qi], &n)) goto bad;
-                ch.quota[qi] = (unsigned long) n;
-                ch.quota_mask |= 1u << qi;
-                note(&what, key);
-            }
-            if (ch.quota_mask) ch.fields |= ST_UC_QUOTAS;
-        } else {
-            TOO(c, "%.40s: not something that can be changed here", k);
-            goto bad;
-        }
+        int r = change_member(c, m, &ch, &what, &u);
+        if (r < 0) goto bad;
+        if (r > 0) { TOO(c, "%.40s: not something that can be changed here", m->key); goto bad; }
     }
     st_json_free(&doc);
 
@@ -732,4 +744,210 @@ void svc_ident_delete(st_ctx *c)
     }
     st_app_audit(c, c->session.username, "ident-delete", id.name, "ok", detail);
     c->resp->status = 204;
+}
+
+/* ---------------------------------------------------------------- create, copy, delete (Phase 4, D6) */
+
+/* "[g,m]" in octal, as OpenVMS writes a UIC: a group 1-37776 and a member 0-177776
+   (177777 is the group's own identifier, not a user). 0 if malformed. */
+static unsigned int uic_value(const char *s)
+{
+    unsigned long g, m;
+    char *end;
+    if (*s++ != '[') return 0;
+    g = strtoul(s, &end, 8);
+    if (end == s || *end != ',') return 0;
+    s = end + 1;
+    m = strtoul(s, &end, 8);
+    if (end == s || strcmp(end, "]")) return 0;
+    if (g < 1 || g > 037776 || m > 0177776) return 0;
+    return (unsigned int) ((g << 16) | m);
+}
+
+/* POST api/v1/users: create (template DEFAULT, as AUTHORIZE ADD) or copy (template
+   another user, as AUTHORIZE COPY). Members:
+     username, uic "[g,m]", password                       required
+     template (default "DEFAULT"), pre_expired (default true),
+     copy_identifiers, create_directory                     optional
+     any member PATCH takes (owner, flags, default_directory, ...), applied over the
+     template's values. */
+void svc_user_create(st_ctx *c)
+{
+    st_jdoc doc;
+    const st_jval *m;
+    st_user_new n;
+    st_user base;
+    st_err e;
+    st_buf what;
+    char pw[80], tmpl[13] = "DEFAULT", target[64];
+    int have_pw = 0, copy;
+
+    memset(&n, 0, sizeof n);
+    n.pre_expired = 1;
+    if (body_object(c, &doc)) return;
+    st_buf_init(&what, 0);
+    /* First the members that say what to create, and from what. */
+    for (m = doc.root->child; m; m = m->next) {
+        const char *k = m->key;
+        if (!strcmp(k, "username")) {
+            if (m->type != ST_JSTR || !st_valid_username(m->str, n.username)) {
+                TOO(c, "username: 1 to 12 characters from A-Z 0-9 _ $"); goto bad;
+            }
+        } else if (!strcmp(k, "uic")) {
+            if (m->type != ST_JSTR || !(n.uic = uic_value(m->str))) {
+                TOO(c, "uic: [group,member] in octal, group 1-37776, member 0-177776"); goto bad;
+            }
+        } else if (!strcmp(k, "template")) {
+            if (m->type != ST_JSTR || !st_valid_username(m->str, tmpl)) { TOO(c, "template: a username"); goto bad; }
+        } else if (!strcmp(k, "password")) {
+            if (m->type != ST_JSTR || !m->slen || st_json_latin1(m->str, m->slen, pw, 65)) {
+                TOO(c, "password: 1 to 64 characters"); goto bad;
+            }
+            have_pw = 1;
+        } else if (!strcmp(k, "pre_expired") || !strcmp(k, "copy_identifiers") || !strcmp(k, "create_directory")) {
+            if (m->type != ST_JBOOL) { TOO(c, "%s: true or false", k); goto bad; }
+            if (k[0] == 'p') n.pre_expired = m->boolean;
+            else if (k[0] == 'c' && k[1] == 'o') n.copy_identifiers = m->boolean;
+            else n.create_directory = m->boolean;
+        }
+    }
+    if (!*n.username || !n.uic || !have_pw) { TOO(c, "username, uic and password are required"); goto bad; }
+    st_copy(n.template_user, sizeof n.template_user, tmpl);
+    copy = strcmp(tmpl, "DEFAULT") != 0;
+    /* Then the fields, as differences from the template's record. */
+    if (st_plat_user_get(tmpl, &base, &e)) {
+        st_zero(pw, sizeof pw);
+        st_buf_free(&what);
+        st_json_free(&doc);
+        st_app_error(c, &e);
+        return;
+    }
+    for (m = doc.root->child; m; m = m->next) {
+        int r;
+        if (!strcmp(m->key, "username") || !strcmp(m->key, "uic") || !strcmp(m->key, "template") ||
+            !strcmp(m->key, "password") || !strcmp(m->key, "pre_expired") ||
+            !strcmp(m->key, "copy_identifiers") || !strcmp(m->key, "create_directory"))
+            continue;
+        r = change_member(c, m, &n.more, &what, &base);
+        if (r < 0) goto bad;
+        if (r > 0) { TOO(c, "%.40s: not something a new account can be given", m->key); goto bad; }
+    }
+    st_json_free(&doc);
+
+    n.password = pw;
+    {
+        char uic[24];
+        svc_uic_text(n.uic, uic);
+        snprintf(target, sizeof target, "%s", n.username);
+        st_buf_printf(&what, "%sfrom %s, %s%s%s%s", what.len ? "; " : "", tmpl, uic,
+                      n.pre_expired ? ", pre-expired" : "", n.copy_identifiers ? ", identifiers copied" : "",
+                      n.create_directory ? ", directory" : "");
+    }
+    if (st_plat_user_create(&n, &e)) {
+        st_zero(pw, sizeof pw);
+        st_app_audit(c, c->session.username, copy ? "user-copy" : "user-create", target, "failed", e.text);
+        st_buf_free(&what);
+        st_app_error(c, &e);
+        return;
+    }
+    st_zero(pw, sizeof pw);
+    if (*n.warning) st_buf_printf(&what, "; %s", n.warning);
+    st_app_audit(c, c->session.username, copy ? "user-copy" : "user-create", target, "ok", st_buf_cstr(&what));
+    st_buf_free(&what);
+    st_copy(c->args[0], sizeof c->args[0], n.username);
+    svc_user_get(c);
+    c->resp->status = 201;
+    if (*n.warning) st_resp_header(c->resp, "X-Steward-Warning", n.warning);
+    return;
+bad:
+    st_zero(pw, sizeof pw);
+    st_buf_free(&what);
+    st_json_free(&doc);
+}
+
+/* DELETE api/v1/users/{u}, If-Match: <ETag>: as AUTHORIZE REMOVE (the record, its UIC
+   identifier and its holdings). Not the account you are signed in as, nor the
+   service's own (D6): either would cut Steward off. */
+void svc_user_delete(st_ctx *c)
+{
+    char user[13], etag[40], detail[64];
+    const char *want;
+    st_user u;
+    st_err e;
+    int held = 0;
+
+    if (user_arg(c, user)) return;
+    if (!strcmp(user, c->session.username) || !strcmp(user, st_plat_service_account())) {
+        st_resp_problem(c->resp, 409, "protected-account", "Not this account",
+                        !strcmp(user, c->session.username)
+                            ? "You cannot delete the account you are signed in as."
+                            : "This is Steward's own service account.", 0, NULL);
+        return;
+    }
+    want = st_req_header(c->req, "HTTP_IF_MATCH");
+    if (!want || !*want) {
+        st_resp_problem(c->resp, 428, "precondition-required", "If-Match required",
+                        "Send the ETag from GET, so that you delete the account you looked at.", 0, NULL);
+        return;
+    }
+    if (st_plat_user_get(user, &u, &e)) { st_app_error(c, &e); return; }
+    svc_user_etag(&u, etag);
+    if (strcmp(want, etag)) {
+        st_resp_problem(c->resp, 412, "changed", "Changed since you read it",
+                        "The account was changed after you loaded it. Reload it before deleting.", 0, NULL);
+        st_resp_header(c->resp, "ETag", etag);
+        return;
+    }
+    st_plat_ident_held(u.uic, count_one, &held, &e);
+    snprintf(detail, sizeof detail, "held %d identifier%s", held, held == 1 ? "" : "s");
+    if (st_plat_user_delete(user, &e)) {
+        st_app_audit(c, c->session.username, "user-delete", user, "failed", e.text);
+        st_app_error(c, &e);
+        return;
+    }
+    st_app_audit(c, c->session.username, "user-delete", user, "ok", detail);
+    c->resp->status = 204;
+}
+
+/* GET api/v1/uic/next?group=<octal>: the lowest free member of a UIC group, from the
+   rights database's UIC identifiers (readable by anyone). A suggestion for the create
+   dialog: the create itself still refuses a UIC in use. */
+typedef struct { unsigned int group; unsigned char used[8192]; } uic_scan;
+
+static int uic_seen(const st_ident *id, void *ctx)
+{
+    uic_scan *s = ctx;
+    unsigned int m = id->value & 0xFFFF;
+    if (!(id->value & ST_IDENT_GENERAL) && (id->value >> 16) == s->group && m < 65536u)
+        s->used[m / 8] |= (unsigned char) (1u << (m % 8));
+    return 0;
+}
+
+void svc_uic_next(st_ctx *c)
+{
+    static uic_scan s;
+    char raw[16], *end, uic[24];
+    unsigned long g;
+    unsigned int m;
+    st_err e;
+    st_jw w;
+
+    if (svc_query(c, "group", raw, sizeof raw) != 1 || ((g = strtoul(raw, &end, 8)), *end) ||
+        end == raw || g < 1 || g > 037776) {
+        st_resp_problem(c->resp, 400, "bad-request", "group: an octal UIC group, 1-37776", NULL, 0, NULL);
+        return;
+    }
+    memset(&s, 0, sizeof s);
+    s.group = (unsigned int) g;
+    if (st_plat_ident_enum(uic_seen, &s, &e)) { st_app_error(c, &e); return; }
+    for (m = 1; m < 0177777u && (s.used[m / 8] & (1u << (m % 8))); m++) ;
+    if (m >= 0177777u) {
+        st_resp_problem(c->resp, 409, "group-full", "No free member in this group", NULL, 0, NULL);
+        return;
+    }
+    svc_uic_text((s.group << 16) | m, uic);
+    st_resp_json(c->resp, 200, &w);
+    st_jw_obj(&w);
+    st_jw_kstr(&w, "uic", uic);
+    st_jw_obj_end(&w);
 }

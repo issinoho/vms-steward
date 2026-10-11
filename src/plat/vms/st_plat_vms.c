@@ -37,6 +37,8 @@
 #include <ssdef.h>
 #include <starlet.h>
 #include <uaidef.h>
+#include <uafdef.h>         /* SYS$LIB_C.TLB: the SYSUAF record (D6) */
+#include <lib$routines.h>
 #include <utcblkdef.h>   /* acmedef.h uses utcblk without including it (PHASE0) */
 #include <acmedef.h>
 #include "st_platform.h"
@@ -65,6 +67,8 @@ static void desc(struct dsc$descriptor_s *d, const char *s, unsigned short len)
     d->dsc$b_class = DSC$K_CLASS_S;
     d->dsc$a_pointer = (char *) s;
 }
+
+static void blank_trim(const char *buf, size_t len, char *out, size_t outlen);
 
 /* Buffers that a system service or RMS fills are zero-initialised anyway: cppcheck
    cannot see through descriptors and RABs (D8), and an unfilled buffer then reads
@@ -224,6 +228,10 @@ static unsigned int open_sessions(const char *path)
    holds it as authorized, not default, and it is on only around that one call (D2). */
 static unsigned int sysprv[2] = { PRV$M_SYSPRV, 0 };
 
+static char service_account[13];
+
+const char *st_plat_service_account(void) { return service_account; }
+
 int st_plat_init(const st_plat_config *cfg, st_err *e)
 {
     unsigned int imp[2] = { PRV$M_DETACH, 0 }, st;   /* IMPERSONATE is the DETACH bit */
@@ -231,6 +239,15 @@ int st_plat_init(const st_plat_config *cfg, st_err *e)
     /* The service account is authorized IMPERSONATE; make sure it is enabled. */
     st = sys$setprv(1, (void *) imp, 0, 0);
     if (st != SS$_NORMAL) { set_cond(e, st == SS$_NOTALLPRIV ? SS$_NOPRIV : st); return -1; }
+    {   /* who the service is, before any persona: Steward never deletes itself */
+        char u[13] = { 0 };
+        unsigned short ul = 0;
+        unsigned int iosb[2];
+        st_ile3 it[2];
+        item(&it[0], JPI$_USERNAME, u, 12, &ul);
+        item_end(&it[1]);
+        if (sys$getjpiw(0, 0, 0, it, iosb, 0, 0) & 1) blank_trim(u, ul, service_account, sizeof service_account);
+    }
     /* And SYSPRV off, whatever the account's defaults say. */
     sys$setprv(0, (void *) sysprv, 0, 0);
     if (!st_plat_privileges_clean()) {
@@ -1433,6 +1450,232 @@ int st_plat_system(st_system *s, st_err *e)
         if (item_u64(0, SYI$_CLUSTER_VOTES, 8, &v) & 1) s->cluster_votes = (unsigned int) v;
         if (item_u64(0, SYI$_CLUSTER_QUORUM, 8, &v) & 1) s->cluster_quorum = (unsigned int) v;
     }
+    return 0;
+}
+
+/* ================================================================ create and delete (D6)
+
+   As AUTHORIZE ADD, COPY and REMOVE, verified identical by probe_uafcreate
+   (PHASE4.md). The record is UAFDEF's own struct (SYS$LIB_C.TLB): the compiler lays
+   it out exactly as the system does. Under the caller's persona: OpenVMS refuses a
+   caller without write access to SYSUAF. */
+
+static unsigned int uaf_open(struct FAB *fab, struct RAB *rab, UAF *rec)
+{
+    unsigned int st;
+    *fab = cc$rms_fab;
+    *rab = cc$rms_rab;
+    fab->fab$l_fna = "SYSUAF";           fab->fab$b_fns = 6;
+    fab->fab$l_dna = "SYS$SYSTEM:.DAT";  fab->fab$b_dns = 15;
+    fab->fab$b_fac = FAB$M_GET | FAB$M_PUT | FAB$M_DEL | FAB$M_UPD;
+    fab->fab$b_shr = FAB$M_SHRGET | FAB$M_SHRPUT | FAB$M_SHRUPD | FAB$M_SHRDEL;
+    st = sys$open(fab);
+    if (!(st & 1)) return st;
+    rab->rab$l_fab = fab;
+    rab->rab$l_ubf = (char *) rec;
+    rab->rab$w_usz = sizeof *rec;
+    st = sys$connect(rab);
+    if (!(st & 1)) sys$close(fab);
+    return st;
+}
+
+static void uaf_key(char key[32], const char *username)
+{
+    size_t n = strlen(username);
+    memset(key, ' ', 32);
+    memcpy(key, username, n > 32 ? 32 : n);
+}
+
+/* Remove a user record by username, from an open SYSUAF. */
+static unsigned int uaf_delete_open(struct RAB *rab, const char *username)
+{
+    char key[32];
+    unsigned int st;
+    uaf_key(key, username);
+    rab->rab$b_rac = RAB$C_KEY; rab->rab$b_krf = 0; rab->rab$l_kbf = key; rab->rab$b_ksz = 32;
+    rab->rab$l_rop = 0;                         /* lock the record: it is being deleted */
+    st = sys$find(rab);
+    if (st & 1) st = sys$delete(rab);
+    return st;
+}
+
+/* Undo a create that failed after the record was written. */
+static void create_undo(const char *username, unsigned int uic, int ident_added)
+{
+    struct FAB fab;
+    struct RAB rab;
+    static UAF rec;
+    if (ident_added) sys$rem_ident(uic);
+    if (uaf_open(&fab, &rab, &rec) & 1) {
+        uaf_delete_open(&rab, username);
+        sys$close(&fab);
+    }
+}
+
+int st_plat_user_create(st_user_new *n, st_err *e)
+{
+    struct FAB fab;
+    struct RAB rab;
+    static UAF rec;
+    char key[32], name[32] = { 0 };
+    unsigned int st, id = 0, attrib = 0, resid = 0, ctx = 0;
+    unsigned short nlen = 0;
+    struct dsc$descriptor_s d;
+    size_t plen = strlen(n->password);
+
+    n->warning[0] = '\0';
+    /* Nothing of the name or the UIC may exist yet: the rights database is readable
+       by anyone (PHASE2.md), so these checks never depend on the caller's rights. */
+    desc(&d, n->username, (unsigned short) strlen(n->username));
+    if (sys$asctoid(&d, &id, &attrib) & 1) {
+        set_cond(e, SS$_DUPIDENT);
+        snprintf(e->text, sizeof e->text, "%%SYSTEM-F-DUPIDENT, the identifier %s already exists", n->username);
+        return -1;
+    }
+    desc(&d, name, sizeof name - 1);
+    st = sys$idtoasc(n->uic, &nlen, &d, &resid, &attrib, &ctx);
+    sys$finish_rdb(&ctx);
+    if (st & 1) {
+        name[nlen] = '\0';
+        set_cond(e, SS$_DUPIDENT);
+        snprintf(e->text, sizeof e->text, "the UIC is already in use, by %s", name);
+        return -1;
+    }
+
+    st = uaf_open(&fab, &rab, &rec);
+    if (!(st & 1)) { set_cond(e, st); return -1; }
+    rab.rab$b_rac = RAB$C_KEY; rab.rab$b_krf = 0; rab.rab$l_kbf = key; rab.rab$b_ksz = 32;
+    rab.rab$l_rop = RAB$M_NLK | RAB$M_RRL;
+    uaf_key(key, n->username);
+    st = sys$get(&rab);
+    if (st & 1) { sys$close(&fab); set_cond(e, RMS$_DUP); e->kind = ST_E_CONFLICT; return -1; }
+    uaf_key(key, n->template_user);
+    st = sys$get(&rab);
+    if (!(st & 1)) { sys$close(&fab); set_cond(e, st); return -1; }
+    if (plen < rec.uaf$b_pwd_length || plen > 64) {      /* the template's minimum, before writing */
+        sys$close(&fab);
+        set_cond(e, SS$_INVPWDLEN);
+        snprintf(e->text, sizeof e->text, "%%SYSTEM-F-INVPWDLEN, the password must be %u to 64 characters",
+                 (unsigned) rec.uaf$b_pwd_length);
+        return -1;
+    }
+    /* The template's record, with a new name (the tag byte kept), UIC and no history. */
+    memset(rec.uaf$t_username, ' ', 31);
+    memcpy(rec.uaf$t_username, n->username, strlen(n->username));
+    rec.uaf$l_uic = n->uic;
+    rec.uaf$q_pwd = 0;
+    rec.uaf$q_pwd2 = 0;
+    rec.uaf$w_logfails = 0;
+    rec.uaf$w_salt = 0;
+    rec.uaf$q_pwd_date = 0;
+    rec.uaf$q_pwd2_date = 0;
+    rec.uaf$q_lastlogin_i = 0;
+    rec.uaf$q_lastlogin_n = 0;
+    rab.rab$b_rac = RAB$C_KEY;
+    rab.rab$l_rop = 0;
+    rab.rab$l_rbf = (char *) &rec;
+    /* rab$w_rsz is still the template's length, from its $GET */
+    st = sys$put(&rab);
+    sys$close(&fab);
+    if (!(st & 1)) { set_cond(e, st); if (st == RMS$_DUP) e->kind = ST_E_CONFLICT; return -1; }
+
+    if (st_plat_user_set_password(n->username, n->password, n->pre_expired, e)) {
+        create_undo(n->username, n->uic, 0);
+        return -1;
+    }
+    desc(&d, n->username, (unsigned short) strlen(n->username));
+    st = sys$add_ident(&d, n->uic, 0, &id);          /* the UIC identifier, as AUTHORIZE ADD */
+    if (!(st & 1)) { set_cond(e, st); create_undo(n->username, n->uic, 0); return -1; }
+    if (n->more.fields && st_plat_user_modify(n->username, &n->more, e)) {
+        create_undo(n->username, n->uic, 1);
+        return -1;
+    }
+    if (n->copy_identifiers) {                       /* AUTHORIZE COPY does not; an option here */
+        unsigned int tuic = 0, holder[2], th[2], hid, hattr, hctx = 0;
+        st_ile3 it[2];
+        desc(&d, n->template_user, (unsigned short) strlen(n->template_user));
+        item(&it[0], UAI$_UIC, &tuic, 4, 0);
+        item_end(&it[1]);
+        if (sys$getuai(0, 0, &d, it, 0, 0, 0) & 1) {
+            th[0] = tuic; th[1] = 0;
+            holder[0] = n->uic; holder[1] = 0;
+            while (sys$find_held((void *) th, &hid, &hattr, &hctx) & 1) {
+                st = sys$add_holder(hid, (void *) holder, hattr);
+                if (!(st & 1)) {
+                    sys$finish_rdb(&hctx);
+                    set_cond(e, st);
+                    st_plat_user_delete(n->username, NULL);   /* undo, holdings included */
+                    return -1;
+                }
+            }
+            sys$finish_rdb(&hctx);
+        }
+    }
+    if (n->create_directory) {
+        /* As a site would by hand after AUTHORIZE ADD: the default directory, owned by
+           the user. A failure here leaves the user in place and says so. */
+        char spec[100];
+        struct dsc$descriptor_s ds;
+        unsigned int owner = n->uic;
+        unsigned short penable = 0xFFFF, pvalue = 0xFF00;   /* (S:RWED,O:RWED,G,W) */
+        st_user u;
+        st_err e2;
+        if (st_plat_user_get(n->username, &u, &e2) == 0 && !*u.defdev) {
+            /* DEFAULT has none ("[USER]"): a bare directory would be made on whatever
+               disk the serving process happens to use (PHASE4.md). Refuse instead. */
+            snprintf(n->warning, sizeof n->warning,
+                     "no directory was created: the account has no default device");
+        } else if (st_plat_user_get(n->username, &u, &e2) == 0) {
+            snprintf(spec, sizeof spec, "%s%s", u.defdev, u.defdir);
+            desc(&ds, spec, (unsigned short) strlen(spec));
+            st = lib$create_dir(&ds, &owner, &penable, &pvalue, 0, 0);
+            if (!(st & 1)) {
+                char m[256];
+                msgtext(st, m, sizeof m);
+                snprintf(n->warning, sizeof n->warning, "the directory %s was not created: %s", spec, m);
+            }
+        }
+    }
+    return 0;
+}
+
+int st_plat_user_delete(const char *username, st_err *e)
+{
+    struct FAB fab;
+    struct RAB rab;
+    static UAF rec;
+    char key[32];
+    unsigned int st, uic = 0, holder[2], ctx = 0, held[128], nheld = 0, id, attrib, i;
+    struct dsc$descriptor_s d;
+    st_ile3 it[2];
+
+    desc(&d, username, (unsigned short) strlen(username));
+    item(&it[0], UAI$_UIC, &uic, 4, 0);
+    item_end(&it[1]);
+    st = sys$getuai(0, 0, &d, it, 0, 0, 0);
+    if (!(st & 1)) { set_cond(e, st); return -1; }
+    /* Write access first, by locking the record: a caller who may not delete it
+       changes nothing at all. */
+    st = uaf_open(&fab, &rab, &rec);
+    if (!(st & 1)) { set_cond(e, st); return -1; }
+    uaf_key(key, username);
+    rab.rab$b_rac = RAB$C_KEY; rab.rab$b_krf = 0; rab.rab$l_kbf = key; rab.rab$b_ksz = 32;
+    rab.rab$l_rop = 0;
+    st = sys$find(&rab);
+    if (!(st & 1)) { sys$close(&fab); set_cond(e, st); return -1; }
+    /* Its holdings and its UIC identifier, as AUTHORIZE REMOVE (PHASE4.md). */
+    holder[0] = uic; holder[1] = 0;
+    while (nheld < 128 && (sys$find_held((void *) holder, &id, &attrib, &ctx) & 1)) held[nheld++] = id;
+    sys$finish_rdb(&ctx);
+    for (i = 0; i < nheld; i++) {
+        st = sys$rem_holder(held[i], (void *) holder);
+        if (!(st & 1)) { sys$close(&fab); set_cond(e, st); return -1; }
+    }
+    st = sys$rem_ident(uic);
+    if (!(st & 1) && st != SS$_NOSUCHID) { sys$close(&fab); set_cond(e, st); return -1; }
+    st = sys$delete(&rab);
+    sys$close(&fab);
+    if (!(st & 1)) { set_cond(e, st); return -1; }
     return 0;
 }
 

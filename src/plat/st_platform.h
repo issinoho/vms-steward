@@ -273,6 +273,33 @@ typedef struct {
 /* Fills what it can; a part that fails is left zero. -1 only if nothing could be read. */
 int st_plat_system(st_system *s, st_err *e);
 
+/* ---- creating and deleting users (Phase 4, D6), as the current persona ----
+
+   As AUTHORIZE ADD, COPY and REMOVE do (PHASE4.md): a create copies a template record
+   (DEFAULT, or the user being copied), and a delete also removes the user's UIC
+   identifier and holdings. OpenVMS requires write access to SYSUAF (SYSPRV). */
+typedef struct {
+    char           username[13];
+    char           template_user[13];   /* "DEFAULT" for a new user; else the user copied */
+    unsigned int   uic;
+    const char    *password;            /* Latin-1; the caller scrubs it */
+    int            pre_expired;
+    int            copy_identifiers;    /* also grant what the template user holds */
+    int            create_directory;    /* create the default directory, owned by the user */
+    st_user_change more;                /* further fields, applied as a modify would */
+    char           warning[160];        /* out: a step that failed after the user was made */
+} st_user_new;
+
+/* 0, or -1 with nothing left behind (a failure after the record was written undoes
+   what was added). Refuses (ST_E_CONFLICT) a username, identifier name or UIC already
+   in the rights database. A failed directory creation is not undone: the user
+   exists, and warning says why the directory does not. */
+int st_plat_user_create(st_user_new *n, st_err *e);
+int st_plat_user_delete(const char *username, st_err *e);
+
+/* The service's own account (STEWARD), read at start-up. */
+const char *st_plat_service_account(void);
+
 /* ---- crypto and time ---- */
 int  st_plat_random(void *p, size_t n);
 void st_plat_sha256(const void *p, size_t n, unsigned char out[32]);

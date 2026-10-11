@@ -7,7 +7,7 @@
 import { api, ApiError } from './api.js';
 import { h, mount } from './dom.js';
 import { vmsDate, keycaps, refusal } from './fmt.js';
-import { editUser, setPassword, grantIdentifier, confirmRevoke, editHolding,
+import { createUser, deleteUser, editUser, setPassword, grantIdentifier, confirmRevoke, editHolding,
   createIdentifier, modifyIdentifier, deleteIdentifier } from './edit.js';
 
 const PAGE = 50;
@@ -97,7 +97,8 @@ export async function usersView(ctx) {
 
   await table.load(true);
   return [
-    h('h2', {}, 'Users'),
+    h('div', { class: 'titlebar' }, h('h2', {}, 'Users'),
+      h('button', { type: 'button', onclick: () => createUser('DEFAULT', (u) => { location.hash = userHref(u.username); }) }, 'New user')),
     h('p', { class: 'muted' }, 'The accounts in SYSUAF, read as you. Wildcards * and % work as in DCL; plain text also matches the owner.'),
     filterForm('$ authorize show', remembered.users, (f) => { remembered.users = f; mount(slot); table.load(true); }),
     slot,
@@ -177,7 +178,8 @@ export async function userView(ctx, name) {
             h('button', { type: 'button', class: 'ghost small', onclick: () => editHolding(u.username, i.name, i.attributes, drawHeld) }, 'Attributes'),
             h('button', { type: 'button', class: 'ghost small', onclick: () => confirmRevoke(u.username, i.name, ctx.refresh) }, 'Revoke'))))))
     : h('span', { class: 'muted' }, 'None'));
-  api.userIdentifiers(name).then((r) => { ctx.touched(); drawHeld(r); }).catch((err) => {
+  let heldCount = 0;
+  api.userIdentifiers(name).then((r) => { ctx.touched(); heldCount = r.identifiers.length; drawHeld(r); }).catch((err) => {
     if (err instanceof ApiError && err.status === 401) { ctx.authLost(); return; }
     mount(held, refusal(err));
   });
@@ -190,7 +192,9 @@ export async function userView(ctx, name) {
       h('h2', { class: 'mono' }, u.username),
       h('div', { class: 'actions' },
         h('button', { type: 'button', onclick: () => editUser(u, ctx.refresh) }, 'Modify'),
-        h('button', { type: 'button', onclick: () => setPassword(u) }, 'Set password'))),
+        h('button', { type: 'button', onclick: () => setPassword(u) }, 'Set password'),
+        h('button', { type: 'button', onclick: () => createUser(u.username, (n) => { location.hash = userHref(n.username); }) }, 'Copy'),
+        h('button', { type: 'button', class: 'danger', onclick: () => deleteUser(u, heldCount, () => { location.hash = '#/users'; }) }, 'Delete'))),
     u.owner ? h('p', { class: 'muted' }, u.owner) : null,
     h('div', { class: 'card' }, h('dl', { class: 'facts' },
       h('dt', {}, 'UIC'), h('dd', { class: 'mono' }, u.uic),

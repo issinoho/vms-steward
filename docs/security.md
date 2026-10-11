@@ -70,6 +70,8 @@ browser ─(1)─ nginx proxy manager ─(2)─ lighttpd ─(3)─ STEWARD.EXE �
 | A user edit cannot silently overwrite one made since the page was read | ETag / If-Match | unit 428, 412, "the old ETag no longer works" |
 | Holding attributes the identifier lacks are refused, not dropped | `attribs_value` | unit |
 | Every change is audited, without passwords | handlers | API suite "no password reaches the audit log" |
+| A failed create leaves nothing behind | `st_plat_user_create` undoes the record and identifier | unit "nothing was left behind"; on VMS `phase4_live.py` (PWDSYNTAX after `$PUT`) |
+| Steward cannot delete the signed-in account or itself | `svc_user_delete` | unit 409s |
 
 ## Phase 2 additions (users and identifiers, read-only)
 
@@ -127,6 +129,22 @@ browser ─(1)─ nginx proxy manager ─(2)─ lighttpd ─(3)─ STEWARD.EXE �
   refresh `last_seen`. A client can only *shorten* its own session with it, never
   lengthen one, and it has no effect without a valid session and CSRF where needed.
   Unit "a background poll ... does not count as activity".
+
+## Phase 4 additions (create, copy, delete; D6)
+
+- **New endpoints:** `POST api/v1/users`, `DELETE api/v1/users/{u}` and
+  `GET api/v1/uic/next`. All need a session, CSRF and the persona.
+- **New operations, under the persona:** RMS `$PUT` and `$DELETE` on SYSUAF, from
+  UAFDEF's own record layout (`SYS$LIB_C.TLB`), plus `$ADD_IDENT`, `$REM_IDENT`,
+  `$REM_HOLDER` and `LIB$CREATE_DIR`. This is the first time Steward writes a raw
+  system record. The record is the template's own, with the name, UIC and owner
+  changed and the history cleared, so no field is invented.
+- **Atomicity:** a create either completes or leaves nothing. This was verified on the
+  node with a password OpenVMS refused after the `$PUT`: no record and no identifier
+  remained.
+- **Safety rails (not access control):** no deleting your own account or the
+  service's; no UIC already in the rights database; a delete must carry the ETag of
+  the record shown; no directory without a device (see the audit record).
 
 ## What runs, and when
 
@@ -197,3 +215,4 @@ instance behind nginx proxy manager.
 | 2026-10-11 | 3 | Use-after-free: `svc_user_set_password` quoted a JSON key in its error after freeing the document (the Phase 1 bug class again; `-fanalyzer` missed it) | Medium (memory safety, signed-in) | Phase 3 API commit | `make test-asan` (new: unit tests under ASan, part of `make audit`), "unknown members are refused" |
 | 2026-10-11 | 3 | A test's header list was unterminated: harmless on Linux by luck, fatal on OpenVMS. The unit tests ran without sanitizers, so nothing caught it | Process (audit gap) | `make test-asan` | the reintroduced bug is caught |
 | 2026-10-11 | 3 | Design: CHANGE_PASSWORD charges failures to the account, so a public change endpoint would let anyone lock accounts | High if built naively; found by probe before any code | D11 | unit "wrong current password looks like a failed sign-in" |
+| 2026-10-11 | 4 | A home directory requested for an account with no default device (DEFAULT has only `[USER]`) was created relative to the serving process's default disk. The live test put `[STEWARD_NEW]` on the work disk; it was found and removed | Medium (writes in the wrong place, owned by the new UIC) | Phase 4 commit: no directory without a device, with a warning; the UI prefills a device | unit "no directory without a default device"; `phase4_live.py` |

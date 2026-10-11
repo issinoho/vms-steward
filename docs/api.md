@@ -324,7 +324,53 @@ UIC identifiers belong to accounts and cannot be granted, renamed or deleted
 through these endpoints (`422 uic-identifier`). Creating and deleting users is
 Phase 4.
 
+## Endpoints (Phase 4): create, copy and delete users (D6)
+
+As AUTHORIZE ADD, COPY and REMOVE, under your persona: OpenVMS requires SYSPRV
+(write access to SYSUAF).
+
+### `POST api/v1/users`
+
+```json
+{"username": "JSMITH", "uic": "[362,10]", "password": "...", "template": "DEFAULT",
+ "pre_expired": true, "copy_identifiers": false, "create_directory": false,
+ "owner": "J Smith", "default_device": "USERS:", "default_directory": "[JSMITH]",
+ "flags": []}
+```
+
+- `username`, `uic` (octal `[g,m]`; group 1–37776, member 0–177776) and `password` are
+  required.
+- `template` defaults to `DEFAULT`, which is AUTHORIZE ADD. Any other user makes it a
+  copy, as AUTHORIZE COPY: every setting of that user, including its directory.
+- `copy_identifiers` also grants the template user's identifiers. AUTHORIZE COPY does
+  not, so it defaults to false.
+- Any member PATCH accepts is applied over the template's values. DEFAULT carries
+  DISUSER, so send `"flags": []` (or the list without DISUSER) for an account that
+  can log in.
+- `pre_expired` defaults to true.
+- `create_directory` makes the default directory, owned by the new account, on the
+  account's default device. If the account has no default device (DEFAULT has none),
+  no directory is made and the response says so in `X-Steward-Warning`.
+
+`201` with the new account's record, its UIC identifier added. Refusals:
+- `409` if the username, an identifier of that name, or the UIC is already in use;
+- `422` if OpenVMS refuses the password (`INVPWDLEN`, `PWDSYNTAX`, …).
+
+If anything fails after the record was written, Steward undoes the record and the
+identifier, so nothing is left behind.
+
+### `DELETE api/v1/users/{username}`, with `If-Match: <ETag>`
+
+As AUTHORIZE REMOVE: the record, its UIC identifier and its identifier holdings. Files
+and directories are not touched. `204`. `428` without If-Match; `412` if the account
+changed since you read it. `409` for the account you are signed in as, or the
+service's own.
+
+### `GET api/v1/uic/next?group=362`
+
+`{"uic": "[362,4]"}`: the lowest free member of the group, from the rights
+database's UIC identifiers. A suggestion: the create still refuses a UIC in use.
+
 ## Coming
 
-Creating, copying and deleting users is Phase 4 (`docs/PLAN.md`). Access history is
-Phase 6.
+Access history is Phase 6 (`docs/PLAN.md`).

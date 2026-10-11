@@ -37,6 +37,10 @@ async function call(method, path, body, extra) {
     throw new ApiError(res.status, doc);
   }
   if (doc && typeof doc.csrf === 'string') csrf = doc.csrf;
+  // Something that went wrong after the main work succeeded (e.g. a home directory
+  // that could not be created): the caller shows it.
+  const warning = res.headers.get('X-Steward-Warning');
+  if (warning && doc && typeof doc === 'object') doc.warning = warning;
   return doc;
 }
 
@@ -74,6 +78,11 @@ export const api = {
   setHolding: (name, ident, attributes) =>
     call('PUT', `users/${encodeURIComponent(name)}/identifiers/${encodeURIComponent(ident)}`, { attributes }),
   revoke: (name, ident) => call('DELETE', `users/${encodeURIComponent(name)}/identifiers/${encodeURIComponent(ident)}`),
+  // Phase 4: create (template DEFAULT) or copy (template a user), and delete (needs the
+  // ETag of the record shown).
+  createUser: (fields) => call('POST', 'users', fields),
+  deleteUser: (name, etag) => call('DELETE', `users/${encodeURIComponent(name)}`, undefined, { 'If-Match': etag }),
+  nextUic: (group) => call('GET', `uic/next?group=${encodeURIComponent(group)}`),
   createIdentifier: (fields) => call('POST', 'identifiers', fields),
   modifyIdentifier: (name, fields) => call('PATCH', `identifiers/${encodeURIComponent(name)}`, fields),
   deleteIdentifier: (name) => call('DELETE', `identifiers/${encodeURIComponent(name)}`),

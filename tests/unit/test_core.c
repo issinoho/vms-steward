@@ -512,14 +512,14 @@ static void test_users(void)
     call("PUT", "/api/v1/session/privileges", adm, "{\"enabled\":[\"SYSPRV\"]}", &b);
     st_resp_free(&b.resp);
     call("GET", "/api/v1/users", adm, NULL, &b);
-    CHECK(b.resp.status == 200 && strstr(b.resp.body.data, "{\"users\":[{\"username\":\"DISABLED\"") &&
+    CHECK(b.resp.status == 200 && strstr(b.resp.body.data, "{\"users\":[{\"username\":\"DEFAULT\"") &&
           strstr(b.resp.body.data, "\"next\":null"),
           "with SYSPRV on, users list in SYSUAF (alphabetical) order");
     CHECK(strstr(b.resp.body.data, "\"flags\":[\"DISUSER\"]") != NULL, "flags are named as AUTHORIZE names them");
     st_resp_free(&b.resp);
 
     call("GET", "/api/v1/users?limit=2", adm, NULL, &b);
-    CHECK(b.resp.status == 200 && strstr(b.resp.body.data, "\"next\":\"EXPIRED\""), "a page ends with a cursor");
+    CHECK(b.resp.status == 200 && strstr(b.resp.body.data, "\"next\":\"DISABLED\""), "a page ends with a cursor");
     st_resp_free(&b.resp);
     call("GET", "/api/v1/users?limit=2&after=EXPIRED", adm, NULL, &b);
     CHECK(b.resp.status == 200 && strstr(b.resp.body.data, "[{\"username\":\"STEWARD_ADM\"") &&
@@ -866,6 +866,151 @@ static void test_system(void)
     CHECK(!st_plat_persona_active(), "no persona left active");
 }
 
+/* ------------------------------------------------- create, copy, delete (Phase 4) */
+
+static void test_create(void)
+{
+    result b;
+    char tc[140], ac[140], tcsrf[65], acsrf[65], etag[48];
+    hdr t[3], adm[4];
+
+    sign_in("{\"username\":\"steward_test\",\"password\":\"test-pass\"}", tc, sizeof tc, tcsrf);
+    sign_in("{\"username\":\"steward_adm\",\"password\":\"admin-pass\"}", ac, sizeof ac, acsrf);
+    t[0].n = "HTTP_COOKIE"; t[0].v = tc; t[1].n = "HTTP_X_STEWARD_CSRF"; t[1].v = tcsrf; t[2].n = NULL;
+    adm[0].n = "HTTP_COOKIE"; adm[0].v = ac; adm[1].n = "HTTP_X_STEWARD_CSRF"; adm[1].v = acsrf;
+    adm[2].n = NULL; adm[3].n = NULL;
+    call("PUT", "/api/v1/session/privileges", adm, "{\"enabled\":[\"SYSPRV\"]}", &b);
+    st_resp_free(&b.resp);
+
+    call("GET", "/api/v1/uic/next?group=362", adm, NULL, &b);
+    CHECK(b.resp.status == 200 && strstr(b.resp.body.data, "\"uic\":\"[362,5]\""),
+          "the next free member of a UIC group, from the rights database");
+    st_resp_free(&b.resp);
+
+    call("POST", "/api/v1/users", t, "{\"username\":\"steward_new\",\"uic\":\"[362,10]\",\"password\":\"a-long-enough-pass\"}", &b);
+    CHECK(b.resp.status == 403 && (strstr(b.resp.body.data, "NOSYSPRV") || strstr(b.resp.body.data, "RMS-E-PRV")),
+          "an unprivileged user cannot create one: OpenVMS refuses (reading the template, before SYSUAF)");
+    st_resp_free(&b.resp);
+    call("POST", "/api/v1/users", adm, "{\"username\":\"steward_new\",\"password\":\"a-long-enough-pass\"}", &b);
+    CHECK(b.resp.status == 422, "username, uic and password are required");
+    st_resp_free(&b.resp);
+    call("POST", "/api/v1/users", adm, "{\"username\":\"steward_new\",\"uic\":\"[362,177777]\",\"password\":\"a-long-enough-pass\"}", &b);
+    CHECK(b.resp.status == 422, "a group identifier's UIC is not a user's");
+    st_resp_free(&b.resp);
+    call("POST", "/api/v1/users", adm, "{\"username\":\"steward_new\",\"uic\":\"[362,10]\",\"password\":\"a-long-enough-pass\",\"shoe\":1}", &b);
+    CHECK(b.resp.status == 422 && strstr(b.resp.body.data, "shoe"), "unknown members are refused");
+    st_resp_free(&b.resp);
+    call("POST", "/api/v1/users", adm, "{\"username\":\"steward_new\",\"uic\":\"[362,10]\",\"password\":\"short\"}", &b);
+    CHECK(b.resp.status == 422 && strstr(b.resp.body.data, "INVPWDLEN"), "a password below the template's minimum is refused");
+    st_resp_free(&b.resp);
+    call("GET", "/api/v1/users/STEWARD_NEW", adm, NULL, &b);
+    CHECK(b.resp.status == 404, "and nothing was left behind");
+    st_resp_free(&b.resp);
+    call("POST", "/api/v1/users", adm, "{\"username\":\"steward_new\",\"uic\":\"[362,1]\",\"password\":\"a-long-enough-pass\"}", &b);
+    CHECK(b.resp.status == 409, "a UIC already in use is refused");
+    st_resp_free(&b.resp);
+
+    call("POST", "/api/v1/users", adm,
+         "{\"username\":\"steward_new\",\"uic\":\"[362,10]\",\"password\":\"a-long-enough-pass\","
+         "\"owner\":\"New starter\",\"flags\":[],\"default_directory\":\"[STEWARD_NEW]\"}", &b);
+    etag_of(&b, etag, sizeof etag);
+    CHECK(b.resp.status == 201 && strstr(b.resp.body.data, "\"username\":\"STEWARD_NEW\",\"owner\":\"New starter\"") &&
+          strstr(b.resp.body.data, "\"uic\":\"[362,10]\",\"flags\":[]") &&
+          strstr(b.resp.body.data, "\"default_directory\":\"[STEWARD_NEW]\"") &&
+          strstr(b.resp.body.data, "\"pre_expired\":true") && strlen(etag) == 34,
+          "create from DEFAULT: the fields given, DISUSER cleared, pre-expired, with an ETag");
+    st_resp_free(&b.resp);
+    call("GET", "/api/v1/identifiers/STEWARD_NEW", adm, NULL, &b);
+    CHECK(b.resp.status == 200 && strstr(b.resp.body.data, "\"value\":\"[362,10]\""), "with its UIC identifier, as AUTHORIZE ADD");
+    st_resp_free(&b.resp);
+    call("POST", "/api/v1/users", adm,
+         "{\"username\":\"steward_dir\",\"uic\":\"[362,12]\",\"password\":\"a-long-enough-pass\",\"create_directory\":true}", &b);
+    CHECK(b.resp.status == 201 && strstr(st_buf_cstr(&b.resp.headers), "X-Steward-Warning: no directory was created: the account has no default device"),
+          "no directory without a default device (DEFAULT has none): the user is made, with a warning");
+    st_resp_free(&b.resp);
+    {
+        char et[48];
+        call("GET", "/api/v1/users/STEWARD_DIR", adm, NULL, &b);
+        etag_of(&b, et, sizeof et);
+        st_resp_free(&b.resp);
+        adm[2].n = "HTTP_IF_MATCH"; adm[2].v = et;
+        call("DELETE", "/api/v1/users/STEWARD_DIR", adm, NULL, &b);
+        adm[2].n = NULL;
+    }
+    st_resp_free(&b.resp);
+    call("POST", "/api/v1/users", adm, "{\"username\":\"steward_new\",\"uic\":\"[362,11]\",\"password\":\"a-long-enough-pass\"}", &b);
+    CHECK(b.resp.status == 409, "an existing username is a conflict");
+    st_resp_free(&b.resp);
+    call("POST", "/api/v1/session", NULL, "{\"username\":\"steward_new\",\"password\":\"a-long-enough-pass\"}", &b);
+    CHECK(b.resp.status == 403 && strstr(b.resp.body.data, "password-expired"), "the new user must change the password first");
+    st_resp_free(&b.resp);
+
+    call("POST", "/api/v1/users", adm,
+         "{\"username\":\"steward_copy\",\"uic\":\"[362,11]\",\"password\":\"a-long-enough-pass\",\"template\":\"steward_adm\"}", &b);
+    CHECK(b.resp.status == 201 && strstr(b.resp.body.data, "\"owner\":\"Steward administrator\""),
+          "copy: the source's fields, as AUTHORIZE COPY");
+    st_resp_free(&b.resp);
+    call("GET", "/api/v1/users/STEWARD_COPY/identifiers", adm, NULL, &b);
+    CHECK(b.resp.status == 200 && strstr(b.resp.body.data, "\"identifiers\":[]"), "without its identifiers, as AUTHORIZE COPY");
+    st_resp_free(&b.resp);
+    call("GET", "/api/v1/users/STEWARD_COPY", adm, NULL, &b);
+    etag_of(&b, etag, sizeof etag);
+    st_resp_free(&b.resp);
+    adm[2].n = "HTTP_IF_MATCH"; adm[2].v = etag;
+    call("DELETE", "/api/v1/users/STEWARD_COPY", adm, NULL, &b);
+    CHECK(b.resp.status == 204, "delete the copy");
+    st_resp_free(&b.resp);
+    adm[2].n = NULL;
+    call("POST", "/api/v1/users", adm,
+         "{\"username\":\"steward_copy\",\"uic\":\"[362,11]\",\"password\":\"a-long-enough-pass\",\"template\":\"steward_adm\",\"copy_identifiers\":true}", &b);
+    st_resp_free(&b.resp);
+    call("GET", "/api/v1/users/STEWARD_COPY/identifiers", adm, NULL, &b);
+    CHECK(b.resp.status == 200 && strstr(b.resp.body.data, "STEWARD_DEMO") && strstr(b.resp.body.data, "STEWARD_OPS"),
+          "or with them, when asked");
+    st_resp_free(&b.resp);
+
+    call("DELETE", "/api/v1/users/STEWARD_NEW", adm, NULL, &b);
+    CHECK(b.resp.status == 428, "a delete needs If-Match");
+    st_resp_free(&b.resp);
+    call("DELETE", "/api/v1/users/STEWARD_ADM", adm, NULL, &b);
+    CHECK(b.resp.status == 409, "you cannot delete the account you are signed in as");
+    st_resp_free(&b.resp);
+    call("DELETE", "/api/v1/users/STEWARD", adm, NULL, &b);
+    CHECK(b.resp.status == 409, "nor the service account");
+    st_resp_free(&b.resp);
+    adm[2].n = "HTTP_IF_MATCH"; adm[2].v = "\"00000000000000000000000000000000\"";
+    call("DELETE", "/api/v1/users/STEWARD_NEW", adm, NULL, &b);
+    CHECK(b.resp.status == 412, "nor an account changed since you looked at it");
+    st_resp_free(&b.resp);
+    adm[2].n = NULL;
+    {
+        const char *names[] = { "STEWARD_NEW", "STEWARD_COPY" };
+        int i;
+        for (i = 0; i < 2; i++) {
+            char path[64];
+            snprintf(path, sizeof path, "/api/v1/users/%s", names[i]);
+            call("GET", path, adm, NULL, &b);
+            etag_of(&b, etag, sizeof etag);
+            st_resp_free(&b.resp);
+            adm[2].n = "HTTP_IF_MATCH"; adm[2].v = etag;
+            call("DELETE", path, adm, NULL, &b);
+            CHECK(b.resp.status == 204, "delete");
+            st_resp_free(&b.resp);
+            adm[2].n = NULL;
+            call("GET", path, adm, NULL, &b);
+            CHECK(b.resp.status == 404, "and it is gone");
+            st_resp_free(&b.resp);
+        }
+    }
+    call("GET", "/api/v1/identifiers/STEWARD_NEW", adm, NULL, &b);
+    CHECK(b.resp.status == 404, "with its UIC identifier");
+    st_resp_free(&b.resp);
+    call("GET", "/api/v1/identifiers/STEWARD_DEMO/holders", adm, NULL, &b);
+    CHECK(b.resp.status == 200 && !strstr(b.resp.body.data, "STEWARD_COPY"), "and its holdings, as AUTHORIZE REMOVE");
+    st_resp_free(&b.resp);
+    CHECK(!st_plat_persona_active(), "no persona left active");
+}
+
 static void test_gateway(void)
 {
     st_app_config cfg;
@@ -915,6 +1060,7 @@ int main(void)
     test_users();
     test_edit();
     test_system();
+    test_create();
     test_gateway();
     printf("%d checks, %d failed\n", checks, failures);
     return failures ? 1 : 0;

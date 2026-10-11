@@ -320,6 +320,8 @@ button.primary.danger, .dlg button.danger[type="submit"] { background: var(--dan
 .fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .8em 1.2em; align-items: start; }
 .qedit { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .6em 1em; }
 .check { display: flex; gap: .5em; align-items: center; font-size: .9rem; }
+.uicin { display: flex; align-items: center; gap: 4px; font: .95rem/1 var(--mono); }
+.uicin input { width: 6em; font: .95rem/1.3 var(--mono); padding: .5em .6em; border-radius: var(--radius); border: 1px solid var(--line); background: var(--panel-2); color: var(--text); }
 .hourgrid.edit .hrs > button { height: 14px; padding: 0; border-radius: 2px; border: 1px solid var(--line); cursor: pointer; }
 .hourgrid.edit .hrs > button.on { background: var(--accent); opacity: .85; border-color: transparent; }
 .hourgrid.edit .hrs > button.off { background: transparent; }

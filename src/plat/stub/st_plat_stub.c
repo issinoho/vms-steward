@@ -134,12 +134,17 @@ static void hold_raw(unsigned int value, unsigned int uic, unsigned int attrib)
     holds[i].value = value; holds[i].uic = uic; holds[i].attrib = attrib; holds[i].used = 1;
 }
 
+static stub_user *find_user(const char *name);
+
 /* Privilege bits as in PRVDEF: TMPMBX 15, OPER 18, NETMBX 20, SYSPRV 28,
    GRPPRV 34 (bit 2 of the second longword). */
 static void seed(void)
 {
     if (seeded) return;
     seeded = 1;
+    /* AUTHORIZE ADD's template: disabled, as on the node (PHASE4.md). */
+    add_user("DEFAULT", NULL, "", "", 0x00800080u,
+             BIT(15) | BIT(20), 0, BIT(15) | BIT(20), 0, 1u << ST_UF_DISUSER, -1);
     add_user("STEWARD_ADM", "admin-pass", "Steward administrator", "STEWARD", 0x00F20002u,
              BIT(15) | BIT(20) | BIT(28) | BIT(18), BIT(2), BIT(15) | BIT(20) | BIT(18), 0,
              1u << ST_UF_DISCTLY, 1791000000LL);
@@ -158,9 +163,14 @@ static void seed(void)
              (1u << ST_UF_RESTRICTED) | (1u << ST_UF_DISCTLY) | (1u << ST_UF_LOCKPWD), 1791000000LL);
     add_user("WEBMASTER", NULL, "Web content", "WEB", 0x00C80021u,
              BIT(15) | BIT(20), 0, BIT(15) | BIT(20), 0, 0, 1791000000LL);
+    st_copy(find_user("DEFAULT")->u.defdir, sizeof users[0].u.defdir, "[USER]");
+    find_user("DEFAULT")->u.defdev[0] = '\0';   /* as on the node: "[USER]", no device */
     /* STEWARD_TEST: no dialup access at all, to give the hour grid something to show. */
-    users[1].u.access_p[ST_ACC_DIALUP] = users[1].u.access_s[ST_ACC_DIALUP] = 0xFFFFFFu;
-    users[1].u.pwd_minimum = 15;   /* as on the x86 node */
+    {
+        stub_user *t = find_user("STEWARD_TEST");   /* by name: positions move as fixtures are added */
+        t->u.access_p[ST_ACC_DIALUP] = t->u.access_s[ST_ACC_DIALUP] = 0xFFFFFFu;
+        t->u.pwd_minimum = 15;   /* as on the x86 node */
+    }
     add_ident_raw("STEWARD_DEMO", 0x80010001u, 1u << ST_IA_RESOURCE);
     add_ident_raw("STEWARD_OPS",  0x80010002u, 0);
     add_ident_raw("BATCH",        0x80000001u, 0);
@@ -632,6 +642,63 @@ int st_plat_system(st_system *s, st_err *e)
     s->queues = 4; s->queues_batch = 2; s->queues_output = 2; s->queues_stopped = 1;
     s->jobs_executing = 1; s->jobs_pending = 0; s->jobs_holding = 2; s->jobs_timed = 1;
     s->cluster_member = 0;
+    return 0;
+}
+
+/* ---------------------------------------------------------------- create and delete (D6) */
+
+const char *st_plat_service_account(void) { return "STEWARD"; }
+
+static int ident_value_used(unsigned int v)
+{
+    return ident_by_value(v) || user_by_uic(v);
+}
+
+int st_plat_user_create(st_user_new *n, st_err *e)
+{
+    stub_user *t, *u;
+    int i;
+    n->warning[0] = '\0';
+    if (!persona) { set_err(e, ST_E_INTERNAL, "no persona"); return -1; }
+    if (!system_access()) return fail(e, ST_E_NOPRIV, C_RMS_PRV, "%RMS-E-PRV, insufficient privilege or file protection violation");
+    if (find_user(n->username)) return fail(e, ST_E_CONFLICT, 0x184ECu, "%RMS-E-DUP, duplicate key detected (DUP not set)");
+    if (ident_by_name(n->username)) return fail(e, ST_E_CONFLICT, C_DUPIDENT, "%SYSTEM-F-DUPIDENT, duplicate identifier");
+    if (ident_value_used(n->uic)) return fail(e, ST_E_CONFLICT, C_DUPIDENT, "the UIC is already in use");
+    if (!(t = find_user(n->template_user))) return fail(e, ST_E_NOTFOUND, C_RNF, "%RMS-E-RNF, record not found");
+    if ((int) strlen(n->password) < t->u.pwd_minimum || strlen(n->password) > 64)
+        return fail(e, ST_E_INVALID, C_INVPWDLEN, "%SYSTEM-F-INVPWDLEN, password length must be between the minimum and 64 characters");
+    for (i = 0; i < MAXUSERS && users[i].used; i++) ;
+    if (i == MAXUSERS) return fail(e, ST_E_INTERNAL, 0, "stub SYSUAF full");
+    u = &users[i];
+    *u = *t;                                   /* the template's record, as AUTHORIZE copies it */
+    st_copy(u->u.username, sizeof u->u.username, n->username);
+    u->u.uic = n->uic;
+    u->u.last_login_i = u->u.last_login_n = 0;
+    u->u.login_fails = 0;
+    st_copy(u->password, sizeof u->password, n->password);
+    u->u.pwd_date = n->pre_expired ? -1 : (long long) time(NULL);
+    if (n->more.fields && st_plat_user_modify(n->username, &n->more, e)) {
+        memset(u, 0, sizeof *u);               /* undo: nothing left behind */
+        return -1;
+    }
+    if (n->copy_identifiers)
+        for (i = 0; i < MAXHOLDS; i++)
+            if (holds[i].used && holds[i].uic == t->u.uic) hold_raw(holds[i].value, n->uic, holds[i].attrib);
+    if (n->create_directory && !u->u.defdev[0])   /* as the VMS platform: never a bare directory */
+        st_copy(n->warning, sizeof n->warning, "no directory was created: the account has no default device");
+    return 0;
+}
+
+int st_plat_user_delete(const char *username, st_err *e)
+{
+    stub_user *u;
+    int i;
+    if (!persona) { set_err(e, ST_E_INTERNAL, "no persona"); return -1; }
+    if (!(u = find_user(username))) return fail(e, ST_E_NOTFOUND, C_RNF, "%RMS-E-RNF, record not found");
+    if (!system_access()) return fail(e, ST_E_NOPRIV, C_RMS_PRV, "%RMS-E-PRV, insufficient privilege or file protection violation");
+    for (i = 0; i < MAXHOLDS; i++)               /* its holdings, as AUTHORIZE REMOVE */
+        if (holds[i].used && holds[i].uic == u->u.uic) holds[i].used = 0;
+    memset(u, 0, sizeof *u);
     return 0;
 }
 

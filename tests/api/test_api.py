@@ -181,6 +181,13 @@ def main(binary):
                             headers={"HTTP_IF_MATCH": etag})
         check(st == 200 and doc["owner"] == "edited" and h.get("ETag") not in (None, etag),
               "PATCH with If-Match, through FastCGI, returns the new ETag")
+        # Phase 4: create and delete; the new account's password must not reach the log.
+        st, _, doc = p.call("POST", "/api/v1/users", {"username": "API_NEW", "uic": "[362,20]",
+                                                      "password": "Phase4-create-pw", "flags": []})
+        check(st == 201 and doc["username"] == "API_NEW", "create a user through FastCGI")
+        st, h, doc = p.call("GET", "/api/v1/users/API_NEW")
+        st, _, _ = p.call("DELETE", "/api/v1/users/API_NEW", headers={"HTTP_IF_MATCH": h.get("ETag")})
+        check(st == 204, "and delete it")
         st, _, _ = p.call("POST", "/api/v1/users/EXPIRED/password",   # the fixture back, for later checks
                           {"password": "expired-pass", "pre_expired": True})
         check(st == 204, "fixture restored")
@@ -219,11 +226,13 @@ def main(binary):
               "audit records why a login failed (the client is not told)")
         check('user="STEWARD_ADMINISTRATOR"' in log,
               "an over-long username is refused before $ACM and still audited")
-        check("test-pass" not in log and "admin-pass" not in log and "Phase3-" not in log and "expired-pass" not in log,
+        check("test-pass" not in log and "admin-pass" not in log and "Phase3-" not in log and "Phase4-" not in log and "expired-pass" not in log,
               "no password reaches the audit log (sign-in, set, change)")
         check('action="password-set" target="EXPIRED" outcome="ok" detail="pre-expired"' in log and
               'action="password-change" target="EXPIRED" outcome="ok"' in log and
-              'action="user-modify" target="EXPIRED" outcome="ok" detail="owner"' in log,
+              'action="user-modify" target="EXPIRED" outcome="ok" detail="owner"' in log and
+              'action="user-create" target="API_NEW" outcome="ok"' in log and
+              'action="user-delete" target="API_NEW" outcome="ok"' in log,
               "the changes are audited")
     finally:
         proc.terminate()

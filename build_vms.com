@@ -58,7 +58,10 @@ $ s = f$element(i, ",", sources)
 $ if s .eqs. "," then goto cc_done
 $ i = i + 1
 $ name = f$parse(s,,,"NAME","SYNTAX_ONLY")
-$ cc'ccq' 's'.c /object=[.build]'name'.obj
+$! The VMS platform reads UAFDEF (the SYSUAF record, D6), which lives in SYS$LIB_C.TLB.
+$ lib = ""
+$ if f$edit(name, "UPCASE") .eqs. "ST_PLAT_VMS" then lib = "+SYS$LIBRARY:SYS$LIB_C/LIBRARY"
+$ cc'ccq' 's'.c'lib' /object=[.build]'name'.obj
 $ sev = $severity
 $ if sev .ne. 1 .and. sev .ne. 3
 $ then
