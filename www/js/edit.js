@@ -368,7 +368,11 @@ export async function createUser(templateName, done) {
   }
   const copying = templateName !== 'DEFAULT';
   const name = h('input', { required: true, maxlength: 12, spellcheck: 'false', autocapitalize: 'characters' });
-  const group = h('input', { required: true, maxlength: 5, inputmode: 'numeric', value: (t.uic.match(/^\[(\d+),/) || [])[1] || '' });
+  // A copy starts in the source's group; a new user's group is yours to choose, as
+  // AUTHORIZE ADD makes you choose its UIC (DEFAULT's own group is no guide: on the
+  // x86 node it was a real user's group, PHASE4.md).
+  const group = h('input', { required: true, maxlength: 5, inputmode: 'numeric', placeholder: 'group',
+    value: copying ? ((t.uic.match(/^\[(\d+),/) || [])[1] || '') : '' });
   const member = h('input', { required: true, maxlength: 6, inputmode: 'numeric' });
   const owner = h('input', { maxlength: 31, value: copying ? t.owner : '' });
   const account = h('input', { maxlength: 8, value: t.account, spellcheck: 'false' });
@@ -404,7 +408,7 @@ export async function createUser(templateName, done) {
       h('div', { class: 'field uicpair' },
         h('label', {}, 'UIC (octal)'),
         h('div', { class: 'uicin' }, '[', group, ',', member, ']'),
-        h('small', { class: 'muted' }, 'the next free member is suggested')),
+        h('small', { class: 'muted' }, 'enter the group: the next free member is suggested')),
       field('Owner', owner), field('Account', account),
       field('Device', device), field('Directory', dir, 'follows the username until you edit it'),
       field('Password', p.a, `at least ${t.password.minimum_length} characters`), field('Again', p.b)),

@@ -21,9 +21,9 @@ see and change.
 of the system, and covers users and rights identifiers: what AUTHORIZE does, from
 creating and copying accounts to deleting them. Please try it on a test system first and report what you find.
 
-Phases 1 to 3 are closed: sign-in, the read-only views and changes. Their exit checks
-passed in a browser through nginx proxy manager, the last on 2026-10-11 against the
-installed 0.1.1 kit. See [`docs/PLAN.md`](docs/PLAN.md),
+Phases 1 to 3 are closed: sign-in, the read-only views and changes. Phase 4 (creating,
+copying and deleting users) has passed its exit checks against the installed 0.3.0
+kit, through nginx proxy manager, on 2026-10-11. See [`docs/PLAN.md`](docs/PLAN.md),
 [`docs/api.md`](docs/api.md) and [`docs/security.md`](docs/security.md).
 
 | Area | Status |
@@ -32,7 +32,7 @@ installed 0.1.1 kit. See [`docs/PLAN.md`](docs/PLAN.md),
 | Scaffolding, sign-in, sessions | done (Phase 1, closed 2026-10-10) |
 | Users and rights identifiers: read-only views | done (Phase 2, closed 2026-10-10) |
 | Users and rights identifiers: changes, passwords, grants | done (Phase 3, closed 2026-10-11) |
-| Users: create, copy, delete | built (Phase 4; 0.3.0) |
+| Users: create, copy, delete | in 0.3.0; exit checks passed (Phase 4) |
 | Access history: who connected, when, how (SSH, TELNET, FTP, DECnet, batch, Steward) in one view | planned (Phase 6) |
 | Logical names, processes, queues, SYSGEN, licences, products, monitoring, error log, terminal | later |
 

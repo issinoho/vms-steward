@@ -67,3 +67,26 @@ SYSPRV switched on, each confirmed with AUTHORIZE. 23 of 23 passed:
 **Found on the way:** a home directory requested for an account with no default
 device was created on the serving process's disk. Steward now refuses, with a warning,
 and the dialog prefills a device (security.md audit record).
+
+## Phase exit checks (2026-10-11, x86 node, installed kit 0.3.0, through nginx proxy manager)
+
+The user signed in as STEWARD_ADM with SYSPRV switched on, and did each check in the
+browser:
+
+| Check | Evidence |
+|---|---|
+| New user from DEFAULT, DISUSER cleared, not pre-expired | `user-create target="STEWARD_NEW" ... detail="default_device; default_directory; flags-DISUSER; from DEFAULT, [200,2]"` |
+| Copy of STEWARD_TEST, with "copy identifiers" | `user-copy target="STEWARD_COPY" ... from STEWARD_TEST, [362,4], identifiers copied` (STEWARD_TEST held none) |
+| Delete both | `user-delete ... ok`; AUTHORIZE: no such users, no such identifiers |
+| (incidentally) the minimum-length check at a password change | `password-change ... refused ... must be at least 15 characters`, then `ok` |
+
+The user did not sign in as the new account, so that was shown separately with
+`api_probe`, through the real sign-in path: an account created by Steward (STEWARD_NEW,
+[362,10], password set, not pre-expired) signed in through `SYS$ACM` (201), a wrong
+password was refused (401), and the account was deleted (AUTHORIZE: `BADSPC`).
+
+**One change from the checks:** the new-user dialog had suggested DEFAULT's own UIC
+group, which on the x86 node is a real user's group: STEWARD_NEW landed in [200,2].
+The dialog now leaves the group empty for a new user (as AUTHORIZE ADD makes you
+choose a UIC) and suggests a member only once a group is entered. A copy still starts
+in the source's group.
