@@ -49,5 +49,15 @@ rule no-node-details "real node details" \
     --exclude-dir=.git --exclude-dir=build --exclude-dir=cache --exclude-dir=out --exclude=nodes.conf \
     --exclude=audit_rules.sh '192\.168\.[0-9]+\.[0-9]+|DISK\$SYSDUMP' .
 
+# Every file the browser loads is in the kit: the PCSI description and MAKE_KIT both
+# list them by name (0.4.0 was nearly packaged without access.js).
+for f in www/js/*.js www/css/*.css; do
+    n=$(basename "$f" | tr '[:lower:]' '[:upper:]')
+    if ! grep -q "WWW\.[A-Z]*\]$n ;" 'kit/steward.pcsi$desc_template' || ! grep -qi "$n" kit/make_kit.com; then
+        echo "AUDIT-RULE kit-has-www: $f is not in the kit"
+        fail=1
+    fi
+done
+
 if [ $fail -eq 0 ]; then echo "audit_rules: all rules pass"; fi
 exit $fail
