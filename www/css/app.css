@@ -415,3 +415,8 @@ button.primary.danger, .dlg button.danger[type="submit"] { background: var(--dan
 table.access td.small { font-size: .8rem; margin: 0; color: var(--muted); }
 table.access td .small { font-size: .8rem; }
 table.access tr.bad td:first-child { box-shadow: inset 3px 0 0 var(--danger); }
+table.access tr.member td { background: var(--panel-2); }
+table.access tr.member td:first-child { padding-left: 1.8em; }
+.run { font: 600 .66rem/1 var(--mono); letter-spacing: .06em; padding: .35em .5em; white-space: nowrap; }
+.run::before { content: '▸ '; }
+.run[aria-expanded="true"]::before { content: '▾ '; }

@@ -116,6 +116,54 @@ function sources(src, me) {
           : 'These files need SYSPRV or READALL, which your account does not hold. What is shown comes from the sources you may read.')));
 }
 
+// Back-to-back sessions by one user from one place by one route are one row, which
+// opens to show them: a script or tool connecting every few seconds would otherwise
+// fill the list. A gap of more than RUN_GAP seconds starts a new row.
+const RUN_GAP = 300;
+const RUN_MIN = 3;
+
+function runs(events) {
+  const out = [];
+  let cur = null;
+  for (const e of events) {   // newest first
+    const joins = cur && e.kind === 'session' && cur.kind === 'session' && e.user === cur.user &&
+      e.route === cur.route && e.from === cur.from && cur.first - (e.end ?? e.start) <= RUN_GAP;
+    if (joins) { cur.items.push(e); cur.first = e.start; continue; }
+    cur = { kind: e.kind, user: e.user, route: e.route, from: e.from, first: e.start, items: [e] };
+    out.push(cur);
+  }
+  return out;
+}
+
+function mostCommon(list) {
+  const n = new Map();
+  for (const x of list) if (x) n.set(x, (n.get(x) || 0) + 1);
+  return [...n.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] || '';
+}
+
+function runRows(run) {
+  if (run.items.length < RUN_MIN) return run.items.map(row);
+  const last = run.items[0], first = run.items[run.items.length - 1];
+  const members = run.items.map((e) => { const r = row(e); r.classList.add('member'); r.hidden = true; return r; });
+  const toggle = h('button', { type: 'button', class: 'ghost run', 'aria-expanded': 'false' },
+    `${run.items.length} connections`);
+  toggle.addEventListener('click', () => {
+    const open = toggle.getAttribute('aria-expanded') !== 'true';
+    toggle.setAttribute('aria-expanded', String(open));
+    for (const m of members) m.hidden = !open;
+  });
+  const head = h('tr', { class: 'runhead' },
+    h('td', { class: 'nowrap mono' }, vmsDate(first.start)),
+    h('td', {}, toggle),
+    h('td', { class: 'mono' }, run.user ? h('a', { href: `#/users/${encodeURIComponent(run.user)}` }, run.user) : h('span', { class: 'muted' }, '—')),
+    h('td', {}, run.route),
+    h('td', { class: 'mono' }, run.from || h('span', { class: 'muted' }, '—')),
+    h('td', { class: 'nowrap' }, `${span((last.end ?? last.start) - first.start)} span`),
+    h('td', { class: 'small' }, `until ${vmsDate(last.end ?? last.start).split(' ')[1]}`,
+      mostCommon(run.items.map((e) => e.detail)) ? ` · mostly ${mostCommon(run.items.map((e) => e.detail))}` : ''));
+  return [head, ...members];
+}
+
 function row(e) {
   const k = KIND[e.kind] || KIND.session;
   return h('tr', { class: e.kind === 'failure' || e.kind === 'breakin' ? 'bad' : '' },
@@ -144,7 +192,7 @@ export async function accessView(ctx) {
       const table = h('div', { class: 'tablewrap' },
         h('table', { class: 'grid access' },
           h('thead', {}, h('tr', {}, ['When', '', 'User', 'Route', 'From', 'Duration', 'Detail'].map((x) => h('th', {}, x)))),
-          h('tbody', {}, r.events.length ? r.events.map(row)
+          h('tbody', {}, r.events.length ? runs(r.events).flatMap(runRows)
             : h('tr', {}, h('td', { colspan: 7, class: 'muted' }, 'Nothing in this window')))));
       mount(slot, sources(r.sources, ctx.me), summary(r.events), table,
         r.truncated ? h('p', { class: 'muted small' }, `Showing the newest ${r.events.length}. Narrow the window or filter to see the rest.`) : null);

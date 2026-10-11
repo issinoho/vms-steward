@@ -2290,11 +2290,45 @@ static int ax_within(const ax_proc *p, const ax_proc *c)
 }
 
 /* An SSH connection: its log, the user's session process and commands beneath it. */
+/* Client host names and their addresses. Accounting names an SSH connection's client
+   by host (the server's process) but a session by address (the user's process), so
+   one client showed under two names; learnt from connections that have both. */
+#define AX_HOSTS 64
+static struct { char host[64], ip[48]; } ax_h[AX_HOSTS];
+static int ax_nh;
+
+static void ax_host_learn(const char *host, const char *ip)
+{
+    int i;
+    if (!*host || !*ip || ax_ieq(host, ip)) return;
+    for (i = 0; i < ax_nh; i++) if (ax_ieq(ax_h[i].host, host)) return;
+    if (ax_nh == AX_HOSTS) return;
+    st_copy(ax_h[ax_nh].host, sizeof ax_h[0].host, host);
+    st_copy(ax_h[ax_nh].ip, sizeof ax_h[0].ip, ip);
+    ax_nh++;
+}
+
+static const char *ax_host_ip(const char *host)
+{
+    int i;
+    for (i = 0; i < ax_nh; i++) if (ax_ieq(ax_h[i].host, host)) return ax_h[i].ip;
+    return 0;
+}
+
+static void ax_hosts(void)
+{
+    int i;
+    ax_nh = 0;
+    for (i = 0; i < ax_ns; i++) if (ax_s[i].accepted) ax_host_learn(ax_s[i].host, ax_s[i].ip);
+    for (i = 0; i < ax_np; i++)
+        if (ax_p[i].session) ax_host_learn(ax_p[i].full, ax_p[ax_p[i].session - 1].full);
+}
+
 static int ax_ssh_conn(ax_proc *c, st_access_cb fn, void *ctx)
 {
-    char user[33] = "", from[64], detail[128] = "";
+    char user[33] = "", from[64], detail[128] = "", how[48] = "", host[64];
     ax_ssh *log = 0;
-    int i, j;
+    int i, j, commands = 0;
     st_copy(from, sizeof from, c->full);
     for (i = 0; i < ax_ns; i++)
         if (ax_s[i].pid == c->pid && ax_abs(ax_s[i].start - c->start) <= 60) { log = &ax_s[i]; log->joined = 1; break; }
@@ -2302,8 +2336,9 @@ static int ax_ssh_conn(ax_proc *c, st_access_cb fn, void *ctx)
     if (log && log->accepted) {
         st_copy(user, sizeof user, log->user);
         st_copy(from, sizeof from, log->ip);
-        st_copy(detail, sizeof detail, log->method);
+        st_copy(how, sizeof how, log->method);
     }
+    st_copy(host, sizeof host, log && !*c->full ? log->host : c->full);
     /* the commands: SSH$SSH's subprocess, and the user's beneath that */
     for (i = 0; i < ax_np && !*user; i++) {
         ax_proc *s = &ax_p[i];
@@ -2313,6 +2348,7 @@ static int ax_ssh_conn(ax_proc *c, st_access_cb fn, void *ctx)
             if (u->sub == ACR$K_SUBPROCESS && u->owner == s->pid && ax_within(u, s) && !ax_prefix(u->user, "SSH$")) {
                 st_copy(user, sizeof user, u->user);
                 ax_upper(user);
+                commands = 1;
                 break;
             }
         }
@@ -2322,7 +2358,14 @@ static int ax_ssh_conn(ax_proc *c, st_access_cb fn, void *ctx)
         ax_proc *n = &ax_p[c->session - 1];
         if (!*user) { st_copy(user, sizeof user, n->user); ax_upper(user); }
         if (*n->full) st_copy(from, sizeof from, n->full);
-        if (!*detail) st_copy(detail, sizeof detail, "session");
+    }
+    if (!strcmp(from, host) && ax_host_ip(host)) st_copy(from, sizeof from, ax_host_ip(host));
+    /* what it was, how it signed in, and the client's name when the address is shown */
+    {
+        const char *what = c->session ? "session" : commands ? "command" : "";
+        size_t o = (size_t) snprintf(detail, sizeof detail, "%s%s%s", what, *what && *how ? ", " : "", how);
+        if (*host && strcmp(from, host) && o < sizeof detail)
+            snprintf(detail + o, sizeof detail - o, "%shost %s", o ? "; " : "", host);
     }
     if (!*user) {
         /* No user ever ran: a connection whose sign-in failed. The failure (journal or
@@ -2370,6 +2413,7 @@ static int ax_report(long long since, long long until, st_access_cb fn, void *ct
 {
     int i, j;
     ax_ssh_sessions();
+    ax_hosts();
     /* SSH connections first: they claim the user's processes beneath them. */
     for (i = 0; i < ax_np; i++) {
         ax_proc *c = &ax_p[i];

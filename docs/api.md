@@ -426,6 +426,13 @@ not hidden, and the others are still shown.
   LOGINOUT's accounting record is shown once, with the journal's time and status.
   Steward's own `$ACM` sign-in failures (remote user `STEWARD` in the journal) are taken
   from Steward's log instead, which has the browser's address rather than the proxy's.
+- **An SSH connection's `detail`** says what it was (`session`: a shell or SFTP;
+  `command`: `ssh host cmd`), the sign-in method when its log still exists, and the
+  client's host name. Accounting names the client by host on the server's process and
+  by address on the session's. Steward learns the pairs from connections that have
+  both, so one client is always shown by its address.
+- The page shows back-to-back sessions (same user, route and address, less than five
+  minutes apart) as one row that opens to list them. The API returns every event.
 - Times from OpenSSH's logs are the log file's creation and last-write dates: its lines
   carry none.
 
