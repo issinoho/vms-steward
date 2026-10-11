@@ -28,8 +28,10 @@
   --sans: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   font: 15px/1.55 var(--sans);
 }
+/* Dark: when the browser prefers it and the switch is on Auto, or when the switch
+   says Dark (data-theme on <html>, set by theme.js). */
 @media (prefers-color-scheme: dark) {
-  :root {
+  :root:not([data-theme="light"]) {
     --bg: #0c0b09;
     --panel: #151310;
     --panel-2: #1b1814;
@@ -44,6 +46,21 @@
     --key-side: #0f0d0a;
     --key-text: #f1d9a4;
   }
+}
+:root[data-theme="dark"] {
+  --bg: #0c0b09;
+  --panel: #151310;
+  --panel-2: #1b1814;
+  --text: #ece6d8;
+  --muted: #9b927f;
+  --line: #2e2a23;
+  --accent: #ffb000;
+  --accent-text: #1a1406;
+  --accent-soft: #2a2110;
+  --danger: #ff6b5b;
+  --key-top: #2b2721;
+  --key-side: #0f0d0a;
+  --key-text: #f1d9a4;
 }
 
 * { box-sizing: border-box; }
@@ -92,8 +109,11 @@ button:disabled { opacity: .6; cursor: progress; }
   box-shadow: 0 30px 60px -20px rgb(0 0 0 / .45), inset 0 1px 0 rgb(255 255 255 / .6);
 }
 @media (prefers-color-scheme: dark) {
-  .bezel { background: linear-gradient(180deg, #2a2620, #1a1713); box-shadow: 0 30px 60px -20px #000, inset 0 1px 0 rgb(255 255 255 / .06); }
+  :root:not([data-theme="light"]) .bezel { background: linear-gradient(180deg, #2a2620, #1a1713); box-shadow: 0 30px 60px -20px #000, inset 0 1px 0 rgb(255 255 255 / .06); }
 }
+:root[data-theme="dark"] .bezel { background: linear-gradient(180deg, #2a2620, #1a1713); box-shadow: 0 30px 60px -20px #000, inset 0 1px 0 rgb(255 255 255 / .06); }
+:root[data-theme="light"] { color-scheme: light; }
+:root[data-theme="dark"] { color-scheme: dark; }
 .term {
   position: relative; background: var(--term-bg); color: var(--term-text); border-radius: 12px;
   padding: 26px 26px 22px; font: 15px/1.6 var(--mono); text-shadow: var(--glow);
@@ -152,6 +172,10 @@ button:disabled { opacity: .6; cursor: progress; }
 .prompt { font: .85rem/1 var(--mono); color: var(--muted); }
 .prompt b { color: var(--text); font-weight: 600; }
 .who { display: flex; align-items: center; gap: 1em; }
+/* The theme switch: Auto (follow the browser), Light, Dark. */
+button.theme { padding: .55em .75em; min-width: 6.2em; }
+.signin-page { position: relative; }
+.signin-page .theme { position: absolute; top: 16px; right: 16px; }
 #view { padding: 28px; max-width: 960px; }
 
 .card { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 20px 22px; }

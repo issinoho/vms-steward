@@ -24,6 +24,15 @@ const AREAS = [
   { hash: '#/queues', label: 'Queues', phase: 'later' },
 ];
 
+// The theme switch (theme.js): Auto, Light, Dark in turn.
+const THEME_LABEL = { auto: 'Theme: Auto', light: 'Theme: Light', dark: 'Theme: Dark' };
+function themeButton() {
+  const b = h('button', { type: 'button', class: 'ghost theme', title: 'Auto follows your browser\'s setting' },
+    THEME_LABEL[window.stewardTheme.get()]);
+  b.addEventListener('click', () => { b.textContent = THEME_LABEL[window.stewardTheme.next()]; });
+  return b;
+}
+
 function wordmark() {
   return h('span', { class: 'wordmark', 'aria-label': 'Steward' },
     h('span', { class: 'dollar', 'aria-hidden': 'true' }, '$'), 'steward',
@@ -80,7 +89,7 @@ function signInView(note) {
     h('div', { class: 'row' }, h('label', { for: 'password' }, 'Password:'), pass),
     msg, button);
 
-  mount(app, h('main', { class: 'signin-page' },
+  mount(app, h('main', { class: 'signin-page' }, themeButton(),
     h('div', { class: 'bezel' }, form,
       h('div', { class: 'badge', 'aria-hidden': 'true' }, h('span', {}, 'steward'), h('span', { class: 'led' })))));
   user.focus();
@@ -99,7 +108,7 @@ function shell(content) {
 
   const top = h('header', { class: 'topbar' },
     h('span', { class: 'prompt' }, '$ show process ', h('b', {}, me.username), ' ', me.uic),
-    h('span', { class: 'who' }, h('button', { class: 'ghost', onclick: signOut }, 'Sign out')));
+    h('span', { class: 'who' }, themeButton(), h('button', { class: 'ghost', onclick: signOut }, 'Sign out')));
 
   mount(app, h('div', { class: 'layout' }, nav, h('div', { class: 'main' }, top, h('main', { id: 'view' }, content))));
 }
