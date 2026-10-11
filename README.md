@@ -16,13 +16,14 @@ see and change.
 
 ## Status
 
-**0.3.1, an early test release** for OpenVMS x86-64: a PCSI kit is on the
+**0.4.0, an early test release** for OpenVMS x86-64: a PCSI kit is on the
 [releases page](https://github.com/issinoho/vms-steward/releases). It opens on a dashboard
-of the system, and covers users and rights identifiers: what AUTHORIZE does, from
-creating and copying accounts to deleting them. Please try it on a test system first and report what you find.
+of the system, covers users and rights identifiers (what AUTHORIZE does, from
+creating and copying accounts to deleting them), and shows the system's access
+history: who signed in, when, from where and by which route. Please try it on a test system first and report what you find.
 
-Phases 1 to 4 are closed: sign-in, the read-only views, changes, and creating and
-deleting users. Their exit checks passed in a browser through nginx proxy manager,
+Phases 1 to 4 and 6 are closed: sign-in, the read-only views, changes, creating and
+deleting users, and access history. Their exit checks passed in a browser through nginx proxy manager,
 the last on 2026-10-11 against the installed 0.3.0 kit. See [`docs/PLAN.md`](docs/PLAN.md),
 [`docs/api.md`](docs/api.md) and [`docs/security.md`](docs/security.md).
 
@@ -33,7 +34,7 @@ the last on 2026-10-11 against the installed 0.3.0 kit. See [`docs/PLAN.md`](doc
 | Users and rights identifiers: read-only views | done (Phase 2, closed 2026-10-10) |
 | Users and rights identifiers: changes, passwords, grants | done (Phase 3, closed 2026-10-11) |
 | Users: create, copy, delete | done (Phase 4, closed 2026-10-11) |
-| Access history: who connected, when, how (SSH, TELNET, DECnet, LAT, batch, Steward) in one view | built (Phase 6, exit checks pending) |
+| Access history: who connected, when, how (SSH, TELNET, DECnet, LAT, batch, Steward) in one view | done (Phase 6, closed 2026-10-11) |
 | Logical names, processes, queues, SYSGEN, licences, products, monitoring, error log, terminal | later |
 
 ## Installing
