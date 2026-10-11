@@ -2,6 +2,8 @@
 
 ![Steward: OpenVMS system management in your browser](docs/img/banner.svg)
 
+**[steward.issinoho.com](https://steward.issinoho.com)** · [Download](https://github.com/issinoho/vms-steward/releases/latest)
+
 Browser-based system management for OpenVMS, served over HTTPS by
 [vms-lighttpd](https://github.com/issinoho/vms-lighttpd) as a FastCGI service with a
 REST API and a static web front end.
