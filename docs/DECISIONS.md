@@ -325,3 +325,44 @@ Alternatives: a collector process under its own privileged account writing a sto
 of its own (durable history, but a second privileged component to secure, and data
 copied outside OpenVMS's own controls); enabling LOGIN auditing to use the journal
 alone (not needed: accounting already records successful sessions).
+
+## D14. Logical names: list tables through a short-lived detached process, as the viewer
+
+**Status:** approved by the user 2026-10-11 (option A). Phase 7.
+
+OpenVMS has no service that lists the names in a table: `$TRNLNM` translates a name
+you already know, and STARLET exports nothing that enumerates. `SHOW LOGICAL` can list
+them because DCL calls internal routines. So, to **list** a table, Steward creates a
+**detached** process running LOGINOUT on a fixed procedure, `STEWARD_LNM.COM`. It
+creates it while the viewer's persona is assumed, so the process *is* the viewer: same
+UIC, same privileges. It runs `SHOW LOGICAL/FULL` and OpenVMS decides what it shows
+(D2).
+- **Data only:** Steward passes the table and the pattern as data, through a request
+  mailbox. The procedure reads them, checks every character against
+  `A-Z 0-9 $ _ * %`, and writes the listing to a reply mailbox. Its process name,
+  `STW<request>_<reply>`, gives the two mailbox units. Steward never writes a command.
+- **Owner only:** both mailboxes are created under the persona with protection for
+  system and owner only.
+- **Everything else in-process:** translating one name (`$TRNLNM`), and later defining
+  and deassigning (`$CRELNM`, `$DELLNM`), run in-process under the persona, as every
+  other request does.
+
+Why: it is the only way found to list what the viewer may see, with OpenVMS deciding.
+Listing as the service and filtering each name by `$TRNLNM` under the persona (option
+B) would miss tables the service account cannot read: other groups' tables, even for
+a viewer with SYSPRV. It would also let the service's view shape the answer.
+
+Cost: about 0.12 s per listing to create the process and log in, plus the listing. Each
+listing is a short detached "login" of the viewer (accounting shows it; access history
+ignores detached processes). It counts against the viewer's detached-process and job
+limits while it runs. The system and the user's login procedures run, as for any
+detached process.
+
+Found by probe (`probes/probe_lnm.c`, PHASE7.md), each of these refused:
+- `LIB$SPAWN` under a persona is always `%SYSTEM-F-NOPRIV`.
+- A `$CREPRC` *subprocess* runs as the persona but waits for context only LIB$SPAWN
+  sends.
+- With a mailbox as input, LOGINOUT takes it for a terminal and waits at a sign-in
+  prompt.
+- DCL refuses a mailbox as SYS$OUTPUT (`%RMS-F-DEV`), so the procedure writes the
+  listing with `SHOW LOGICAL/OUTPUT=`.

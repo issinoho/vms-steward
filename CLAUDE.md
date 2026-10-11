@@ -73,3 +73,7 @@ asking.
   (`st_plat_vms.c`, `local_offset`).
 - **Take item codes and masks from the headers on the node** (`LIBRARY/EXTRACT` from
   `SYS$STARLET_C.TLB`), never from memory: DISUSER is `UAI$M_DISACNT`.
+- **`LIB$WAIT` reads its argument as VAX F_floating** unless you pass the float type
+  (4, LIB$K_IEEE_S). A C `float` alone makes it barely wait (NOTES.md).
+- **A mailbox read must not ask for more than the mailbox's `maxmsg`**, or it fails
+  with MBTOOSML and the writer waits for ever.

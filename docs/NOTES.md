@@ -99,3 +99,33 @@ returned `%RMS-E-FNF` where the journal and the SSH logs returned `%RMS-E-PRV`.
 SYS$MANAGER is a search list, which is the likely cause. The same file opened at once
 with SYSPRV on. Access history passes OpenVMS's status through as it is, so the
 accounting source may say "file not found" for a viewer who lacks the privilege.
+
+## LIB$WAIT takes VAX F_floating unless told otherwise (2026-10-11)
+
+`lib$wait(&seconds)` with a C `float` waited almost nothing on x86. VSI C passes IEEE
+S_floating there, which LIB$WAIT reads as F_floating. Pass the float type:
+`lib$wait(&seconds, 0, &four)`, where 4 is LIB$K_IEEE_S. A probe's "10-second timeout"
+was really about 0.1 s, and for a while it made a working process look hung.
+
+## A mailbox read larger than the mailbox's maximum message fails at once (2026-10-11)
+
+`IO$_READVBLK` with a buffer longer than the mailbox's `maxmsg` returns
+`%SYSTEM-F-MBTOOSML` without reading. The writer (here DCL's `SHOW LOGICAL/OUTPUT=` to the
+mailbox) then waits for ever for a reader, in LEF. Read at most `maxmsg` bytes.
+
+## Creating processes under a persona (2026-10-11, probe_lnm)
+
+Each case was checked in accounting, which shows the process's username, UIC and
+privileges.
+- **`LIB$SPAWN` under an assumed persona** returns `%SYSTEM-F-NOPRIV`. This happens with
+  any output, and with the copying of symbols, logical names and keypad state turned
+  off. As the natural persona, the same call works.
+- **A `$CREPRC` subprocess** of LOGINOUT runs as the persona (UIC and privileges), but
+  waits in LEF with no image, presumably for the context LIB$SPAWN would send.
+- **A `$CREPRC` detached process** of LOGINOUT (`PRC$M_DETACH`, which needs
+  IMPERSONATE) runs as the persona.
+  - With a **mailbox** as its input, LOGINOUT takes the mailbox for a terminal and
+    waits.
+  - With a **mailbox** as its output, DCL fails with `%RMS-F-DEV`.
+  - With a **procedure file** as input and NLA0: as output, it runs, after SYLOGIN and
+    the user's LOGIN.COM, as any detached process does.
