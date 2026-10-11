@@ -1,0 +1,38 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 360" width="1200" height="360" role="img" aria-label="Steward: OpenVMS system management in your browser">
+  <title>Steward: OpenVMS system management in your browser</title>
+  <defs>
+    <linearGradient id="bezel" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#2a2620"/>
+      <stop offset="1" stop-color="#16130f"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="0.32" cy="0.42" r="0.75">
+      <stop offset="0" stop-color="#2a1f0a"/>
+      <stop offset="1" stop-color="#0c0a07"/>
+    </radialGradient>
+    <pattern id="scan" width="4" height="3" patternUnits="userSpaceOnUse">
+      <rect width="4" height="1" fill="#000" opacity="0.28"/>
+    </pattern>
+    <filter id="phosphor" x="-10%" y="-30%" width="120%" height="160%">
+      <feGaussianBlur stdDeviation="2.2" result="b"/>
+      <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+  </defs>
+  <!-- the bezel and the screen -->
+  <rect x="0" y="0" width="1200" height="360" rx="28" fill="url(#bezel)"/>
+  <rect x="22" y="22" width="1156" height="292" rx="18" fill="url(#glow)"/>
+  <rect x="22" y="22" width="1156" height="292" rx="18" fill="url(#scan)"/>
+  <!-- a DCL session -->
+  <g font-family="'IBM Plex Mono','DejaVu Sans Mono',Menlo,Consolas,monospace" filter="url(#phosphor)">
+    <text x="70" y="86" font-size="20" fill="#a37200">Welcome to OpenVMS (TM) x86-64 Operating System</text>
+    <!-- the cursor is a character, so it follows the word in whatever font renders it -->
+    <text x="70" y="186" font-size="92" font-weight="600" fill="#ffb000"><tspan fill="#c98a00">$ </tspan>steward<tspan font-weight="400">&#x2588;</tspan></text>
+    <text x="70" y="244" font-size="25" fill="#ffb000">OpenVMS system management in your browser</text>
+    <text x="70" y="282" font-size="18" fill="#a37200">Every request runs as you. OpenVMS decides.</text>
+  </g>
+  <!-- the badge strip, as on a terminal's front panel -->
+  <g font-family="'IBM Plex Mono','DejaVu Sans Mono',Menlo,Consolas,monospace" font-size="13" letter-spacing="3" fill="#6a6355">
+    <text x="44" y="342">VMS-STEWARD</text>
+    <text x="1046" y="342">X86-64</text>
+  </g>
+  <circle cx="1150" cy="337" r="5" fill="#3fbf5f"/>
+</svg>

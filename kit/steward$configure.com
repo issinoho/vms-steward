@@ -127,7 +127,7 @@ $ run = top + ".RUN]"
 $ conf = top + ".CONF]"
 $! LOGIN.COM: readable, not writable, by the account
 $ copy/nolog STEWARD$ROOT:[COM]LOGIN.COM 'top']LOGIN.COM
-$ set security/owner='uicstr'/protection=(S:RWE,O:RE,G,W) 'top']LOGIN.COM;0
+$ set security/owner='uicstr'/protection=(S:RWED,O:RE,G,W) 'top']LOGIN.COM;*   ! S:D, so PURGE can remove old versions
 $ purge/nolog 'top']LOGIN.COM
 $!
 $! UNIX form of a directory, for lighttpd (/DEVICE/DIR/SUBDIR)
@@ -199,8 +199,8 @@ $ close g
 $ secret = ""
 $ convert/fdl='conf'STMLF.FDL 'conf'GATEWAY.TMP 'gw'
 $ delete/nolog 'conf'GATEWAY.TMP;*
+$ set security/owner='webuic'/protection=(S:RWED,O:RE,G,W) 'gw';*   ! S:D, so PURGE can remove old versions
 $ purge/nolog 'gw'
-$ set security/owner='webuic'/protection=(S:RWE,O:RE,G,W) 'gw';0
 $!
 $! The server block
 $ open/write c 'conf'STEWARD.TMP
@@ -244,6 +244,7 @@ $ convert/fdl='conf'STMLF.FDL 'conf'STEWARD.TMP 'conf'STEWARD.CONF
 $ delete/nolog 'conf'STEWARD.TMP;*
 $ purge/nolog 'conf'STEWARD.CONF
 $ set security/owner='uicstr'/protection=(S:RWED,O:RWED,G:RE,W:RE) 'conf'STEWARD.CONF;0
+$ delete/nolog 'conf'STMLF.FDL;*   ! only needed while writing these
 $ say "STEWARD$CONFIGURE: wrote ", conf, "STEWARD.CONF and STEWARD_GATEWAY.CONF"
 $!
 $! --- site settings ----------------------------------------------------------

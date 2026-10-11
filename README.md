@@ -1,5 +1,7 @@
 # vms-steward
 
+![Steward: OpenVMS system management in your browser](docs/img/banner.svg)
+
 Browser-based system management for OpenVMS, served over HTTPS by
 [vms-lighttpd](https://github.com/issinoho/vms-lighttpd) as a FastCGI service with a
 REST API and a static web front end.
@@ -8,9 +10,11 @@ Users sign in with their own OpenVMS username and password, checked by `SYS$ACM`
 request then runs under that user's persona, so OpenVMS itself decides what they may
 see and change.
 
+![A user in Steward, as AUTHORIZE SHOW lays it out: facts, days, the access-hour grid, privileges as keycaps, quotas](docs/img/user-detail-light.png)
+
 ## Status
 
-**0.1.0, an early test release** for OpenVMS x86-64: a PCSI kit is on the
+**0.1.2, an early test release** for OpenVMS x86-64: a PCSI kit is on the
 [releases page](https://github.com/issinoho/vms-steward/releases). It covers users and
 rights identifiers, roughly what AUTHORIZE does, apart from creating and deleting
 users. Please try it on a test system first and report what you find.
