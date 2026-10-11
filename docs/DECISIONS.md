@@ -296,3 +296,32 @@ Alternatives:
   needs its own proof.
 - **Build the record from nothing.** More fields to get right than copying the
   template AUTHORIZE itself uses.
+
+## D13. Access history: read the sources on demand, as the viewer
+
+**Status:** approved by the user 2026-10-11 ("read on demand, as you"). Phase 6.
+
+One view of who reached the system, when, from where and how, merged at request
+time from:
+- **accounting** (finished sessions: interactive, network, batch; login failures
+  seen by LOGINOUT);
+- the **security audit journal** (LOGFAIL and BREAKIN, including failures through
+  `$ACM`);
+- **OpenSSH's per-connection logs** (authentication method and key, failed attempts);
+- **Steward's own audit log** (sign-ins through Steward);
+- **the live process list** (who is connected now).
+
+Each is read with the record layouts from the system's own headers (ACRDEF,
+NSAMSGDEF), under the viewer's persona. OpenVMS decides, source by source, whether
+the viewer may read it. A refused source is reported as refused, and the rest are
+still shown.
+
+Why: it needs no new account, process or privileged reader (D2), and nothing to keep
+in step. The cost is that history goes back only as far as each source does:
+accounting and the journal since their last rotation, and SSH logs until they are
+purged. Reads are bounded by a time window and an event cap.
+
+Alternatives: a collector process under its own privileged account writing a store
+of its own (durable history, but a second privileged component to secure, and data
+copied outside OpenVMS's own controls); enabling LOGIN auditing to use the journal
+alone (not needed: accounting already records successful sessions).
