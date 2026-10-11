@@ -9,6 +9,7 @@ import { vmsMessage, problemText, vmsDate } from './fmt.js';
 import { usersView, userView, identifiersView, identifierView } from './rights.js';
 import { changeOwnPassword } from './edit.js';
 import { dashboardView, stopDashboard } from './dashboard.js';
+import { accessView } from './access.js';
 
 const app = document.getElementById('app');
 let me = null;           // whoami, while signed in
@@ -20,7 +21,7 @@ const AREAS = [
   { hash: '#/account', label: 'My account', ready: true },
   { hash: '#/users', label: 'Users', ready: true },
   { hash: '#/identifiers', label: 'Rights identifiers', ready: true },
-  { hash: '#/access', label: 'Access history', phase: 'Phase 6' },
+  { hash: '#/access', label: 'Access history', ready: true },
   { hash: '#/logicals', label: 'Logical names', phase: 'later' },
   { hash: '#/processes', label: 'Processes', phase: 'later' },
   { hash: '#/queues', label: 'Queues', phase: 'later' },
@@ -197,6 +198,7 @@ const VIEWS = {
   },
   users: (ctx, name) => (name ? userView(ctx, name) : usersView(ctx)),
   identifiers: (ctx, name) => (name ? identifierView(ctx, name) : identifiersView(ctx)),
+  access: (ctx) => accessView(ctx),
 };
 
 let routeSeq = 0;

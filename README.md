@@ -33,7 +33,7 @@ the last on 2026-10-11 against the installed 0.3.0 kit. See [`docs/PLAN.md`](doc
 | Users and rights identifiers: read-only views | done (Phase 2, closed 2026-10-10) |
 | Users and rights identifiers: changes, passwords, grants | done (Phase 3, closed 2026-10-11) |
 | Users: create, copy, delete | done (Phase 4, closed 2026-10-11) |
-| Access history: who connected, when, how (SSH, TELNET, FTP, DECnet, batch, Steward) in one view | planned (Phase 6) |
+| Access history: who connected, when, how (SSH, TELNET, DECnet, LAT, batch, Steward) in one view | built (Phase 6, exit checks pending) |
 | Logical names, processes, queues, SYSGEN, licences, products, monitoring, error log, terminal | later |
 
 ## Installing

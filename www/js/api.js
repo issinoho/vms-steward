@@ -60,6 +60,9 @@ export const api = {
   // The system at a glance. background: a refresh, which the server does not count
   // as activity (so the idle timeout still applies to a dashboard left open).
   system: (background) => call('GET', 'system', undefined, background ? { 'X-Steward-Background': '1' } : undefined),
+  // Phase 6: access history. q: since, until (seconds since 1970), user, route,
+  // outcome, limit.
+  access: (q) => call('GET', `access${query(q)}`),
   // Phase 2: users and rights identifiers, read-only. Lists take
   // { filter, after, limit } (and type for identifiers) and return { ..., next }.
   users: (q) => call('GET', `users${query(q)}`),
