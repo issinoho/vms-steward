@@ -168,6 +168,7 @@ live process list, under the viewer's persona, and merges them. See `docs/PHASE6
 **Later areas, one at a time and each with the same read-only → modify split:** logical
 names, processes, batch/print queues, system parameters, licences, installed products,
 CPU/memory monitoring, error log, and a WebSocket terminal (lighttpd `mod_wstunnel`).
+The user confirmed this order on 2026-10-11 (licences stay where they are).
 
 **Wish list (not scheduled):** a layout made for phones (`docs/ideas/mobile.md`,
 asked for by the user 2026-10-11).
