@@ -678,10 +678,10 @@ static void test_edit(void)
     st_resp_free(&b.resp);
     adm[2].v = etag2;
     call("PATCH", "/api/v1/users/STEWARD_TEST", adm,
-         "{\"owner\":\"Steward test (stub)\",\"flags\":[],\"quotas\":{\"prio\":4},"
+         "{\"owner\":\"Test account\",\"flags\":[],\"quotas\":{\"prio\":4},"
          "\"secondary_days\":[\"SAT\",\"SUN\"],\"restricted_hours\":{\"batch\":{\"primary\":[]}},"
          "\"authorized_privileges\":[\"TMPMBX\",\"NETMBX\"],\"password\":{\"lifetime_days\":90}}", &b);
-    CHECK(b.resp.status == 200 && strstr(b.resp.body.data, "\"owner\":\"Steward test (stub)\""), "and it can be put back");
+    CHECK(b.resp.status == 200 && strstr(b.resp.body.data, "\"owner\":\"Test account\""), "and it can be put back");
     st_resp_free(&b.resp);
     adm[2].n = NULL;
 

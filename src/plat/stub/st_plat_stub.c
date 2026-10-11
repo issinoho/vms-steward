@@ -140,17 +140,24 @@ static void seed(void)
 {
     if (seeded) return;
     seeded = 1;
-    add_user("STEWARD_ADM", "admin-pass", "Steward admin (stub)", "STEWARD", 0x00F20002u,
+    add_user("STEWARD_ADM", "admin-pass", "Steward administrator", "STEWARD", 0x00F20002u,
              BIT(15) | BIT(20) | BIT(28) | BIT(18), BIT(2), BIT(15) | BIT(20) | BIT(18), 0,
              1u << ST_UF_DISCTLY, 1791000000LL);
-    add_user("STEWARD_TEST", "test-pass", "Steward test (stub)", "STEWARD", 0x00F20001u,
+    add_user("STEWARD_TEST", "test-pass", "Test account", "STEWARD", 0x00F20001u,
              BIT(15) | BIT(20), 0, BIT(15) | BIT(20), 0, 0, 1791000000LL);
-    add_user("DISABLED", "disabled-pass", "Disabled account (stub)", "", 0x00F20003u,
+    add_user("DISABLED", "disabled-pass", "Disabled account", "", 0x00F20003u,
              BIT(15) | BIT(20), 0, BIT(15) | BIT(20), 0, 1u << ST_UF_DISUSER, 1791000000LL);
-    add_user("EXPIRED", "expired-pass", "Expired password (stub)", "", 0x00F20004u,
+    add_user("EXPIRED", "expired-pass", "Expired password", "", 0x00F20004u,
              BIT(15) | BIT(20), 0, BIT(15) | BIT(20), 0, 0, -1);
     add_user("SYSTEM", NULL, "SYSTEM MANAGER", "SYSTEM", 0x00010004u,
              0xFFFFFFFFu, 0x7Fu, 0xFFFFFFFFu, 0x7Fu, 0, 1791000000LL);
+    /* Two more, sorted after the fixtures above so no test's expectations move:
+       they make the dev server's list (and the screenshots) look like a system. */
+    add_user("TCPIP$FTP", NULL, "TCP/IP FTP server", "TCPIP", 0x00F90002u,
+             BIT(15) | BIT(20) | BIT(18), 0, BIT(15) | BIT(20), 0,
+             (1u << ST_UF_RESTRICTED) | (1u << ST_UF_DISCTLY) | (1u << ST_UF_LOCKPWD), 1791000000LL);
+    add_user("WEBMASTER", NULL, "Web content", "WEB", 0x00C80021u,
+             BIT(15) | BIT(20), 0, BIT(15) | BIT(20), 0, 0, 1791000000LL);
     /* STEWARD_TEST: no dialup access at all, to give the hour grid something to show. */
     users[1].u.access_p[ST_ACC_DIALUP] = users[1].u.access_s[ST_ACC_DIALUP] = 0xFFFFFFu;
     users[1].u.pwd_minimum = 15;   /* as on the x86 node */

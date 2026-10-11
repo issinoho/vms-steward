@@ -1,0 +1,268 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Steward — OpenVMS system management in your browser</title>
+<meta name="description" content="Steward manages OpenVMS from a web browser. Every request runs as the signed-in user, so OpenVMS itself decides what each person may see and change. Native, least-privilege, security-audited, open source.">
+<meta property="og:title" content="Steward — OpenVMS system management in your browser">
+<meta property="og:description" content="Every request runs as you. OpenVMS decides.">
+<meta property="og:url" content="https://steward.issinoho.com/">
+<meta property="og:type" content="website">
+<meta property="og:image" content="https://steward.issinoho.com/img/users.png">
+<meta name="theme-color" content="#0c0b09">
+<link rel="icon" href="img/favicon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&family=VT323&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+<script src="site.js" defer></script>
+</head>
+<body>
+
+<header class="topbar">
+  <a class="brand" href="#top" aria-label="Steward"><span class="brand-dollar">$</span> steward<span class="brand-cursor" aria-hidden="true"></span></a>
+  <nav aria-label="Sections">
+    <a href="#why">Why Steward</a>
+    <a href="#screens">Screens</a>
+    <a href="#how">How it works</a>
+    <a href="#roadmap">Roadmap</a>
+    <a href="#install">Install</a>
+    <a class="nav-gh" href="https://github.com/issinoho/vms-steward">GitHub</a>
+  </nav>
+</header>
+
+<main id="top">
+
+<!-- ============================================================ HERO -->
+<section class="hero">
+  <div class="hero-copy">
+    <p class="eyebrow"><span class="led" aria-hidden="true"></span> Early test release &middot; OpenVMS x86-64</p>
+    <h1>OpenVMS system management, <span class="amber">in your browser.</span></h1>
+    <p class="lede">Steward gives your OpenVMS systems a fast, modern web console for
+      users, rights and privileges, and lets OpenVMS itself decide who may do what.
+      Sign in with your OpenVMS account. Every request runs <em>as you</em>.</p>
+    <div class="cta">
+      <a class="btn primary" id="download" href="https://github.com/issinoho/vms-steward/releases/latest">Download the kit</a>
+      <a class="btn ghost" href="https://github.com/issinoho/vms-steward">View the source</a>
+    </div>
+    <ul class="facts" aria-label="At a glance">
+      <li><b>Native</b><span>C99 on OpenVMS</span></li>
+      <li><b>PCSI</b><span>one kit, one command</span></li>
+      <li><b>MIT</b><span>open source</span></li>
+    </ul>
+    <p class="release" id="release" aria-live="polite"></p>
+  </div>
+
+  <div class="hero-term" aria-label="A Steward session">
+    <div class="bezel">
+      <div class="screen">
+        <pre class="typed" id="typed" aria-hidden="true"></pre>
+        <noscript><pre class="typed">$ steward</pre></noscript>
+      </div>
+      <div class="badge" aria-hidden="true"><span>steward</span><span class="dot"></span></div>
+    </div>
+  </div>
+</section>
+
+<div class="ticker" aria-hidden="true">
+  <div class="ticker-track">
+    <span>SYS$ACM</span><span>$PERSONA_CREATE</span><span>AUTHORIZE</span><span>RIGHTSLIST</span>
+    <span>SET PROCESS/PRIVILEGE</span><span>BREAK-IN EVASION</span><span>PCSI</span><span>LK201</span>
+    <span>%STEWARD-S-MDFYMSG</span><span>RMS</span><span>[362,1]</span><span>DCL</span>
+    <span>SYS$ACM</span><span>$PERSONA_CREATE</span><span>AUTHORIZE</span><span>RIGHTSLIST</span>
+    <span>SET PROCESS/PRIVILEGE</span><span>BREAK-IN EVASION</span><span>PCSI</span><span>LK201</span>
+    <span>%STEWARD-S-MDFYMSG</span><span>RMS</span><span>[362,1]</span><span>DCL</span>
+  </div>
+</div>
+
+<!-- ============================================================ WHY -->
+<section class="section" id="why">
+  <p class="kicker">01 / Why Steward</p>
+  <h2>Built the OpenVMS way.</h2>
+  <p class="section-lede">Most web consoles bolt their own permissions onto the system they manage.
+    Steward does the opposite: OpenVMS stays the single authority, and Steward
+    stays out of its way.</p>
+
+  <div class="cards">
+    <article class="card feature">
+      <div class="keycap" aria-hidden="true">AS YOU</div>
+      <h3>Every request runs as you</h3>
+      <p>Each request takes on your own OpenVMS identity, a persona. Your privileges and
+        rights identifiers decide what you may see and change, exactly as at a terminal.
+        There is no second set of permissions to manage, and nothing to drift out of step.</p>
+    </article>
+    <article class="card feature">
+      <div class="keycap" aria-hidden="true">SYSPRV</div>
+      <h3>Least privilege, provably</h3>
+      <p>The service account runs with IMPERSONATE, TMPMBX and NETMBX. SYSPRV is switched on
+        only for the instant a persona is created, and the server checks after every
+        request that it is off again. If it is not, the process stops rather than carry on.</p>
+    </article>
+    <article class="card feature">
+      <div class="keycap" aria-hidden="true">DCL</div>
+      <h3>It speaks VMS</h3>
+      <p>Screens laid out as AUTHORIZE lays them out. DCL wildcards in every filter.
+        Messages in <code>%FACILITY-S-IDENT</code> form, with the system's own text when
+        OpenVMS says no. Privileges you switch on and off like
+        <code>SET PROCESS/PRIVILEGE</code>.</p>
+    </article>
+    <article class="card feature">
+      <div class="keycap" aria-hidden="true">C99</div>
+      <h3>Native, with no runtime to install</h3>
+      <p>A small C program on OpenVMS, run as a pool of FastCGI processes behind lighttpd.
+        No Java, no Node.js, no Python on the server. One PCSI kit and one configuration
+        procedure, with startup and shutdown hooks like any layered product.</p>
+    </article>
+    <article class="card feature">
+      <div class="keycap" aria-hidden="true">AUDIT</div>
+      <h3>Security-audited code</h3>
+      <p>Static analysis, sanitizers, fuzzing and secret scanning run on every change,
+        and every phase closes only after a security review. What each review found, and
+        the test that now guards it, is published with the source.</p>
+    </article>
+    <article class="card feature">
+      <div class="keycap" aria-hidden="true">LOG</div>
+      <h3>A record of every change</h3>
+      <p>Each sign-in, privilege switch and change is logged with who made it, from where,
+        and what OpenVMS answered. Passwords are never recorded. Break-in evasion applies
+        to each browser separately, even behind a reverse proxy.</p>
+    </article>
+  </div>
+</section>
+
+<!-- ============================================================ SCREENS -->
+<section class="section screens" id="screens">
+  <p class="kicker">02 / Screens</p>
+  <h2>Modern on the surface. DEC underneath.</h2>
+  <p class="section-lede">A VT-amber terminal theme for the night shift, a clean light theme for the day,
+    and LK201 keycaps for privileges and identifiers.</p>
+
+  <div class="tabs" role="tablist" aria-label="Screens">
+    <button role="tab" aria-selected="true" aria-controls="shot" data-shot="users" data-cap="Users: every account in SYSUAF, filtered with DCL wildcards, flags at a glance.">Users</button>
+    <button role="tab" aria-selected="false" aria-controls="shot" data-shot="user" data-cap="One account, as AUTHORIZE SHOW lays it out: days, the access-hour grid, privileges, quotas, identifiers held.">Account detail</button>
+    <button role="tab" aria-selected="false" aria-controls="shot" data-shot="modify" data-cap="Modify, as AUTHORIZE MODIFY does. Only what you change is sent, and a change made meanwhile by someone else is never overwritten.">Modify</button>
+    <button role="tab" aria-selected="false" aria-controls="shot" data-shot="account" data-cap="Your session: switch authorized privileges on for this session, like SET PROCESS/PRIVILEGE. Each switch is audited.">Privileges</button>
+    <button role="tab" aria-selected="false" aria-controls="shot" data-shot="ident" data-cap="Rights identifiers with their values, attributes and holders.">Identifiers</button>
+    <button role="tab" aria-selected="false" aria-controls="shot" data-shot="signin" data-cap="Sign in with your OpenVMS username and password, checked by SYS$ACM. An expired password can be changed right here.">Sign in</button>
+  </div>
+  <figure class="shot" id="shot" role="tabpanel">
+    <div class="window">
+      <div class="window-bar" aria-hidden="true"><i></i><i></i><i></i><span>steward.example.com</span></div>
+      <img id="shot-img" src="img/users.png" width="1280" height="820" alt="The Steward users list in the amber terminal theme" loading="lazy">
+    </div>
+    <figcaption id="shot-cap">Users: every account in SYSUAF, filtered with DCL wildcards, flags at a glance.</figcaption>
+  </figure>
+</section>
+
+<!-- ============================================================ HOW -->
+<section class="section" id="how">
+  <p class="kicker">03 / How it works</p>
+  <h2>Small moving parts. Each one checked.</h2>
+  <div class="how">
+    <div class="term-box" role="img" aria-label="Browser, then an HTTPS reverse proxy, then lighttpd, then the Steward pool, then SYS$ACM and your persona, then SYSUAF and RIGHTSLIST">
+<pre><span class="dim">browser</span> <span class="amber">──HTTPS──▶</span> reverse proxy <span class="dim">(optional, ends TLS)</span>
+                 │
+                 ▼
+            <b>lighttpd</b>  ── pages, CSP, gateway secret
+                 │  FastCGI, loopback only
+                 ▼
+        <b>Steward pool</b>   IMPERSONATE TMPMBX NETMBX
+                 │
+       ┌─────────┴──────────┐
+   <b>SYS$ACM</b>              <b>your persona</b>
+  password, expiry,     $GETUAI  $SETUAI  RMS
+  break-in evasion      $IDTOASC $ADD_HOLDER …
+                             │
+                     <span class="amber">SYSUAF · RIGHTSLIST</span></pre>
+    </div>
+    <ol class="steps">
+      <li><b>You sign in.</b> <code>SYS$ACM</code> checks your password, so expiry, DISUSER,
+        login hours and break-in evasion all apply. A failed attempt is charged to your
+        browser's address, never to the proxy's.</li>
+      <li><b>Each request becomes you.</b> Steward creates your persona, applies the
+        privileges you switched on, does the work, and drops the persona before it answers.
+        A request that would leave one behind stops the process instead.</li>
+      <li><b>OpenVMS decides.</b> If the system would refuse you at a terminal, it refuses
+        you here, and you see its own message:
+        <code class="refuse">%SYSTEM-F-NOSYSPRV, operation requires SYSPRV privilege</code></li>
+      <li><b>Nothing else gets in.</b> Only your lighttpd can reach the pool: it adds a
+        secret that the pool requires, so no other process on the system can talk to it
+        directly. Sessions are random tokens, stored only as hashes, bound to your CSRF
+        token and same-origin requests.</li>
+    </ol>
+  </div>
+</section>
+
+<!-- ============================================================ TODAY / ROADMAP -->
+<section class="section" id="roadmap">
+  <p class="kicker">04 / Today and next</p>
+  <h2>Users and rights first. The whole system next.</h2>
+  <div class="roadmap">
+    <div class="col now">
+      <h3><span class="pill on">In the release</span></h3>
+      <ul class="ticks">
+        <li>List, filter and read users: everything AUTHORIZE SHOW shows</li>
+        <li>Modify users: owner, flags, days and hours, privileges, quotas</li>
+        <li>Set passwords, pre-expired if you like; change your own, even when it has expired</li>
+        <li>Rights identifiers: create, rename, attributes, delete; grant and revoke</li>
+        <li>Switch your authorized privileges on and off, per session</li>
+        <li>An audit log of every sign-in and change</li>
+        <li>Light and dark themes</li>
+      </ul>
+    </div>
+    <div class="col next">
+      <h3><span class="pill">Coming</span></h3>
+      <ul class="arrows">
+        <li><b>A system dashboard:</b> the machine at a glance, from the system itself</li>
+        <li><b>Create, copy and delete users</b></li>
+        <li><b>Access history:</b> who connected, when, and how, across SSH, TELNET, FTP,
+          DECnet, batch and Steward, gathered into one view instead of three log files</li>
+        <li>Logical names, processes, batch and print queues</li>
+        <li>System parameters, licences, installed products, the error log</li>
+        <li>IA64 kits</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================ INSTALL -->
+<section class="section" id="install">
+  <p class="kicker">05 / Install</p>
+  <h2>Three commands and one include line.</h2>
+  <div class="install">
+    <div class="term-box">
+<pre><span class="dim">$!</span> <span class="dim">once, as SYSTEM</span>
+$ PRODUCT INSTALL STEWARD /SOURCE=dev:[dir]
+$ @STEWARD$ROOT:[COM]STEWARD$CONFIGURE
+<span class="dim">$! add the include line it prints to LIGHTTPD.CONF</span>
+$ @STEWARD$ROOT:[COM]STEWARD$CONTROL START
+<span class="ok">STEWARD: start submitted as STEWARD</span></pre>
+    </div>
+    <div class="req">
+      <h3>You will need</h3>
+      <ul>
+        <li>OpenVMS x86-64 V9.2</li>
+        <li>TCP/IP Services and the SSL3 kit (OpenSSL 3)</li>
+        <li><a href="https://github.com/issinoho/vms-lighttpd">lighttpd for OpenVMS</a>, which serves Steward</li>
+        <li>HTTPS at the browser: a TLS proxy in front, or TLS in lighttpd</li>
+      </ul>
+      <p class="note">This is an <b>early test release</b>. Try it on a test system first, and
+        <a href="https://github.com/issinoho/vms-steward/issues">tell us what you find</a>.</p>
+      <a class="btn primary" id="download2" href="https://github.com/issinoho/vms-steward/releases/latest">Download the kit</a>
+    </div>
+  </div>
+</section>
+
+</main>
+
+<footer class="footer">
+  <div class="foot-brand"><span class="brand-dollar">$</span>steward</div>
+  <p>Open source under the MIT licence. Part of the
+    <a href="https://openvms.issinoho.com">open-source family for OpenVMS</a>, alongside lighttpd,
+    MariaDB, curl and the GNU tools.</p>
+  <p class="small">Steward is an independent project. OpenVMS is a trademark of VMS Software, Inc.</p>
+</footer>
+
+</body>
+</html>
