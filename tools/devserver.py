@@ -80,9 +80,20 @@ class Handler(http.server.BaseHTTPRequestHandler):
         if rel == "__shot.js":
             # Dev-only: press a button by its label once the view is drawn, so a
             # headless screenshot can show a dialog (&click=Modify on the login URL).
-            js = (b"const want = new URLSearchParams(location.search).get('click');"
-                  b"setTimeout(() => { for (const b of document.querySelectorAll('button'))"
-                  b" if (b.textContent.trim() === want) { b.click(); break; } }, 700);")
+            # click=A+B presses A, then B; fill=text puts text in the first text box
+            # of the open dialog before B is pressed.
+            js = (b"const q = new URLSearchParams(location.search);"
+                  b"const steps = (q.get('click') || '').split(' ').filter(Boolean);"
+                  b"const press = (label) => { for (const b of document.querySelectorAll('button'))"
+                  b" if (b.textContent.trim().toLowerCase() === label.toLowerCase()) { b.click(); return; } };"
+                  b"steps.forEach((s, i) => setTimeout(() => {"
+                  b" if (i > 0 && q.get('fill')) { const t = document.querySelector('dialog input:not([type])');"
+                  b"  if (t) { t.value = q.get('fill'); t.dispatchEvent(new Event('input')); } }"
+                  b" press(s.replace(/_/g, ' ')); }, 600 + i * 500));"
+                  b"window.addEventListener('error', (e) => document.title = 'ERR ' + e.message);"
+                  b"window.addEventListener('unhandledrejection', (e) => { const p = document.createElement('pre');"
+                  b" p.textContent = 'UNHANDLED ' + (e.reason && e.reason.stack || e.reason); p.style.cssText='position:fixed;top:0;left:0;z-index:99;background:#fff;color:red';"
+                  b" document.body.append(p); });")
             self.send_response(200)
             self.send_header("Content-Type", "text/javascript")
             self.send_header("Content-Length", str(len(js)))
@@ -92,7 +103,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
         if rel == "__hold":
             # Screenshot mode: an image the page waits for, so headless
             # "firefox --screenshot" (which fires at load) sees the rendered view.
-            time.sleep(1.5)
+            time.sleep(2.5)
             self.send_response(204)
             self.end_headers()
             return
@@ -144,9 +155,11 @@ class Handler(http.server.BaseHTTPRequestHandler):
         for value in cookies:
             self.send_header("Set-Cookie", value)
         click = q.get("click", "")
-        if not all(c.isalnum() or c == "+" for c in click):
-            click = ""
-        self.send_header("Location", (PREFIX or "") + "/?shot=1" + ("&click=" + click if click else "") + "#/" + to)
+        fill = q.get("fill", "")
+        if not all(c.isalnum() or c in "+_" for c in click + fill):
+            click = fill = ""
+        extra = ("&click=" + click if click else "") + ("&fill=" + fill if fill else "")
+        self.send_header("Location", (PREFIX or "") + "/?shot=1" + extra + "#/" + to)
         self.end_headers()
 
     def _any(self):

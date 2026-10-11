@@ -46,7 +46,7 @@ rule core-no-io "I/O in src/core" \
 
 # No real node details or credentials in committed files (CLAUDE.md).
 rule no-node-details "real node details" \
-    --exclude-dir=.git --exclude-dir=build --exclude-dir=cache --exclude=nodes.conf \
+    --exclude-dir=.git --exclude-dir=build --exclude-dir=cache --exclude-dir=out --exclude=nodes.conf \
     --exclude=audit_rules.sh '192\.168\.[0-9]+\.[0-9]+|DISK\$SYSDUMP' .
 
 if [ $fail -eq 0 ]; then echo "audit_rules: all rules pass"; fi
