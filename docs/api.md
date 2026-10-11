@@ -98,6 +98,39 @@ and `current_privileges` (what is in effect: defaults plus enabled).
 
 `204`; the session is deleted and the cookie cleared.
 
+## The dashboard: `GET api/v1/system`
+
+The system at a glance, with the figures vms-fastfetch shows, read as you:
+
+```json
+{"node": "X86VMS",
+ "os": {"name": "OpenVMS", "version": "E9.2-4", "arch": "x86_64"},
+ "hardware": {"model": "QEMU Standard PC (Q35 + ICH9, 2009)", "virtual_machine": true},
+ "boot_time": 1791637646,
+ "cpu": {"active": 2, "available": 2, "idle_ticks": 9101752, "sampled_at_ms": 1791708994130,
+         "load": {"current": 1, "computable": 0, "computable_outswapped": 0}},
+ "memory": {"total": 7620722688, "free": 4875476992, "modified": 70426624, "in_use": 2674819072},
+ "paging": {"total": 2447310848, "used": 0},
+ "disks": [{"device": "DKA0:", "label": "X86SYS", "logical_volume": "DISK$X86SYS",
+            "filesystem": "ODS-5", "total": 23040000000, "free": 1237032960, "system_disk": true}],
+ "processes": {"count": 1, "hidden": 41, "interactive": [{"username": "SYSTEM", "sessions": 1}]},
+ "queues": {"count": 4, "batch": 2, "output": 2, "stopped": 0,
+            "jobs": {"executing": 1, "pending": 0, "holding": 0, "timed": 2}},
+ "cluster": {"member": false}}
+```
+
+- Sizes are bytes; `boot_time` is seconds since 1970 (UTC).
+- **CPU usage** is not sampled by the server, which would hold a pool process for the
+  interval. `idle_ticks` counts idle ticks over all CPUs, 100 a second per CPU, and
+  `sampled_at_ms` says when it was read. Between two responses:
+  `busy% = 100 × (1 − Δidle_ticks ÷ (Δseconds × 100 × active))`.
+- **`load`** gives process states now. OpenVMS keeps no load averages.
+- **Processes** are those your persona may see. `hidden` counts the rest: without
+  GROUP or WORLD, OpenVMS shows you only your own.
+- **Background polls:** a request with `X-Steward-Background: 1` is served normally but
+  does not count as activity for the idle timeout. The dashboard's refreshes send it,
+  so a dashboard left open still signs out when idle.
+
 ## Endpoints (Phase 2): users and rights identifiers, read-only
 
 Every call runs as you, so OpenVMS decides what you may read (D10, docs/PHASE2.md):

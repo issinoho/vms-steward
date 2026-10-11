@@ -49,3 +49,16 @@ Read from `SYS$LIBRARY:SYS$STARLET_C.TLB`, not guessed:
 - AUTHORIZE's DISMAIL is `UAI$M_NOMAIL`, and DISNEWMAIL is `UAI$M_DISMAIL`.
 - DISWELCOME is `UAI$M_DISWELCOM`.
 - Bit 20 is `UAI$M_DEFCLSVAL`.
+
+## No `struct timeval` under /STANDARD=C99 (2026-10-11)
+
+`gettimeofday` with `struct timeval` failed to compile (`%CC-E-INCOMPNOLINK`) in VSI C
+with `/STANDARD=C99`. The VMS platform takes milliseconds from `$GETTIM` instead
+(local time, less the current UTC offset), and the stub uses `time()`.
+
+## `$GETSYI` and `$GETRMI` items want 8-byte buffers here (2026-10-11)
+
+With 4-byte buffers, `RMI$_FRLIST`, `RMI$_MODLIST` and the page-file items came back
+as 0 on the x86 node. With 8, as vms-fastfetch gives every item, they match
+`SHOW MEMORY`. The exceptions are `RMI$_CUR`, `COM` and `COMO`, which need exactly 4
+(fastfetch D15).

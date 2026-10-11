@@ -62,7 +62,7 @@
   function tabs() {
     var buttons = document.querySelectorAll('.tabs button');
     var img = document.getElementById('shot-img'), cap = document.getElementById('shot-cap');
-    var sizes = { users: [1280, 820], user: [1280, 1340], modify: [1280, 1000], account: [1280, 720],
+    var sizes = { dashboard: [1280, 920], users: [1280, 820], user: [1280, 1340], modify: [1280, 1000], account: [1280, 720],
                   ident: [1280, 760], signin: [1280, 760] };
     Array.prototype.forEach.call(buttons, function (b) {
       b.addEventListener('click', function () {

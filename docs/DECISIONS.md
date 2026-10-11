@@ -236,3 +236,27 @@ Alternatives:
   internet.
 - Change passwords only when signed in: an expired password could then never be
   changed through Steward, which is the dead end Phase 1 left.
+
+## D12. The dashboard: fastfetch's figures, read as you, refreshed without keeping sessions alive
+
+**Status:** taken 2026-10-11, at the user's request ("a dashboard landing page ...
+the information which we gathered from vms-fastfetch").
+
+- **The data:** the same system services and findings as vms-fastfetch. These are
+  `$GETSYI`; `$GETRMI` for memory lists, CPU idle ticks and process states;
+  `$DEVICE_SCAN` with `$GETDVI`; a wildcard `$GETJPI`; and a wildcard `$GETQUI`. They
+  are reimplemented in `st_plat_vms.c`, keeping fastfetch's lessons: buffer sizes,
+  the `$GETQUI` status, and the disks to skip. Not included: the PCSI product count
+  (fastfetch spawns `PRODUCT SHOW PRODUCT`, too heavy for a pool process) and the
+  CPU model name (it needs a clang-compiled CPUID helper; fastfetch D11).
+- **Read as you** (D2, D10). Nothing needs privilege, but the process scan shows only
+  what your persona may see, and the rest is counted as hidden and said so.
+- **CPU usage** is computed in the browser from two readings of the idle counter, so
+  no request holds a pool process for a sampling interval.
+- **Refreshing:** every 10 s, and not while the tab is hidden. Polls are marked
+  `X-Steward-Background: 1` and do not refresh the session's idle clock; otherwise
+  a dashboard left open would never sign out.
+
+Alternatives: sampling CPU in the request (holds one of the pool's two processes for
+the interval, per viewer); counting polls as activity (defeats the idle timeout); a
+server-side cache shared by viewers (shows one persona's view to another, against D2).

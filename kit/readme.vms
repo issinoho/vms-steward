@@ -1,8 +1,9 @@
 Steward @VERSION@ for OpenVMS (vms-steward, @ARCH@) - EARLY TEST RELEASE
 =========================================================================
 
-Steward manages OpenVMS from a web browser. This first test release covers users
-and rights identifiers, roughly what AUTHORIZE does:
+Steward manages OpenVMS from a web browser. It opens on a dashboard of the
+system (OS and hardware, uptime, CPU, memory, paging, disks, processes, queues,
+cluster), and covers users and rights identifiers, roughly what AUTHORIZE does:
 
   - sign in with your OpenVMS username and password (SYS$ACM: expiry, DISUSER,
     login hours and break-in evasion all apply); an expired password can be

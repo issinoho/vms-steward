@@ -30,6 +30,7 @@ void svc_ident_create(struct st_ctx *c);
 void svc_ident_modify(struct st_ctx *c);
 void svc_ident_delete(struct st_ctx *c);
 
+void svc_system(struct st_ctx *c);
 void svc_idents_list(struct st_ctx *c);
 void svc_ident_get(struct st_ctx *c);
 void svc_ident_holders(struct st_ctx *c);

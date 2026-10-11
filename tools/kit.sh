@@ -39,4 +39,5 @@ grep -E 'checks' "$top/out/kit-build-$node.log" || true
 kit=$(sed -n 's/^MAKE_KIT: kit .*\]\([^;]*\);.*/\1/p' "$top/out/kit-$node.log" | head -1)
 [ -n "$kit" ] || { echo "kit: no kit produced (see out/kit-$node.log)" >&2; exit 1; }
 "$top/tools/vms.sh" "$node" get "KIT_$ARCH/$kit" "$top/out/kits/$kit"
-(cd "$top/out/kits" && sha256sum ./*.PCSI | sed 's| \./| |' > SHA256SUMS && cat SHA256SUMS)
+# SHA256SUMS for this kit alone: out/kits/ also keeps earlier ones.
+(cd "$top/out/kits" && sha256sum "$kit" > SHA256SUMS && cat SHA256SUMS)

@@ -8,6 +8,7 @@ import { h, mount, toast } from './dom.js';
 import { vmsMessage, problemText, vmsDate } from './fmt.js';
 import { usersView, userView, identifiersView, identifierView } from './rights.js';
 import { changeOwnPassword } from './edit.js';
+import { dashboardView, stopDashboard } from './dashboard.js';
 
 const app = document.getElementById('app');
 let me = null;           // whoami, while signed in
@@ -15,6 +16,7 @@ let idleTimer = null;
 
 // Areas of the system, in the order they will arrive (docs/PLAN.md).
 const AREAS = [
+  { hash: '#/dashboard', label: 'Dashboard', ready: true },
   { hash: '#/account', label: 'My account', ready: true },
   { hash: '#/users', label: 'Users', ready: true },
   { hash: '#/identifiers', label: 'Rights identifiers', ready: true },
@@ -98,7 +100,7 @@ function signInView(note) {
 // ---------------------------------------------------------------- shell
 
 function shell(content) {
-  const current = '#/' + ((location.hash || '#/account').slice(2).split('/')[0]);
+  const current = '#/' + ((location.hash || '#/dashboard').slice(2).split('/')[0]);
   const nav = h('nav', { class: 'sidebar', 'aria-label': 'Areas' },
     wordmark(),
     h('ul', {}, AREAS.map((a) => h('li', {},
@@ -188,6 +190,7 @@ function accountView() {
 // #/area or #/area/NAME. Each view fetches what it shows, which also keeps the
 // server's idle clock and ours in step: only API calls count as activity there.
 const VIEWS = {
+  dashboard: (ctx) => dashboardView(ctx),
   account: async () => {
     me = await api.whoami();
     return accountView();
@@ -200,11 +203,12 @@ let routeSeq = 0;
 
 async function route() {
   if (!me) return;
-  const [area, ...rest] = (location.hash || '#/account').slice(2).split('/');
+  const [area, ...rest] = (location.hash || '#/dashboard').slice(2).split('/');
   let name = null;
   try { name = rest.length ? decodeURIComponent(rest.join('/')) : null; } catch { name = null; }
   const view = VIEWS[area];
-  if (!view || !AREAS.find((a) => a.hash === `#/${area}` && a.ready)) { location.hash = '#/account'; return; }
+  if (!view || !AREAS.find((a) => a.hash === `#/${area}` && a.ready)) { location.hash = '#/dashboard'; return; }
+  stopDashboard();   // its refresh belongs to its page
   const seq = ++routeSeq;
   const ctx = { me, touched: armIdle, refresh: () => route(), authLost: () => expired('Your session has ended. Sign in again.') };
   let content;
@@ -232,12 +236,14 @@ function armIdle() {
 }
 
 function expired(note) {
+  stopDashboard();
   me = null;
   clearTimeout(idleTimer);
   signInView(note);
 }
 
 async function signOut() {
+  stopDashboard();
   const me0 = me?.username || '';
   try { await api.signOut(); } catch { /* ending anyway */ }
   me = null;

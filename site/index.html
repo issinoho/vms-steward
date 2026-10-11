@@ -9,7 +9,7 @@
 <meta property="og:description" content="Every request runs as you. OpenVMS decides.">
 <meta property="og:url" content="https://steward.issinoho.com/">
 <meta property="og:type" content="website">
-<meta property="og:image" content="https://steward.issinoho.com/img/users.png">
+<meta property="og:image" content="https://steward.issinoho.com/img/dashboard.png">
 <meta name="theme-color" content="#0c0b09">
 <link rel="icon" href="img/favicon.svg" type="image/svg+xml">
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -139,7 +139,8 @@
     and LK201 keycaps for privileges and identifiers.</p>
 
   <div class="tabs" role="tablist" aria-label="Screens">
-    <button role="tab" aria-selected="true" aria-controls="shot" data-shot="users" data-cap="Users: every account in SYSUAF, filtered with DCL wildcards, flags at a glance.">Users</button>
+    <button role="tab" aria-selected="true" aria-controls="shot" data-shot="dashboard" data-cap="The dashboard: the system at a glance, read as you and refreshed in the background.">Dashboard</button>
+    <button role="tab" aria-selected="false" aria-controls="shot" data-shot="users" data-cap="Users: every account in SYSUAF, filtered with DCL wildcards, flags at a glance.">Users</button>
     <button role="tab" aria-selected="false" aria-controls="shot" data-shot="user" data-cap="One account, as AUTHORIZE SHOW lays it out: days, the access-hour grid, privileges, quotas, identifiers held.">Account detail</button>
     <button role="tab" aria-selected="false" aria-controls="shot" data-shot="modify" data-cap="Modify, as AUTHORIZE MODIFY does. Only what you change is sent, and a change made meanwhile by someone else is never overwritten.">Modify</button>
     <button role="tab" aria-selected="false" aria-controls="shot" data-shot="account" data-cap="Your session: switch authorized privileges on for this session, like SET PROCESS/PRIVILEGE. Each switch is audited.">Privileges</button>
@@ -149,9 +150,9 @@
   <figure class="shot" id="shot" role="tabpanel">
     <div class="window">
       <div class="window-bar" aria-hidden="true"><i></i><i></i><i></i><span>steward.example.com</span></div>
-      <img id="shot-img" src="img/users.png" width="1280" height="820" alt="The Steward users list in the amber terminal theme" loading="lazy">
+      <img id="shot-img" src="img/dashboard.png" width="1280" height="920" alt="The Steward dashboard in the amber terminal theme" loading="lazy">
     </div>
-    <figcaption id="shot-cap">Users: every account in SYSUAF, filtered with DCL wildcards, flags at a glance.</figcaption>
+    <figcaption id="shot-cap">The dashboard: the system at a glance, read as you and refreshed in the background.</figcaption>
   </figure>
 </section>
 
@@ -202,6 +203,7 @@
     <div class="col now">
       <h3><span class="pill on">In the release</span></h3>
       <ul class="ticks">
+        <li>A dashboard: OS, hardware, uptime, CPU, memory, disks, processes, queues and cluster at a glance</li>
         <li>List, filter and read users: everything AUTHORIZE SHOW shows</li>
         <li>Modify users: owner, flags, days and hours, privileges, quotas</li>
         <li>Set passwords, pre-expired if you like; change your own, even when it has expired</li>
@@ -214,7 +216,6 @@
     <div class="col next">
       <h3><span class="pill">Coming</span></h3>
       <ul class="arrows">
-        <li><b>A system dashboard:</b> the machine at a glance, from the system itself</li>
         <li><b>Create, copy and delete users</b></li>
         <li><b>Access history:</b> who connected, when, and how, across SSH, TELNET, FTP,
           DECnet, batch and Steward, gathered into one view instead of three log files</li>

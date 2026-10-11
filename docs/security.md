@@ -117,6 +117,17 @@ browser ─(1)─ nginx proxy manager ─(2)─ lighttpd ─(3)─ STEWARD.EXE �
   scrubbed (`st_zero`), with the JSON document scrubbed when freed. They are never
   audited, logged or echoed.
 
+## Dashboard additions (D12)
+
+- **New endpoint:** `GET api/v1/system`, which needs a session and runs under the
+  persona. It shows system configuration and usage that OpenVMS gives any user
+  (`$GETSYI`, `$GETRMI`, `$GETDVI`, `$GETQUI`). Processes are limited to what the
+  persona may see.
+- **New header:** `X-Steward-Background: 1`. All it changes is that the request does not
+  refresh `last_seen`. A client can only *shorten* its own session with it, never
+  lengthen one, and it has no effect without a valid session and CSRF where needed.
+  Unit "a background poll ... does not count as activity".
+
 ## What runs, and when
 
 **Every push (CI, `.github/workflows/ci.yml`) and `make audit` locally:**

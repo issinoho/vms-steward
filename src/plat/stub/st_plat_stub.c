@@ -578,6 +578,63 @@ int st_plat_holder_remove(unsigned int value, unsigned int uic, st_err *e)
     return 0;
 }
 
+/* ================================================================ the system */
+
+/* A small x86-64 system, as the dashboard would see it. The idle counter runs with
+   the clock at about 12% busy, so two readings give a moving CPU figure. */
+int st_plat_system(st_system *s, st_err *e)
+{
+    long long now = (long long) time(NULL);
+    static const struct { const char *dev, *label, *lv; double gb, freegb; int sys; } disks[] = {
+        { "DKA0:", "X86SYS", "DISK$X86SYS", 31.9, 11.4, 1 },
+        { "DKA100:", "USERS", "DISK$USERS", 63.9, 41.7, 0 },
+        { "DKB0:", "DATA", "DISK$DATA", 15.9, 9.2, 0 },
+    };
+    static const struct { const char *u; unsigned n; } who[] = {
+        { "SYSTEM", 1 }, { "STEWARD_ADM", 2 }, { "WEBMASTER", 1 },
+    };
+    size_t i;
+    (void) e;
+    seed();
+    memset(s, 0, sizeof *s);
+    st_copy(s->node, sizeof s->node, "X86VMS");
+    st_copy(s->version, sizeof s->version, "E9.2-4");
+    st_copy(s->arch, sizeof s->arch, "x86_64");
+    st_copy(s->hardware, sizeof s->hardware, "QEMU Standard PC (Q35 + ICH9, 2009)");
+    s->virtual_machine = 1;
+    s->boot_time = now - (3 * 86400 + 5 * 3600 + 17 * 60);
+    s->cpus_active = s->cpus_available = 4;
+    s->sampled_at_ms = now * 1000;
+    s->cpu_idle_ticks = (unsigned long long) (s->sampled_at_ms / 10 * 4 * 0.88);
+    s->load_current = 1; s->load_computable = 0; s->load_computable_out = 0;
+    s->mem_total = 8ull << 30;
+    s->mem_free = 5368709120ull;
+    s->mem_modified = 268435456ull;
+    s->page_total = 2ull << 30;
+    s->page_used = 113246208ull;
+    for (i = 0; i < sizeof disks / sizeof disks[0]; i++) {
+        st_disk *d = &s->disks[s->ndisks++];
+        st_copy(d->device, sizeof d->device, disks[i].dev);
+        st_copy(d->label, sizeof d->label, disks[i].label);
+        st_copy(d->logical_volume, sizeof d->logical_volume, disks[i].lv);
+        st_copy(d->filesystem, sizeof d->filesystem, "ODS-5");
+        d->total = (unsigned long long) (disks[i].gb * 1073741824.0);
+        d->free = (unsigned long long) (disks[i].freegb * 1073741824.0);
+        d->system_disk = disks[i].sys;
+    }
+    /* As $GETJPI under a persona: without WORLD, other groups' processes are hidden. */
+    if (cur_has(16)) { s->processes = 58; s->processes_hidden = 0; }   /* WORLD */
+    else { s->processes = 41; s->processes_hidden = 17; }
+    for (i = 0; i < sizeof who / sizeof who[0]; i++) {
+        st_copy(s->sessions[s->nsessions].username, sizeof s->sessions[0].username, who[i].u);
+        s->sessions[s->nsessions++].sessions = who[i].n;
+    }
+    s->queues = 4; s->queues_batch = 2; s->queues_output = 2; s->queues_stopped = 1;
+    s->jobs_executing = 1; s->jobs_pending = 0; s->jobs_holding = 2; s->jobs_timed = 1;
+    s->cluster_member = 0;
+    return 0;
+}
+
 /* ================================================================ misc */
 
 long long st_plat_time(void) { return (long long) time(NULL); }

@@ -29,6 +29,7 @@ static const route routes[] = {
     { "GET",    "/api/v1/session", svc_session_get,    0 },
     { "DELETE", "/api/v1/session", svc_session_logout, R_NOPERSONA },
     { "PUT",    "/api/v1/session/privileges", svc_session_privileges, 0 },
+    { "GET",    "/api/v1/system",                      svc_system,           0 },
     { "GET",    "/api/v1/users",                       svc_users_list,       0 },
     { "GET",    "/api/v1/users/{u}",                   svc_user_get,         0 },
     { "GET",    "/api/v1/users/{u}/identifiers",       svc_user_identifiers, 0 },
@@ -356,6 +357,13 @@ static int load_session(st_ctx *c)
         st_app_audit(c, c->session.username, "session-expired", "-", "ok", NULL);
         problem(c, 401, "session-expired", "Session expired", NULL);
         return 0;
+    }
+    /* A background poll (the dashboard's refresh) is not activity: with it counted, a
+       page left open would keep its session alive for ever and the idle timeout would
+       never fire. The browser marks such requests; marking one changes nothing else. */
+    {
+        const char *bg = st_req_header(c->req, "HTTP_X_STEWARD_BACKGROUND");
+        if (bg && !strcmp(bg, "1")) { c->has_session = 1; return 1; }
     }
     if (now - c->session.last_seen >= 60) {   /* at most one store write a minute */
         c->session.last_seen = now;

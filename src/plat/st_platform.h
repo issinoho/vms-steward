@@ -221,6 +221,58 @@ int st_plat_holder_modify(unsigned int value, unsigned int uic, unsigned int set
                           unsigned int clear, st_err *e);
 int st_plat_holder_remove(unsigned int value, unsigned int uic, st_err *e);
 
+/* ---- the system at a glance (the dashboard), read as the current persona ----
+
+   What vms-fastfetch shows, from the same system services: $GETSYI, $GETRMI,
+   $DEVICE_SCAN with $GETDVI, a wildcard $GETJPI and a wildcard $GETQUI. Nothing here
+   needs privilege, but a process scan sees only what the persona may see; the rest
+   is counted as hidden. */
+#define ST_MAX_DISKS 32
+#define ST_MAX_SESSIONS 64
+
+typedef struct {
+    char               device[32];        /* "DKA0:" */
+    char               label[16];         /* volume label */
+    char               logical_volume[32];/* "DISK$X86SYS" */
+    char               filesystem[8];     /* "ODS-5" */
+    unsigned long long total, free;       /* bytes */
+    int                system_disk;
+} st_disk;
+
+typedef struct {
+    char               username[13];
+    unsigned int       sessions;          /* interactive processes with no owner */
+} st_session_count;
+
+typedef struct {
+    char               node[16];          /* SYI$_NODENAME */
+    char               version[16];       /* SYI$_VERSION, "E9.2-4" */
+    char               arch[16];          /* SYI$_ARCH_NAME */
+    char               hardware[64];      /* SYI$_HW_NAME */
+    int                virtual_machine;   /* SYI$_VIRTUAL_MACHINE */
+    long long          boot_time;         /* seconds since 1970 UTC */
+    unsigned int       cpus_active, cpus_available;
+    /* Idle ticks summed over all CPUs, 100 a second per CPU (RMI$_CPUIDLE), and when
+       they were read: two readings give the busy share between them. */
+    unsigned long long cpu_idle_ticks;
+    long long          sampled_at_ms;     /* milliseconds since 1970 UTC */
+    unsigned int       load_current, load_computable, load_computable_out;
+    unsigned long long mem_total, mem_free, mem_modified;     /* bytes */
+    unsigned long long page_total, page_used;                 /* bytes: page + swap files */
+    int                ndisks;
+    st_disk            disks[ST_MAX_DISKS];                   /* system disk first */
+    unsigned int       processes, processes_hidden;
+    int                nsessions;
+    st_session_count   sessions[ST_MAX_SESSIONS];
+    unsigned int       queues, queues_batch, queues_output, queues_stopped;
+    unsigned int       jobs_executing, jobs_pending, jobs_holding, jobs_timed;
+    int                cluster_member;
+    unsigned int       cluster_nodes, cluster_votes, cluster_quorum;
+} st_system;
+
+/* Fills what it can; a part that fails is left zero. -1 only if nothing could be read. */
+int st_plat_system(st_system *s, st_err *e);
+
 /* ---- crypto and time ---- */
 int  st_plat_random(void *p, size_t n);
 void st_plat_sha256(const void *p, size_t n, unsigned char out[32]);

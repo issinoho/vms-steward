@@ -22,6 +22,13 @@
 #include <time.h>
 #include <descrip.h>
 #include <jpidef.h>
+#include <dcdef.h>
+#include <dvidef.h>
+#include <dvsdef.h>
+#include <jbcmsgdef.h>
+#include <quidef.h>
+#include <rmidef.h>
+#include <syidef.h>
 #include <kgbdef.h>
 #include <lnmdef.h>
 #include <prvdef.h>
@@ -1159,6 +1166,273 @@ int st_plat_holder_remove(unsigned int value, unsigned int uic, st_err *e)
     holder[1] = 0;
     st = sys$rem_holder(value, (void *) holder);
     if (!(st & 1)) { set_cond(e, st); return -1; }
+    return 0;
+}
+
+/* ================================================================ the system (dashboard)
+
+   The figures vms-fastfetch shows, from the same services and with its findings
+   (github.com/issinoho/vms-fastfetch, docs/DECISIONS.md and docs/PROBES.md):
+   - memory: SYI$_MEMSIZE pages; the free and modified lists from $GETRMI (D7);
+   - CPU: RMI$_CPUIDLE ticks, 100 a second per CPU; the process-state counts
+     RMI$_CUR/COM/COMO need a 4-byte buffer, 8 gives BADPARAM (D15);
+   - disks: $DEVICE_SCAN for disks, skipping foreign, shadow-set members, served
+     devices and memory-disk boot images (SYS$MD*);
+   - processes: a wildcard $GETJPI, counting NOPRIV/SUSPENDED as hidden;
+   - queues: $GETQUI, whose IOSB starts with a longword condition (JBC$_ codes).
+   All of it under the caller's persona. */
+
+/* One item from $GETSYI ($GETRMI when rmi), into a zeroed 8-byte value. Give an
+   8-byte buffer (size 8), as fastfetch does: with 4, RMI$_FRLIST and the page-file
+   items came back as 0 on the x86 node. RMI$_CUR, COM and COMO are the exceptions:
+   they need exactly 4 (8 gives BADPARAM). */
+static unsigned int item_u64(int rmi, unsigned short code, unsigned short size, unsigned long long *out)
+{
+    unsigned int iosb[2] = { 0, 0 }, st;
+    unsigned char buf[8] = { 0 };
+    unsigned short len = 0;
+    st_ile3 it[2];
+    item(&it[0], code, buf, size, &len);
+    item_end(&it[1]);
+    if (rmi) {
+        st = sys$getrmi(0, 0, 0, it, iosb, 0, 0);
+        if (st & 1) st = sys$synch(0, iosb);
+    } else {
+        st = sys$getsyiw(0, 0, 0, it, iosb, 0, 0);
+    }
+    if (st & 1) st = iosb[0] & 0xFFFF;
+    *out = 0;
+    if (st & 1) memcpy(out, buf, len > 8 ? 8 : len);   /* little-endian on IA64 and x86-64 */
+    return st;
+}
+
+static void syi_str(unsigned short code, char *out, size_t outlen)
+{
+    unsigned int iosb[2] = { 0, 0 }, st;
+    char buf[256] = { 0 };
+    unsigned short len = 0;
+    size_t i, o = 0;
+    st_ile3 it[2];
+    item(&it[0], code, buf, sizeof buf - 1, &len);
+    item_end(&it[1]);
+    st = sys$getsyiw(0, 0, 0, it, iosb, 0, 0);
+    out[0] = '\0';
+    if (!(st & 1) || !(iosb[0] & 1)) return;
+    for (i = 0; i < len && o + 1 < outlen; i++) {   /* runs of blanks collapsed (IA64 pads) */
+        if (buf[i] == ' ' && (o == 0 || out[o - 1] == ' ')) continue;
+        out[o++] = buf[i];
+    }
+    while (o && out[o - 1] == ' ') o--;
+    out[o] = '\0';
+}
+
+static unsigned int dvi_item(const char *dev, unsigned short code, void *buf, unsigned short size,
+                             unsigned short *len)
+{
+    unsigned int iosb[2] = { 0, 0 }, st;
+    struct dsc$descriptor_s d;
+    st_ile3 it[2];
+    desc(&d, dev, (unsigned short) strlen(dev));
+    item(&it[0], code, buf, size, len);
+    item_end(&it[1]);
+    st = sys$getdviw(0, 0, &d, it, iosb, 0, 0, 0);
+    if (st & 1) st = iosb[0] & 0xFFFF;
+    return st;
+}
+
+static unsigned int dvi_u32(const char *dev, unsigned short code)
+{
+    unsigned int v = 0;
+    unsigned short len = 0;
+    return (dvi_item(dev, code, &v, 4, &len) & 1) ? v : 0;
+}
+
+static void dvi_str(const char *dev, unsigned short code, char *out, size_t outlen)
+{
+    char buf[65] = { 0 };
+    unsigned short len = 0;
+    out[0] = '\0';
+    if (dvi_item(dev, code, buf, sizeof buf - 1, &len) & 1) blank_trim(buf, len, out, outlen);
+}
+
+static const char *acp_name(unsigned int acp)
+{
+    switch (acp) {
+    case 1: return "ODS-1";
+    case 2: return "ODS-2";
+    case 7: return "ODS-3";
+    case 8: return "ODS-4";
+    case 11: return "ODS-5";
+    case 12: return "ODS-6";
+    default: return "";
+    }
+}
+
+static void system_disks(st_system *s)
+{
+    char name[65], sysdev[65], full[65];
+    unsigned short len;
+    unsigned int devclass = DC$_DISK, ctx[2] = { 0, 0 }, st;
+    struct dsc$descriptor_s nd;
+    st_ile3 sel[2];
+    int i;
+
+    dvi_str("SYS$SYSDEVICE", DVI$_FULLDEVNAM, sysdev, sizeof sysdev);
+    item(&sel[0], DVS$_DEVCLASS, &devclass, sizeof devclass, 0);
+    item_end(&sel[1]);
+    for (;;) {
+        st_disk *d;
+        const char *p;
+        unsigned long long maxblock, freeblocks;
+        len = 0;
+        desc(&nd, name, sizeof name - 1);
+        st = sys$device_scan(&nd, &len, 0, sel, (void *) ctx);
+        if (!(st & 1)) break;
+        name[len] = '\0';
+        if (!dvi_u32(name, DVI$_MNT) || dvi_u32(name, DVI$_FOR) || dvi_u32(name, DVI$_SHDW_MEMBER) ||
+            dvi_u32(name, DVI$_REMOTE_DEVICE))
+            continue;
+        if (s->ndisks == ST_MAX_DISKS) break;
+        d = &s->disks[s->ndisks];
+        memset(d, 0, sizeof *d);
+        dvi_str(name, DVI$_VOLNAM, d->label, sizeof d->label);
+        dvi_str(name, DVI$_LOGVOLNAM, d->logical_volume, sizeof d->logical_volume);
+        if (!strncmp(d->logical_volume, "SYS$MD", 6)) continue;   /* memory-disk boot image */
+        dvi_str(name, DVI$_FULLDEVNAM, full, sizeof full);
+        p = strchr(full, '$');                                    /* "_NODE$DKA0:" -> "DKA0:" */
+        p = p ? p + 1 : (full[0] == '_' ? full + 1 : full);
+        st_copy(d->device, sizeof d->device, p);
+        st_copy(d->filesystem, sizeof d->filesystem, acp_name(dvi_u32(name, DVI$_ACPTYPE)));
+        maxblock = dvi_u32(name, DVI$_MAXBLOCK);
+        freeblocks = dvi_u32(name, DVI$_FREEBLOCKS);
+        d->total = maxblock * 512ull;
+        d->free = freeblocks * 512ull;
+        d->system_disk = !strcmp(full, sysdev);
+        s->ndisks++;
+    }
+    for (i = 1; i < s->ndisks; i++)   /* the system disk first */
+        if (s->disks[i].system_disk) {
+            st_disk t = s->disks[i];
+            memmove(&s->disks[1], &s->disks[0], (size_t) i * sizeof t);
+            s->disks[0] = t;
+            break;
+        }
+}
+
+static void system_processes(st_system *s)
+{
+    unsigned int ctx = 0xFFFFFFFFu, mode, owner, iosb[2], st;
+    char user[13];
+    unsigned short l1, l2, l3;
+    st_ile3 it[4];
+    int i;
+    item(&it[0], JPI$_MODE, &mode, 4, &l1);
+    item(&it[1], JPI$_OWNER, &owner, 4, &l2);
+    item(&it[2], JPI$_USERNAME, user, 12, &l3);
+    item_end(&it[3]);
+    for (;;) {
+        mode = owner = 0;
+        l3 = 0;
+        st = sys$getjpiw(0, &ctx, 0, it, iosb, 0, 0);
+        if (st & 1) st = iosb[0] & 0xFFFF;
+        if (st == SS$_NOMOREPROC) break;
+        if (st == SS$_NOPRIV || st == SS$_SUSPENDED) { s->processes_hidden++; continue; }
+        if (!(st & 1)) break;
+        s->processes++;
+        if (mode == JPI$K_INTERACTIVE && owner == 0) {   /* a session; subprocesses are not */
+            char u[13];
+            blank_trim(user, l3, u, sizeof u);
+            for (i = 0; i < s->nsessions && strcmp(s->sessions[i].username, u); i++) ;
+            if (i < s->nsessions) s->sessions[i].sessions++;
+            else if (s->nsessions < ST_MAX_SESSIONS) {
+                st_copy(s->sessions[s->nsessions].username, sizeof s->sessions[0].username, u);
+                s->sessions[s->nsessions++].sessions = 1;
+            }
+        }
+    }
+}
+
+static void system_queues(st_system *s)
+{
+    static char search[] = "*";
+    unsigned int ctx = 0xFFFFFFFFu, flags, status, executing, pending, holding, timed;
+    unsigned int iosb[2], st;   /* a longword condition first: JBC$_ codes (fastfetch) */
+    unsigned short l[6];
+    st_ile3 it[8];
+    item(&it[0], QUI$_SEARCH_NAME, search, 1, 0);
+    item(&it[1], QUI$_QUEUE_FLAGS, &flags, 4, &l[0]);
+    item(&it[2], QUI$_QUEUE_STATUS, &status, 4, &l[1]);
+    item(&it[3], QUI$_EXECUTING_JOB_COUNT, &executing, 4, &l[2]);
+    item(&it[4], QUI$_PENDING_JOB_COUNT, &pending, 4, &l[3]);
+    item(&it[5], QUI$_HOLDING_JOB_COUNT, &holding, 4, &l[4]);
+    item(&it[6], QUI$_TIMED_RELEASE_JOB_COUNT, &timed, 4, &l[5]);
+    item_end(&it[7]);
+    for (;;) {
+        flags = status = executing = pending = holding = timed = 0;
+        st = sys$getquiw(0, QUI$_DISPLAY_QUEUE, &ctx, it, iosb, 0, 0);
+        if (st & 1) st = iosb[0];
+        if (!(st & 1)) break;   /* JBC$_NOMOREQUE, or a refusal */
+        s->queues++;
+        if (flags & QUI$M_QUEUE_BATCH) s->queues_batch++; else s->queues_output++;
+        if (status & QUI$M_QUEUE_STOPPED) s->queues_stopped++;
+        s->jobs_executing += executing;
+        s->jobs_pending += pending;
+        s->jobs_holding += holding;
+        s->jobs_timed += timed;
+    }
+    sys$getquiw(0, QUI$_CANCEL_OPERATION, &ctx, 0, iosb, 0, 0);
+}
+
+int st_plat_system(st_system *s, st_err *e)
+{
+    unsigned long long v, pages = 0, pagesize = 0, fr = 0, mod = 0, pf = 0, pff = 0, sf = 0, sff = 0;
+    unsigned int boot[2], nowq[2] = { 0, 0 };
+
+    memset(s, 0, sizeof *s);
+    syi_str(SYI$_NODENAME, s->node, sizeof s->node);
+    syi_str(SYI$_VERSION, s->version, sizeof s->version);
+    syi_str(SYI$_ARCH_NAME, s->arch, sizeof s->arch);
+    syi_str(SYI$_HW_NAME, s->hardware, sizeof s->hardware);
+    if (!*s->node) { set_text(e, ST_E_INTERNAL, "$GETSYI failed"); return -1; }
+    if (item_u64(0, SYI$_VIRTUAL_MACHINE, 8, &v) & 1) s->virtual_machine = v != 0;
+    if (item_u64(0, SYI$_BOOTTIME, 8, &v) & 1) {
+        boot[0] = (unsigned int) v;
+        boot[1] = (unsigned int) (v >> 32);
+        s->boot_time = unix_time(boot);
+    }
+    if (item_u64(0, SYI$_ACTIVECPU_CNT, 8, &v) & 1) s->cpus_active = (unsigned int) v;
+    if (item_u64(0, SYI$_AVAILCPU_CNT, 8, &v) & 1) s->cpus_available = (unsigned int) v;
+    item_u64(1, RMI$_CPUIDLE, 8, &s->cpu_idle_ticks);
+    /* When the idle ticks were read, in UTC milliseconds ($GETTIM is local time; no
+       struct timeval under /STANDARD=C99). */
+    sys$gettim((void *) nowq);
+    s->sampled_at_ms = (long long) ((((unsigned long long) nowq[1] << 32 | nowq[0]) - VMS_EPOCH_OFFSET) / 10000ull)
+                       - local_offset() * 1000;
+    if (item_u64(1, RMI$_CUR, 4, &v) & 1) s->load_current = (unsigned int) v;
+    if (item_u64(1, RMI$_COM, 4, &v) & 1) s->load_computable = (unsigned int) v;
+    if (item_u64(1, RMI$_COMO, 4, &v) & 1) s->load_computable_out = (unsigned int) v;
+    item_u64(0, SYI$_MEMSIZE, 8, &pages);
+    item_u64(0, SYI$_PAGE_SIZE, 8, &pagesize);
+    item_u64(1, RMI$_FRLIST, 8, &fr);
+    item_u64(1, RMI$_MODLIST, 8, &mod);
+    s->mem_total = pages * pagesize;
+    s->mem_free = fr * pagesize;
+    s->mem_modified = mod * pagesize;
+    item_u64(0, SYI$_PAGEFILE_PAGE, 8, &pf);
+    item_u64(0, SYI$_PAGEFILE_FREE, 8, &pff);
+    item_u64(0, SYI$_SWAPFILE_PAGE, 8, &sf);
+    item_u64(0, SYI$_SWAPFILE_FREE, 8, &sff);
+    s->page_total = (pf + sf) * pagesize;
+    s->page_used = (pf + sf > pff + sff ? pf + sf - pff - sff : 0) * pagesize;
+    system_disks(s);
+    system_processes(s);
+    system_queues(s);
+    if ((item_u64(0, SYI$_CLUSTER_MEMBER, 8, &v) & 1) && (v & 1)) {
+        s->cluster_member = 1;
+        if (item_u64(0, SYI$_CLUSTER_NODES, 8, &v) & 1) s->cluster_nodes = (unsigned int) v;
+        if (item_u64(0, SYI$_CLUSTER_VOTES, 8, &v) & 1) s->cluster_votes = (unsigned int) v;
+        if (item_u64(0, SYI$_CLUSTER_QUORUM, 8, &v) & 1) s->cluster_quorum = (unsigned int) v;
+    }
     return 0;
 }
 

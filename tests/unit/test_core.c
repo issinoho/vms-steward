@@ -816,6 +816,56 @@ static void test_edit(void)
     CHECK(!st_plat_persona_active(), "no persona left active");
 }
 
+/* ------------------------------------------------- the dashboard */
+
+static void test_system(void)
+{
+    result b;
+    char tc[140], tcsrf[65], hexkey[65];
+    unsigned char token[32], key[32];
+    st_session sess;
+    st_err e;
+    hdr t[3];
+
+    call("GET", "/api/v1/system", NULL, NULL, &b);
+    CHECK(b.resp.status == 401, "the system overview needs a session");
+    st_resp_free(&b.resp);
+
+    sign_in("{\"username\":\"steward_test\",\"password\":\"test-pass\"}", tc, sizeof tc, tcsrf);
+    t[0].n = "HTTP_COOKIE"; t[0].v = tc; t[1].n = NULL; t[2].n = NULL;
+    call("GET", "/api/v1/system", t, NULL, &b);
+    CHECK(b.resp.status == 200 && strstr(b.resp.body.data, "\"node\":\"X86VMS\"") &&
+          strstr(b.resp.body.data, "\"os\":{\"name\":\"OpenVMS\",\"version\":\"E9.2-4\"") &&
+          strstr(b.resp.body.data, "\"disks\":[{\"device\":\"DKA0:\"") &&
+          strstr(b.resp.body.data, "\"system_disk\":true"),
+          "the system overview: node, version, disks with the system disk first");
+    CHECK(strstr(b.resp.body.data, "\"hidden\":17") != NULL,
+          "processes the persona cannot see (no WORLD) are counted as hidden, not shown");
+    CHECK(strstr(b.resp.body.data, "\"idle_ticks\":") && strstr(b.resp.body.data, "\"sampled_at_ms\":"),
+          "CPU usage is left to the browser: idle ticks and when they were read");
+    st_resp_free(&b.resp);
+
+    /* A background poll is not activity (the idle timeout must still fire). */
+    st_unhex(tc + strlen("steward_session="), token, 32);
+    st_plat_sha256(token, 32, key);
+    st_plat_session_get(key, &sess, &e);
+    sess.last_seen = st_plat_time() - 850;
+    st_plat_session_put(&sess, &e);
+    t[1].n = "HTTP_X_STEWARD_BACKGROUND"; t[1].v = "1";
+    call("GET", "/api/v1/system", t, NULL, &b);
+    CHECK(b.resp.status == 200, "a background poll is served");
+    st_resp_free(&b.resp);
+    st_plat_session_get(key, &sess, &e);
+    CHECK(st_plat_time() - sess.last_seen >= 850, "and does not count as activity: the idle clock is unchanged");
+    t[1].n = NULL;
+    call("GET", "/api/v1/system", t, NULL, &b);
+    st_resp_free(&b.resp);
+    st_plat_session_get(key, &sess, &e);
+    CHECK(st_plat_time() - sess.last_seen < 5, "an ordinary request does count");
+    (void) hexkey;
+    CHECK(!st_plat_persona_active(), "no persona left active");
+}
+
 static void test_gateway(void)
 {
     st_app_config cfg;
@@ -864,6 +914,7 @@ int main(void)
     test_filters();
     test_users();
     test_edit();
+    test_system();
     test_gateway();
     printf("%d checks, %d failed\n", checks, failures);
     return failures ? 1 : 0;

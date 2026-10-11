@@ -145,6 +145,9 @@ concurrency (an ETag from the record). Exit: each operation is verified against 
 output, a NOPRIV persona is refused by the OS rather than by our code, and the audit log
 is complete.
 
+**Dashboard (2026-10-11, D12).** The landing page after sign-in: the system at a glance,
+with the figures vms-fastfetch shows, read as the user, refreshed in the background.
+
 **Phase 4: create, copy and delete users.** No system service creates UAF records, so D6
 chooses between an RMS `$PUT` to SYSUAF (what AUTHORIZE does) and driving AUTHORIZE in a
 subprocess, based on the Phase 0 probe. Deleting a user also covers the identifier.

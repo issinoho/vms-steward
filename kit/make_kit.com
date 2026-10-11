@@ -62,7 +62,7 @@ $ copy/nolog []LICENSE. 'mat'LICENSE.
 $ copy/nolog [.WWW]INDEX.HTML 'mat'
 $ copy/nolog [.WWW.CSS]APP.CSS 'mat'
 $ copy/nolog [.WWW.IMG]STEWARD.SVG 'mat'
-$ copy/nolog [.WWW.JS]API.JS,APP.JS,DOM.JS,EDIT.JS,FMT.JS,RIGHTS.JS,THEME.JS 'mat'
+$ copy/nolog [.WWW.JS]API.JS,APP.JS,DASHBOARD.JS,DOM.JS,EDIT.JS,FMT.JS,RIGHTS.JS,THEME.JS 'mat'
 $ matspec = f$parse(mat,,,"DEVICE","NO_CONCEAL") + f$parse(mat,,,"DIRECTORY","NO_CONCEAL")
 $!
 $ write sys$output "MAKE_KIT: ''KIT_PRODUCER' ''base' ''KIT_PRODUCT' ''PCSI_VERSION' (Steward ''KIT_VERSION')"

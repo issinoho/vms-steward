@@ -53,6 +53,9 @@ export const api = {
   // The authorized privileges to switch on for this session, on top of the defaults
   // (D9). Returns the updated whoami.
   setPrivileges: (enabled) => call('PUT', 'session/privileges', { enabled }),
+  // The system at a glance. background: a refresh, which the server does not count
+  // as activity (so the idle timeout still applies to a dashboard left open).
+  system: (background) => call('GET', 'system', undefined, background ? { 'X-Steward-Background': '1' } : undefined),
   // Phase 2: users and rights identifiers, read-only. Lists take
   // { filter, after, limit } (and type for identifiers) and return { ..., next }.
   users: (q) => call('GET', `users${query(q)}`),
