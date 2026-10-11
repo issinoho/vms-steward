@@ -146,6 +146,32 @@ browser ─(1)─ nginx proxy manager ─(2)─ lighttpd ─(3)─ STEWARD.EXE �
   service's; no UIC already in the rights database; a delete must carry the ETag of
   the record shown; no directory without a device (see the audit record).
 
+## Phase 6 additions (access history; D13)
+
+- **New endpoint:** `GET api/v1/access`, which needs a session and runs under the
+  persona. It only reads.
+- **New data shown:** who signed in, from which address and how, and failed sign-ins
+  with the username tried. This is sensitive: a failed sign-in's username is sometimes
+  a password typed into the wrong box. It comes only from files OpenVMS protects
+  (accounting, the security audit journal, OpenSSH's logs, Steward's own log), all
+  opened **as the viewer**, so only someone OpenVMS already lets read those files
+  (SYSPRV or READALL, switched on) sees it. Unit "without privilege each file source
+  is refused"; live "STEWARD_TEST (no privileges): each file refused by OpenVMS".
+- **No new privilege, no collector:** nothing runs in the background, and the service
+  account gains nothing. The live list is `$GETJPI` as the viewer, limited as at a
+  terminal (WORLD or GROUP to see others).
+- **Files read, never written:** opened shared (`SHRGET|SHRPUT|SHRUPD|UPI`) with
+  no record locks, so the accounting manager, the audit server and sshd keep writing.
+- **Parsing untrusted bytes:** every length and offset in an accounting or journal
+  record is checked against the record before use; strings are copied with a bound
+  and reduced to printable ASCII. A log line is read into a bounded buffer and parsed
+  with bounded copies. Steward's log values are unescaped from its own `kv` format.
+- **Bounds:** at most 6,000 process records, 256 SSH logs and 1,000 failures are held
+  per request (static, not heap), and at most 2,000 events are returned.
+- **Cost:** each request reads the files whole. 24 hours on the x86 node took 0.69s.
+  A very large journal or accounting file makes this slow, as it makes ANALYZE/AUDIT and
+  ACCOUNTING slow; the answer is to rotate them (PHASE6.md).
+
 ## What runs, and when
 
 **Every push (CI, `.github/workflows/ci.yml`) and `make audit` locally:**

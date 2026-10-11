@@ -62,3 +62,40 @@ With 4-byte buffers, `RMI$_FRLIST`, `RMI$_MODLIST` and the page-file items came 
 as 0 on the x86 node. With 8, as vms-fastfetch gives every item, they match
 `SHOW MEMORY`. The exceptions are `RMI$_CUR`, `COM` and `COMO`, which need exactly 4
 (fastfetch D15).
+
+## An SSH connection in accounting, and its log (2026-10-11)
+
+VSI OpenSSH V9.9-2C on the x86 node. Each connection is a NETWORK process under
+SSH$SSH, whose remote full name is the client's *host name* (not its address). A
+command (`ssh host cmd`) runs as a SUBPROCESS under SSH$SSH, with a SUBPROCESS under the
+user (in lower case) beneath that. A shell or SFTP session is a NETWORK process under
+the user, with the client's *address* as remote full name. The per-connection log
+`x86vms_<host>_<pid>.log` is named after the SSH$SSH process's PID, which joins the
+two exactly. Connections follow each other within the second. A session process that
+merely *starts* inside a connection's lifetime may belong to the next one, so the
+match is on the connection that contains it entirely (start and end), as observed with
+consecutive `tools/vms.sh` calls. The logs are purged quickly: about 20 were on disk at
+one point, so older connections keep their user and address (from accounting) but
+lose the sign-in method.
+
+## Accounting writes a pseudo-terminal's unit in binary (2026-10-11)
+
+A failed SSH password gave an ACR$K_LOGFAIL record with terminal `"FTA" 45 02`, which
+is FTA581: (0x0245), and username `<login>` with the name tried as remote ID. The
+audit journal recorded the same attempt as LOGFAIL *LOCAL* with terminal `_FTA581:`
+and the client address as remote node. The OpenSSH log has `Failed password for
+steward_test from <client> port ... ssh2`. Steward shows these three as one failure.
+
+## ACCOUNTNG.DAT and Steward's log cannot be COPYed while in use (2026-10-11)
+
+`COPY` of Steward's audit log failed with `%RMS-E-FLK`: the pool holds it open for
+writing. `CONVERT/SHARE` copies it. Steward itself reads both with SHRPUT|SHRUPD|UPI and
+no record locks.
+
+## Without access, ACCOUNTNG gives FNF, not PRV (2026-10-11)
+
+As STEWARD_TEST (no privileges), opening `ACCOUNTNG` (default `SYS$MANAGER:.DAT`)
+returned `%RMS-E-FNF` where the journal and the SSH logs returned `%RMS-E-PRV`.
+SYS$MANAGER is a search list, which is the likely cause. The same file opened at once
+with SYSPRV on. Access history passes OpenVMS's status through as it is, so the
+accounting source may say "file not found" for a viewer who lacks the privilege.

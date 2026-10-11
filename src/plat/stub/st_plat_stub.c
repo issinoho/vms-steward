@@ -702,6 +702,65 @@ int st_plat_user_delete(const char *username, st_err *e)
     return 0;
 }
 
+/* ---------------------------------------------------------------- access history (D13) */
+
+/* A day on a small system, relative to now: what each source would give. The files
+   behind accounting, the journal, the SSH logs and Steward's log need SYSPRV or
+   READALL, as on the node; the live list is the persona's own process scan. */
+int st_plat_access(long long since, long long until, st_access_cb fn, void *ctx,
+                   unsigned int src_cond[ST_SRC_COUNT], char src_text[ST_SRC_COUNT][96], st_err *e)
+{
+    static const struct {
+        long long ago, dur;      /* seconds before now; duration (0: none, -1: still on) */
+        int kind, src;
+        const char *user, *route, *from, *term, *detail;
+    } ev[] = {
+        { 300, -1, ST_AE_CONNECTED, ST_SRC_LIVE, "SYSTEM", "SSH", "198.51.100.20", "FTA12:", "connected now" },
+        { 900, -1, ST_AE_CONNECTED, ST_SRC_LIVE, "WEBMASTER", "TELNET", "198.51.100.45", "TNA3:", "connected now" },
+        { 1500, 410, ST_AE_SESSION, ST_SRC_ACCOUNTING, "STEWARD_ADM", "SSH", "198.51.100.20", "", "publickey ED25519" },
+        { 2400, 0, ST_AE_FAILURE, ST_SRC_AUDIT, "ROOT", "SSH", "203.0.113.50", "", "%LOGIN-F-NOSUCHUSER, no such user" },
+        { 2410, 0, ST_AE_FAILURE, ST_SRC_AUDIT, "ADMIN", "SSH", "203.0.113.50", "", "%LOGIN-F-NOSUCHUSER, no such user" },
+        { 2420, 0, ST_AE_BREAKIN, ST_SRC_AUDIT, "SYSTEM", "SSH", "203.0.113.50", "", "break-in evasion: 203.0.113.50" },
+        { 3600, 95, ST_AE_SESSION, ST_SRC_STEWARD, "STEWARD_ADM", "Steward", "198.51.100.20", "", "signed in" },
+        { 5400, 0, ST_AE_FAILURE, ST_SRC_STEWARD, "STEWARD_TEST", "Steward", "198.51.100.31", "", "%LOGIN-F-INVPWD, invalid password" },
+        { 7200, 61, ST_AE_SESSION, ST_SRC_ACCOUNTING, "SYSTEM", "batch", "", "", "queue SYS$BATCH, job BACKUP_NIGHTLY" },
+        { 10800, 1834, ST_AE_SESSION, ST_SRC_ACCOUNTING, "WEBMASTER", "SSH", "198.51.100.45", "", "password, SFTP" },
+        { 14400, 5120, ST_AE_SESSION, ST_SRC_ACCOUNTING, "SYSTEM", "local", "", "OPA0:", "console" },
+        { 43200, 900, ST_AE_SESSION, ST_SRC_ACCOUNTING, "STEWARD_TEST", "TELNET", "198.51.100.46", "TNA1:", "" },
+    };
+    long long now = (long long) time(NULL);
+    int allowed = may_read_uaf(), i;
+    (void) e;
+    for (i = 0; i < ST_SRC_COUNT; i++) {
+        src_cond[i] = 0;
+        src_text[i][0] = '\0';
+        if (i != ST_SRC_LIVE && !allowed) {
+            src_cond[i] = C_RMS_PRV;
+            st_copy(src_text[i], 96, "%RMS-E-PRV, insufficient privilege or file protection violation");
+        }
+    }
+    for (i = 0; i < (int) (sizeof ev / sizeof ev[0]); i++) {
+        st_access_event a;
+        if (src_cond[ev[i].src]) continue;
+        /* $GETJPI as the persona: without WORLD, only one's own processes */
+        if (ev[i].src == ST_SRC_LIVE && !cur_has(16) && (!persona || strcmp(persona->u.username, ev[i].user))) continue;
+        memset(&a, 0, sizeof a);
+        a.start = now - ev[i].ago;
+        a.end = ev[i].dur > 0 ? a.start + ev[i].dur : 0;
+        if ((a.end ? a.end : a.start) < since || a.start > until) continue;
+        a.kind = ev[i].kind;
+        a.source = ev[i].src;
+        st_copy(a.user, sizeof a.user, ev[i].user);
+        st_copy(a.route, sizeof a.route, ev[i].route);
+        st_copy(a.from, sizeof a.from, ev[i].from);
+        st_copy(a.terminal, sizeof a.terminal, ev[i].term);
+        st_copy(a.detail, sizeof a.detail, ev[i].detail);
+        a.pid = 0x7000u + (unsigned) i;
+        if (fn(&a, ctx)) break;
+    }
+    return 0;
+}
+
 /* ================================================================ misc */
 
 long long st_plat_time(void) { return (long long) time(NULL); }

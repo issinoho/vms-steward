@@ -38,6 +38,8 @@
 #include <starlet.h>
 #include <uaidef.h>
 #include <uafdef.h>         /* SYS$LIB_C.TLB: the SYSUAF record (D6) */
+#include <acrdef.h>         /* accounting records (Phase 6) */
+#include <nsadef.h>         /* security audit journal records (Phase 6) */
 #include <lib$routines.h>
 #include <utcblkdef.h>   /* acmedef.h uses utcblk without including it (PHASE0) */
 #include <acmedef.h>
@@ -229,6 +231,7 @@ static unsigned int open_sessions(const char *path)
 static unsigned int sysprv[2] = { PRV$M_SYSPRV, 0 };
 
 static char service_account[13];
+static char steward_log[256];      /* Steward's audit log, read back for access history */
 
 const char *st_plat_service_account(void) { return service_account; }
 
@@ -259,6 +262,7 @@ int st_plat_init(const st_plat_config *cfg, st_err *e)
         set_text(e, ST_E_INTERNAL, "STEWARD_SESSION_FILE is not defined");
         return -1;
     }
+    if (cfg->audit_file) st_copy(steward_log, sizeof steward_log, cfg->audit_file);
     st = open_sessions(cfg->session_file);
     if (!(st & 1)) { set_cond(e, st); return -1; }
 
@@ -1676,6 +1680,808 @@ int st_plat_user_delete(const char *username, st_err *e)
     st = sys$delete(&rab);
     sys$close(&fab);
     if (!(st & 1)) { set_cond(e, st); return -1; }
+    return 0;
+}
+
+/* ================================================================ access history (D13)
+
+   Every source is opened on demand as the viewer's persona: what OpenVMS will not let
+   them read is reported for that source, and the others are still shown (PHASE6.md).
+
+   - Accounting gives every finished process. An SSH connection is the server's NETWORK
+     process under SSH$SSH, its remote full name the client's host name; the user's
+     commands are subprocesses beneath it, and a session with a shell or SFTP is a
+     NETWORK process under the user, with the client address as full name.
+   - The live process list gives the same for what is still running.
+   - OpenSSH writes one log per connection, named <node>_<client host>_<pid>.log, the
+     pid being that SSH$SSH process: so the method, the user and the address join the
+     connection exactly. The lines carry no time; the file's dates do.
+   - The audit journal has the failures that never reach accounting ($ACM: SSH
+     passwords and Steward's own sign-in) and the break-ins.
+   - Steward's audit log has its own sign-ins, with the browser's address. */
+
+#define AX_PROCS 6000      /* process records kept from accounting and the live list */
+#define AX_SSH   256       /* SSH connection logs */
+#define AX_FAILS 1000      /* failures held to merge the journal's with the SSH logs' */
+#define AX_NEAR  15        /* seconds: the same event seen by two sources */
+
+typedef struct {
+    long long    start, end;          /* end 0: still running */
+    unsigned int pid, owner, status;
+    unsigned char logfail, sub, live, taken;
+    int          session;             /* an SSH connection's session process: index + 1 */
+    char         user[13], term[16], node[16], rid[33], full[64], queue[32];
+} ax_proc;
+
+typedef struct {
+    long long    start, end;
+    unsigned int pid;
+    int          accepted, joined;
+    char         host[64], user[33], ip[48], method[48];
+} ax_ssh;
+
+typedef struct {
+    long long start;
+    int       source, kind, taken;
+    char      user[33], route[24], from[64], term[24], detail[128];
+} ax_fail;
+
+static ax_proc   ax_p[AX_PROCS];
+static ax_ssh    ax_s[AX_SSH];
+static ax_fail   ax_f[AX_FAILS];
+static int       ax_np, ax_ns, ax_nf;
+static long long ax_off;              /* local_offset(), once per request */
+
+static long long ax_time(unsigned long long v)
+{
+    if (v == 0 || v == ~0ull || v < VMS_EPOCH_OFFSET) return 0;
+    return (long long) ((v - VMS_EPOCH_OFFSET) / 10000000ull) - ax_off;
+}
+
+/* Printable ASCII only, blanks trimmed: these strings come from files. */
+static void ax_text(const unsigned char *p, size_t n, char *out, size_t outlen)
+{
+    size_t i, o = 0;
+    for (i = 0; i < n && o + 1 < outlen; i++) out[o++] = (p[i] >= 32 && p[i] < 127) ? (char) p[i] : '?';
+    while (o && out[o - 1] == ' ') o--;
+    out[o] = '\0';
+}
+
+static void ax_ascic(const unsigned char *pkt, unsigned plen, unsigned off, char *out, size_t outlen)
+{
+    out[0] = '\0';
+    if (!off || off >= plen || off + 1u + pkt[off] > plen) return;
+    ax_text(pkt + off + 1, pkt[off], out, outlen);
+}
+
+/* A terminal name. For a pseudo-terminal, accounting stores the unit number in binary
+   after the device letters: "FTA" 45 02 is FTA581: (seen 2026-10-11, an SSH password
+   failure). */
+static void ax_terminal(const unsigned char *pkt, unsigned plen, unsigned off, char *out, size_t outlen)
+{
+    const unsigned char *t = pkt + off + 1;
+    out[0] = '\0';
+    if (!off || off >= plen || off + 1u + pkt[off] > plen) return;
+    if (pkt[off] == 5 && t[0] >= 'A' && t[0] <= 'Z' && t[1] >= 'A' && t[1] <= 'Z' && t[2] >= 'A' && t[2] <= 'Z'
+        && !(t[3] >= '0' && t[3] <= '9' && t[4] >= '0' && t[4] <= '9'))
+        snprintf(out, outlen, "%.3s%u:", (const char *) t, (unsigned) (t[3] | t[4] << 8));
+    else ax_text(t, pkt[off], out, outlen);
+}
+
+/* The remote full name is word-counted (PHASE6.md: found in a raw dump). */
+static void ax_asciw(const unsigned char *pkt, unsigned plen, unsigned off, char *out, size_t outlen)
+{
+    unsigned n;
+    out[0] = '\0';
+    if (!off || off + 2 > plen) return;
+    n = pkt[off] | pkt[off + 1] << 8;
+    if (off + 2 + n > plen) return;
+    ax_text(pkt + off + 2, n, out, outlen);
+}
+
+static void ax_upper(char *s)
+{
+    for (; *s; s++) if (*s >= 'a' && *s <= 'z') *s = (char) (*s - 32);
+}
+
+static int ax_prefix(const char *s, const char *p) { return !strncmp(s, p, strlen(p)); }
+
+static int ax_ieq(const char *a, const char *b)
+{
+    for (; *a && *b; a++, b++) {
+        char x = *a, y = *b;
+        if (x >= 'a' && x <= 'z') x = (char) (x - 32);
+        if (y >= 'a' && y <= 'z') y = (char) (y - 32);
+        if (x != y) return 0;
+    }
+    return *a == *b;
+}
+
+static long long ax_abs(long long v) { return v < 0 ? -v : v; }
+
+/* Room for one more process record; when full, the oldest gives way. */
+static ax_proc *ax_new_proc(void)
+{
+    ax_proc *p;
+    if (ax_np < AX_PROCS) p = &ax_p[ax_np++];
+    else {
+        int i, old = 0;
+        for (i = 1; i < AX_PROCS; i++) if (ax_p[i].start < ax_p[old].start) old = i;
+        p = &ax_p[old];
+    }
+    memset(p, 0, sizeof *p);
+    return p;
+}
+
+static void ax_cond(unsigned int *cond, char *text, unsigned int st)
+{
+    *cond = st;
+    msgtext(st, text, 96);
+}
+
+/* Open a file to read, shared with whoever is writing it, optionally with its dates. */
+static unsigned int ax_open(struct FAB *fab, struct RAB *rab, struct XABDAT *dat,
+                            const char *name, const char *dflt, unsigned char *buf, unsigned short size)
+{
+    unsigned int st;
+    *fab = cc$rms_fab;
+    *rab = cc$rms_rab;
+    fab->fab$l_fna = (char *) name;
+    fab->fab$b_fns = (unsigned char) strlen(name);
+    if (dflt) { fab->fab$l_dna = (char *) dflt; fab->fab$b_dns = (unsigned char) strlen(dflt); }
+    fab->fab$b_fac = FAB$M_GET;
+    fab->fab$b_shr = FAB$M_SHRGET | FAB$M_SHRPUT | FAB$M_SHRUPD | FAB$M_UPI;
+    if (dat) { *dat = cc$rms_xabdat; fab->fab$l_xab = (void *) dat; }
+    st = sys$open(fab);
+    if (!(st & 1)) return st;
+    rab->rab$l_fab = fab;
+    rab->rab$l_ubf = (char *) buf;
+    rab->rab$w_usz = size;
+    rab->rab$l_rop = RAB$M_RRL | RAB$M_NLK;
+    st = sys$connect(rab);
+    if (!(st & 1)) sys$close(fab);
+    return st;
+}
+
+/* ---- accounting: finished processes and LOGINOUT's failures ---- */
+
+static unsigned int ax_accounting(long long since, long long until)
+{
+    static unsigned char rec[32768];
+    struct FAB fab;
+    struct RAB rab;
+    unsigned int st = ax_open(&fab, &rab, 0, "ACCOUNTNG", "SYS$MANAGER:.DAT", rec, sizeof rec);
+    if (!(st & 1)) return st;
+    while ((st = sys$get(&rab)) & 1) {
+        unsigned rlen = rab.rab$w_rsz, w = rec[0] | rec[1] << 8, type = (w >> 1) & 0x7F, sub = (w >> 8) & 0xF;
+        unsigned long long systime = 0, login = 0;
+        unsigned off = ACR$K_HDRLEN;
+        long long start, end;
+        ax_proc *p, tmp;
+        int i;
+        if (rlen < ACR$K_HDRLEN || (w & 1)) continue;
+        if (type != ACR$K_PRCDEL && type != ACR$K_LOGFAIL) continue;
+        if (type == ACR$K_PRCDEL && sub == ACR$K_DETACHED) continue;
+        for (i = 0; i < 8; i++) systime |= (unsigned long long) rec[4 + i] << (8 * i);
+        memset(&tmp, 0, sizeof tmp);
+        while (off + 4 <= rlen) {
+            const unsigned char *k = rec + off;
+            unsigned pw = k[0] | k[1] << 8, plen = k[2] | k[3] << 8, ptype = (pw >> 1) & 0x7F;
+            if (plen < 4 || off + plen > rlen) break;
+            if (ptype == ACR$K_ID && plen >= sizeof(struct acrdef2)) {
+                struct acrdef2 id;     /* the __OLD_STARLET names: this file is built without __NEW_STARLET */
+                memcpy(&id, k, sizeof id);        /* packets need not be aligned */
+                tmp.pid = id.acr$l_pid;
+                tmp.owner = id.acr$l_owner;
+                ax_ascic(k, plen, id.acr$w_username, tmp.user, sizeof tmp.user);
+                ax_terminal(k, plen, id.acr$w_terminal, tmp.term, sizeof tmp.term);
+                ax_ascic(k, plen, id.acr$w_nodename, tmp.node, sizeof tmp.node);
+                ax_ascic(k, plen, id.acr$w_remoteid, tmp.rid, sizeof tmp.rid);
+                ax_ascic(k, plen, id.acr$w_queue, tmp.queue, sizeof tmp.queue);
+                if (id.acr$v_fullname) ax_asciw(k, plen, id.acr$w_fullname, tmp.full, sizeof tmp.full);
+            } else if (ptype == ACR$K_RESOURCE && plen >= sizeof(struct acrdef3)) {
+                struct acrdef3 r;
+                memcpy(&r, k, sizeof r);
+                memcpy(&login, &r.acr$q_login, 8);
+                tmp.status = r.acr$l_status;
+            }
+            off += plen;
+        }
+        end = ax_time(systime);
+        start = type == ACR$K_LOGFAIL ? end : ax_time(login);
+        if (!start) start = end;
+        if (end < since - AX_NEAR || start > until) continue;
+        p = ax_new_proc();
+        *p = tmp;
+        p->start = start;
+        p->end = type == ACR$K_LOGFAIL ? 0 : end;
+        p->logfail = type == ACR$K_LOGFAIL;
+        p->sub = (unsigned char) sub;
+    }
+    sys$close(&fab);
+    return st == RMS$_EOF ? SS$_NORMAL : st;
+}
+
+/* ---- the live process list ---- */
+
+/* A TELNET or LAT terminal knows its far end: "Host: 192.0.2.7 Port: 51022". */
+static void ax_accpor(const char *term, char *out, size_t outlen)
+{
+    char buf[128] = { 0 }, *h;
+    unsigned short len = 0;
+    unsigned int iosb[2];
+    struct dsc$descriptor_s d;
+    st_ile3 it[2];
+    out[0] = '\0';
+    if (!*term) return;
+    desc(&d, term, (unsigned short) strlen(term));
+    item(&it[0], DVI$_TT_ACCPORNAM, buf, sizeof buf - 1, &len);
+    item_end(&it[1]);
+    if (!(sys$getdviw(0, 0, &d, it, (void *) iosb, 0, 0, 0) & 1) || !(iosb[0] & 1)) return;
+    buf[len] = '\0';
+    h = strstr(buf, "Host: ");
+    if (h) {
+        size_t n;
+        h += 6;
+        for (n = 0; h[n] && h[n] != ' ' && n + 1 < outlen; n++) out[n] = h[n];
+        out[n] = '\0';
+    } else ax_text((unsigned char *) buf, len, out, outlen);
+}
+
+static void ax_live(void)
+{
+    unsigned int ctx = 0xFFFFFFFFu, pid, owner, mode, iosb[2], st, login[2], self = 0;
+    char user[13], term[16];
+    unsigned short l[6];
+    st_ile3 it[7];
+    item(&it[0], JPI$_PID, &pid, 4, &l[0]);
+    item(&it[1], JPI$_OWNER, &owner, 4, &l[1]);
+    item(&it[2], JPI$_MODE, &mode, 4, &l[2]);
+    item(&it[3], JPI$_USERNAME, user, 12, &l[3]);
+    item(&it[4], JPI$_TERMINAL, term, sizeof term - 1, &l[4]);
+    item(&it[5], JPI$_LOGINTIM, login, 8, &l[5]);
+    item_end(&it[6]);
+    if (sys$getjpiw(0, 0, 0, it, iosb, 0, 0) & 1) self = pid;   /* not this process */
+    for (;;) {
+        ax_proc *p;
+        pid = owner = mode = 0;
+        login[0] = login[1] = 0;
+        l[3] = l[4] = 0;
+        st = sys$getjpiw(0, &ctx, 0, it, iosb, 0, 0);
+        if (st & 1) st = iosb[0] & 0xFFFF;
+        if (st == SS$_NOMOREPROC) break;
+        if (st == SS$_NOPRIV || st == SS$_SUSPENDED) continue;   /* not the viewer's to see */
+        if (!(st & 1)) break;
+        if (pid == self) continue;
+        if (owner == 0 && mode != JPI$K_INTERACTIVE && mode != JPI$K_NETWORK && mode != JPI$K_BATCH) continue;
+        p = ax_new_proc();
+        p->pid = pid;
+        p->owner = owner;
+        p->live = 1;
+        p->start = ax_time(((unsigned long long) login[1] << 32) | login[0]);
+        p->sub = (unsigned char) (owner ? ACR$K_SUBPROCESS : mode == JPI$K_INTERACTIVE ? ACR$K_INTERACTIVE
+                                  : mode == JPI$K_NETWORK ? ACR$K_NETWORK : ACR$K_BATCH);
+        blank_trim(user, l[3], p->user, sizeof p->user);
+        ax_text((unsigned char *) term, l[4], p->term, sizeof p->term);
+        if (p->sub == ACR$K_INTERACTIVE) ax_accpor(p->term, p->full, sizeof p->full);
+    }
+}
+
+/* ---- OpenSSH's per-connection logs ---- */
+
+static void ax_add_fail(long long t, int source, int kind, const char *user, const char *route,
+                        const char *from, const char *term, const char *detail)
+{
+    ax_fail *f;
+    if (ax_nf == AX_FAILS) return;
+    f = &ax_f[ax_nf++];
+    memset(f, 0, sizeof *f);
+    f->start = t;
+    f->source = source;
+    f->kind = kind;
+    st_copy(f->user, sizeof f->user, user);
+    st_copy(f->route, sizeof f->route, route);
+    st_copy(f->from, sizeof f->from, from);
+    st_copy(f->term, sizeof f->term, term);
+    st_copy(f->detail, sizeof f->detail, detail);
+}
+
+/* The word after "key " in line, into out. */
+static int ax_word_after(const char *line, const char *key, char *out, size_t outlen)
+{
+    const char *s = strstr(line, key);
+    size_t n;
+    if (!s) return 0;
+    s += strlen(key);
+    for (n = 0; s[n] && s[n] != ' ' && n + 1 < outlen; n++) out[n] = s[n];
+    out[n] = '\0';
+    return n > 0;
+}
+
+static void ax_ssh_line(ax_ssh *c, const char *line)
+{
+    char user[33], ip[48], method[24], key[24];
+    if (!strncmp(line, "Accepted ", 9) && ax_word_after(line, "Accepted ", method, sizeof method)
+        && ax_word_after(line, " for ", user, sizeof user) && ax_word_after(line, " from ", ip, sizeof ip)) {
+        c->accepted = 1;
+        st_copy(c->user, sizeof c->user, user);
+        ax_upper(c->user);
+        st_copy(c->ip, sizeof c->ip, ip);
+        if (ax_word_after(line, "ssh2: ", key, sizeof key)) snprintf(c->method, sizeof c->method, "%s %s", method, key);
+        else st_copy(c->method, sizeof c->method, method);
+    } else if (!strncmp(line, "Failed ", 7) && ax_word_after(line, "Failed ", method, sizeof method)
+               && ax_word_after(line, " from ", ip, sizeof ip)
+               && (ax_word_after(line, " invalid user ", user, sizeof user) || ax_word_after(line, " for ", user, sizeof user))) {
+        char d[128];
+        ax_upper(user);
+        snprintf(d, sizeof d, "%s refused%s", method, strstr(line, " invalid user ") ? ": no such user" : "");
+        ax_add_fail(c->start, ST_SRC_SSH, ST_AE_FAILURE, user, "SSH", ip, "", d);
+    } else if (!strncmp(line, "Invalid user ", 13) && ax_word_after(line, "Invalid user ", user, sizeof user)
+               && ax_word_after(line, " from ", ip, sizeof ip)) {
+        int i;
+        ax_upper(user);
+        for (i = 0; i < ax_nf; i++)    /* "Failed ... for invalid user" says it already */
+            if (ax_f[i].source == ST_SRC_SSH && ax_f[i].start == c->start && !strcmp(ax_f[i].user, user)) break;
+        if (i == ax_nf) ax_add_fail(c->start, ST_SRC_SSH, ST_AE_FAILURE, user, "SSH", ip, "", "no such user");
+    }
+}
+
+static unsigned int ax_ssh_logs(long long since, long long until)
+{
+    static const char spec[] = "SSH$ROOT:[VAR]*_*.LOG;*";
+    static unsigned char line[1024];
+    char esa[256], rsa[256];
+    struct FAB fab = cc$rms_fab;
+    struct NAM nam = cc$rms_nam;
+    unsigned int st;
+    fab.fab$l_fna = (char *) spec;
+    fab.fab$b_fns = (unsigned char) (sizeof spec - 1);
+    fab.fab$l_nam = &nam;
+    nam.nam$l_esa = esa; nam.nam$b_ess = sizeof esa - 1;
+    nam.nam$l_rsa = rsa; nam.nam$b_rss = sizeof rsa - 1;
+    st = sys$parse(&fab);
+    if (!(st & 1)) return st;
+    while (ax_ns < AX_SSH && ((st = sys$search(&fab)) & 1)) {
+        char name[128], *u1, *u2, *end;
+        struct FAB f;
+        struct RAB r;
+        struct XABDAT dat;
+        unsigned long pid;
+        ax_ssh *c;
+        int lines = 0;
+        size_t nl = nam.nam$b_name < sizeof name ? nam.nam$b_name : sizeof name - 1;
+        memcpy(name, nam.nam$l_name, nl);
+        name[nl] = '\0';
+        /* <node>_<client host>_<pid>: the pid is 8 hex digits; anything else (the
+           server's own SSH$SSHD_STARTUP.LOG) is not a connection. */
+        u1 = strchr(name, '_');
+        u2 = strrchr(name, '_');
+        if (!u1 || u2 == u1 || strlen(u2 + 1) != 8) continue;
+        pid = strtoul(u2 + 1, &end, 16);
+        if (*end) continue;
+        rsa[nam.nam$b_rsl] = '\0';
+        st = ax_open(&f, &r, &dat, rsa, 0, line, sizeof line - 1);
+        if (!(st & 1)) {
+            if (st == RMS$_PRV) return st;      /* the viewer may not read these */
+            continue;                           /* purged under us, or busy */
+        }
+        c = &ax_s[ax_ns];
+        memset(c, 0, sizeof *c);
+        c->pid = (unsigned int) pid;
+        {
+            unsigned long long q;
+            memcpy(&q, &dat.xab$q_cdt, 8);
+            c->start = ax_time(q);
+            memcpy(&q, &dat.xab$q_rdt, 8);
+            c->end = ax_time(q);
+        }
+        if (c->end < c->start) c->end = c->start;
+        ax_text((unsigned char *) u1 + 1, (size_t) (u2 - u1 - 1), c->host, sizeof c->host);
+        if (c->end >= since - AX_NEAR && c->start <= until) {
+            ax_ns++;
+            while (lines++ < 400 && (sys$get(&r) & 1)) {
+                line[r.rab$w_rsz] = '\0';
+                ax_ssh_line(c, (char *) line);
+            }
+        }
+        sys$close(&f);
+    }
+    return (st == RMS$_NMF || st == RMS$_FNF || (st & 1)) ? SS$_NORMAL : st;
+}
+
+/* ---- the security audit journal: failures and break-ins ---- */
+
+static void ax_term_route(const char *term, char *route, size_t rlen, char *detail, size_t dlen)
+{
+    const char *r = "local", *d = "";
+    if (ax_prefix(term, "OPA")) d = "console";
+    else if (ax_prefix(term, "TNA")) r = "TELNET";
+    else if (ax_prefix(term, "RTA")) r = "DECnet";
+    else if (ax_prefix(term, "LTA")) r = "LAT";
+    st_copy(route, rlen, r);
+    if (detail) st_copy(detail, dlen, d);
+}
+
+static unsigned int ax_journal(long long since, long long until)
+{
+    static unsigned char rec[8192];
+    struct FAB fab;
+    struct RAB rab;
+    unsigned int st = ax_open(&fab, &rab, 0, "SYS$MANAGER:SECURITY.AUDIT$JOURNAL", 0, rec, sizeof rec);
+    if (!(st & 1)) return st;
+    while ((st = sys$get(&rab)) & 1) {
+        unsigned rlen = rab.rab$w_rsz, type = rec[0] | rec[1] << 8, sub = rec[2] | rec[3] << 8;
+        unsigned npk = rec[6] | rec[7] << 8, off = NSA$C_MSG_HDR_LENGTH, k, status = 0;
+        char user[33] = "", term[24] = "", rnode[64] = "", ruser[33] = "", rfull[64] = "";
+        char route[24], detail[128], msg[96];
+        long long t = 0;
+        if (type != NSA$C_MSG_LOGFAIL && type != NSA$C_MSG_BREAKIN) continue;
+        for (k = 0; k < npk && off + 4 <= rlen; k++) {     /* a packet's size includes its header */
+            unsigned psize = rec[off] | rec[off + 1] << 8, ptype = rec[off + 2] | rec[off + 3] << 8;
+            const unsigned char *d = rec + off + 4;
+            if (psize < 4 || off + psize > rlen) break;
+            switch (ptype) {
+            case NSA$C_PKT_TIME_STAMP:
+                if (psize >= 12) {
+                    unsigned long long q = 0;
+                    int i;
+                    for (i = 7; i >= 0; i--) q = (q << 8) | d[i];
+                    t = ax_time(q);
+                }
+                break;
+            case NSA$C_PKT_USERNAME: ax_text(d, psize - 4, user, sizeof user); break;
+            case NSA$C_PKT_TERMINAL: ax_text(d, psize - 4, term, sizeof term); break;
+            case NSA$C_PKT_REMOTE_NODENAME: ax_text(d, psize - 4, rnode, sizeof rnode); break;
+            case NSA$C_PKT_REMOTE_USERNAME: ax_text(d, psize - 4, ruser, sizeof ruser); break;
+            case NSA$C_PKT_REMOTE_NODE_FULLNAME: ax_text(d, psize - 4, rfull, sizeof rfull); break;
+            case NSA$C_PKT_FINAL_STATUS: if (psize >= 8) memcpy(&status, d, 4); break;
+            }
+            off += psize;
+        }
+        if (t < since || t > until) continue;
+        /* Steward's own sign-ins name it as the remote user; its log has them, with
+           the browser's real address rather than the proxy's. */
+        if (type == NSA$C_MSG_LOGFAIL && !strcmp(ruser, "STEWARD")) continue;
+        msg[0] = '\0';
+        if (status) msgtext(status, msg, sizeof msg);
+        if (sub == NSA$C_NETWORK) st_copy(route, sizeof route, "network");
+        else if (sub == NSA$C_BATCH) st_copy(route, sizeof route, "batch");
+        else ax_term_route(term, route, sizeof route, 0, 0);
+        if (type == NSA$C_MSG_BREAKIN) snprintf(detail, sizeof detail, "break-in%s%s", *msg ? ": " : "", msg);
+        else st_copy(detail, sizeof detail, msg);
+        ax_add_fail(t, ST_SRC_AUDIT, type == NSA$C_MSG_BREAKIN ? ST_AE_BREAKIN : ST_AE_FAILURE, user, route,
+                    *rnode ? rnode : rfull, term, detail);
+    }
+    sys$close(&fab);
+    return st == RMS$_EOF ? SS$_NORMAL : st;
+}
+
+/* ---- Steward's own audit log ---- */
+
+/* Days since 1970-01-01 of a civil date (H. Hinnant's algorithm). */
+static long long ax_days(int y, int m, int d)
+{
+    long long era, yoe, doy, doe;
+    y -= m <= 2;
+    era = (y >= 0 ? y : y - 399) / 400;
+    yoe = y - era * 400;
+    doy = (153 * (m + (m > 2 ? -3 : 9)) + 2) / 5 + d - 1;
+    doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
+    return era * 146097 + doe - 719468;
+}
+
+/* A value from one of our own records: key="..." with \" \\ \xNN escapes (st_app.c). */
+static void ax_kv(const char *line, const char *key, char *out, size_t outlen)
+{
+    char pat[24];
+    const char *s;
+    size_t o = 0;
+    snprintf(pat, sizeof pat, " %s=\"", key);
+    out[0] = '\0';
+    if (!(s = strstr(line, pat))) return;
+    for (s += strlen(pat); *s && *s != '"' && o + 1 < outlen; s++) {
+        if (*s == '\\' && s[1] == 'x' && s[2] && s[3]) { out[o++] = '?'; s += 3; }
+        else if (*s == '\\' && s[1]) out[o++] = *++s;
+        else out[o++] = *s;
+    }
+    out[o] = '\0';
+}
+
+typedef struct { long long start; char user[33], from[64]; } ax_open_session;
+
+static int ax_emit_steward(const ax_open_session *o, long long end, long long since, long long until,
+                           st_access_cb fn, void *ctx)
+{
+    st_access_event a;
+    if ((end ? end : until) < since || o->start > until) return 0;
+    memset(&a, 0, sizeof a);
+    a.start = o->start;
+    a.end = end;
+    a.kind = ST_AE_SESSION;
+    a.source = ST_SRC_STEWARD;
+    st_copy(a.user, sizeof a.user, o->user);
+    st_copy(a.route, sizeof a.route, "Steward");
+    st_copy(a.from, sizeof a.from, o->from);
+    st_copy(a.detail, sizeof a.detail, end ? "signed in" : "signed in; no sign-out recorded");
+    return fn(&a, ctx);
+}
+
+static unsigned int ax_steward(long long since, long long until, st_access_cb fn, void *ctx, int *stop)
+{
+    static unsigned char line[1100];
+    static ax_open_session open_[64];
+    struct FAB fab;
+    struct RAB rab;
+    int nopen = 0, i;
+    unsigned int st;
+    if (!*steward_log) return SS$_NORMAL;
+    st = ax_open(&fab, &rab, 0, steward_log, 0, line, sizeof line - 1);
+    if (!(st & 1)) return st;
+    while (!*stop && ((st = sys$get(&rab)) & 1)) {
+        char user[33], from[64], action[24], outcome[16], detail[96];
+        int y, mo, d, h, mi, s;
+        long long t;
+        line[rab.rab$w_rsz] = '\0';
+        if (sscanf((char *) line, "%4d-%2d-%2dT%2d:%2d:%2dZ AUDIT ", &y, &mo, &d, &h, &mi, &s) != 6) continue;
+        t = ax_days(y, mo, d) * 86400 + h * 3600 + mi * 60 + s;
+        ax_kv((char *) line, "action", action, sizeof action);
+        if (strcmp(action, "login") && strcmp(action, "logout") && strcmp(action, "session-expired")) continue;
+        ax_kv((char *) line, "user", user, sizeof user);     /* " AUDIT user=": a blank before it too */
+        ax_kv((char *) line, "client", from, sizeof from);
+        ax_kv((char *) line, "outcome", outcome, sizeof outcome);
+        ax_kv((char *) line, "detail", detail, sizeof detail);
+        ax_upper(user);
+        for (i = 0; i < nopen && !(!strcmp(open_[i].user, user) && !strcmp(open_[i].from, from)); i++) ;
+        if (!strcmp(action, "login") && strcmp(outcome, "ok")) {
+            if (t >= since)
+                ax_add_fail(t, ST_SRC_STEWARD, ST_AE_FAILURE, user, "Steward", from, "",
+                            *detail ? detail : !strcmp(outcome, "expired") ? "password expired" : "refused");
+            continue;
+        }
+        if (i < nopen) {              /* a sign-out, or a new sign-in replacing an open one */
+            if (ax_emit_steward(&open_[i], strcmp(action, "login") ? t : 0, since, until, fn, ctx)) *stop = 1;
+            open_[i] = open_[--nopen];
+        }
+        if (!strcmp(action, "login") && t <= until) {
+            if (nopen == 64) {        /* the oldest gives way, unended */
+                if (ax_emit_steward(&open_[0], 0, since, until, fn, ctx)) *stop = 1;
+                open_[0] = open_[--nopen];
+            }
+            open_[nopen].start = t;
+            st_copy(open_[nopen].user, sizeof open_[0].user, user);
+            st_copy(open_[nopen].from, sizeof open_[0].from, from);
+            nopen++;
+        }
+    }
+    for (i = 0; i < nopen && !*stop; i++)
+        if (ax_emit_steward(&open_[i], 0, since, until, fn, ctx)) *stop = 1;
+    sys$close(&fab);
+    return (st & 1) || st == RMS$_EOF ? SS$_NORMAL : st;
+}
+
+/* ---- joining and reporting ---- */
+
+static int ax_emit(const ax_proc *p, int kind, int source, const char *user, const char *route,
+                   const char *from, const char *detail, st_access_cb fn, void *ctx)
+{
+    st_access_event a;
+    memset(&a, 0, sizeof a);
+    a.start = p->start;
+    a.end = p->live ? 0 : p->end;
+    a.kind = kind;
+    a.source = source;
+    a.pid = p->pid;
+    st_copy(a.user, sizeof a.user, user);
+    st_copy(a.route, sizeof a.route, route);
+    st_copy(a.from, sizeof a.from, from);
+    st_copy(a.terminal, sizeof a.terminal, p->term);
+    st_copy(a.detail, sizeof a.detail, detail);
+    return fn(&a, ctx);
+}
+
+/* Inside c's lifetime, give or take a moment: started after it and, if both have
+   ended, ended before it. (Started-within alone let a connection that closed just
+   as the next one opened claim that one's session.) */
+static int ax_within(const ax_proc *p, const ax_proc *c)
+{
+    if (p->start + 2 < c->start) return 0;
+    if (c->live || !c->end) return 1;
+    return !p->live && p->end && p->end <= c->end + 2;
+}
+
+/* An SSH connection: its log, the user's session process and commands beneath it. */
+static int ax_ssh_conn(ax_proc *c, st_access_cb fn, void *ctx)
+{
+    char user[33] = "", from[64], detail[128] = "";
+    ax_ssh *log = 0;
+    int i, j;
+    st_copy(from, sizeof from, c->full);
+    for (i = 0; i < ax_ns; i++)
+        if (ax_s[i].pid == c->pid && ax_abs(ax_s[i].start - c->start) <= 60) { log = &ax_s[i]; log->joined = 1; break; }
+    if (log && !*from) st_copy(from, sizeof from, log->host);
+    if (log && log->accepted) {
+        st_copy(user, sizeof user, log->user);
+        st_copy(from, sizeof from, log->ip);
+        st_copy(detail, sizeof detail, log->method);
+    }
+    /* the commands: SSH$SSH's subprocess, and the user's beneath that */
+    for (i = 0; i < ax_np && !*user; i++) {
+        ax_proc *s = &ax_p[i];
+        if (s->sub != ACR$K_SUBPROCESS || s->owner != c->pid || !ax_within(s, c)) continue;
+        for (j = 0; j < ax_np; j++) {
+            ax_proc *u = &ax_p[j];
+            if (u->sub == ACR$K_SUBPROCESS && u->owner == s->pid && ax_within(u, s) && !ax_prefix(u->user, "SSH$")) {
+                st_copy(user, sizeof user, u->user);
+                ax_upper(user);
+                break;
+            }
+        }
+    }
+    /* a shell or SFTP session: a NETWORK process under the user, with the address */
+    if (c->session) {
+        ax_proc *n = &ax_p[c->session - 1];
+        if (!*user) { st_copy(user, sizeof user, n->user); ax_upper(user); }
+        if (*n->full) st_copy(from, sizeof from, n->full);
+        if (!*detail) st_copy(detail, sizeof detail, "session");
+    }
+    if (!*user) {
+        /* No user ever ran: a connection whose sign-in failed. The failure (journal or
+           log) is the event; it was over SSH, which the journal alone cannot say. */
+        int found = 0;
+        for (i = 0; i < ax_nf; i++) {
+            ax_fail *f = &ax_f[i];
+            if ((f->source == ST_SRC_AUDIT || f->source == ST_SRC_SSH) && f->start + 2 >= c->start
+                && (c->live || !c->end || f->start <= c->end + 2)) {
+                st_copy(f->route, sizeof f->route, "SSH");
+                found = 1;
+            }
+        }
+        if (found) return 0;
+        st_copy(detail, sizeof detail, log ? "no sign-in" : "no sign-in recorded");
+    }
+    return ax_emit(c, c->live ? ST_AE_CONNECTED : ST_AE_SESSION, c->live ? ST_SRC_LIVE : ST_SRC_ACCOUNTING,
+                   user, "SSH", from, detail, fn, ctx);
+}
+
+/* Each session process to the SSH connection that holds it most closely: connections
+   follow each other within the second, so the first that fits may be the one before. */
+static void ax_ssh_sessions(void)
+{
+    int i, j;
+    for (i = 0; i < ax_np; i++) {
+        ax_proc *n = &ax_p[i];
+        long long best = -1;
+        int at = -1;
+        if (n->logfail || n->sub != ACR$K_NETWORK || ax_prefix(n->user, "SSH$")) continue;
+        for (j = 0; j < ax_np; j++) {
+            ax_proc *c = &ax_p[j];
+            long long slack;
+            if (c->logfail || c->sub != ACR$K_NETWORK || !ax_prefix(c->user, "SSH$") || c->session || !ax_within(n, c)) continue;
+            /* how far outside c it reaches: 0 when wholly inside */
+            slack = (n->start < c->start ? c->start - n->start : 0)
+                  + (!c->live && c->end && n->end > c->end ? n->end - c->end : 0);
+            if (best < 0 || slack < best || (slack == best && c->start > ax_p[at].start)) { best = slack; at = j; }
+        }
+        if (at >= 0) { ax_p[at].session = i + 1; n->taken = 1; }
+    }
+}
+
+static int ax_report(long long since, long long until, st_access_cb fn, void *ctx)
+{
+    int i, j;
+    ax_ssh_sessions();
+    /* SSH connections first: they claim the user's processes beneath them. */
+    for (i = 0; i < ax_np; i++) {
+        ax_proc *c = &ax_p[i];
+        if (c->logfail || c->sub != ACR$K_NETWORK || !ax_prefix(c->user, "SSH$")) continue;
+        c->taken = 1;
+        if ((c->live || c->end >= since) && c->start <= until && ax_ssh_conn(c, fn, ctx)) return 1;
+    }
+    for (i = 0; i < ax_np; i++) {
+        ax_proc *p = &ax_p[i];
+        char route[24], detail[128] = "", user[33];
+        const char *from = *p->full ? p->full : p->rid;
+        if (p->taken || p->sub == ACR$K_SUBPROCESS || p->sub == ACR$K_DETACHED) continue;
+        if (!p->live && !p->logfail && p->end < since) continue;
+        if (p->start > until || (p->logfail && p->start < since)) continue;
+        /* a failure before a username was taken: LOGINOUT's "<login>", the name tried as remote ID */
+        st_copy(user, sizeof user, p->user[0] == '<' && *p->rid ? p->rid : p->user);
+        ax_upper(user);
+        if (p->sub == ACR$K_BATCH) {
+            st_copy(route, sizeof route, "batch");
+            if (*p->queue) snprintf(detail, sizeof detail, "queue %s", p->queue);
+            from = "";
+        } else if (p->sub == ACR$K_NETWORK) {
+            st_copy(route, sizeof route, "network");
+            if (*p->node && *p->rid && !*p->full) {
+                snprintf(detail, sizeof detail, "%s::%s", p->node, p->rid);
+                from = p->node;
+            }
+        } else ax_term_route(p->term, route, sizeof route, detail, sizeof detail);
+        if (p->logfail) {
+            msgtext(p->status, detail, sizeof detail);
+            ax_add_fail(p->start, ST_SRC_ACCOUNTING, ST_AE_FAILURE, user, route, from, p->term, detail);
+            continue;
+        }
+        if (ax_emit(p, p->live ? ST_AE_CONNECTED : ST_AE_SESSION, p->live ? ST_SRC_LIVE : ST_SRC_ACCOUNTING,
+                    user, route, from, detail, fn, ctx)) return 1;
+    }
+    /* SSH logs whose connection neither accounting nor the live list shows */
+    for (i = 0; i < ax_ns; i++) {
+        ax_ssh *s = &ax_s[i];
+        st_access_event a;
+        if (s->joined || !s->accepted || s->end < since || s->start > until) continue;
+        memset(&a, 0, sizeof a);
+        a.start = s->start;
+        a.end = s->end;
+        a.kind = ST_AE_SESSION;
+        a.source = ST_SRC_SSH;
+        a.pid = s->pid;
+        st_copy(a.user, sizeof a.user, s->user);
+        st_copy(a.route, sizeof a.route, "SSH");
+        st_copy(a.from, sizeof a.from, s->ip);
+        st_copy(a.detail, sizeof a.detail, s->method);
+        if (fn(&a, ctx)) return 1;
+    }
+    /* Failures: the journal's, the SSH log's and LOGINOUT's accounting record of one
+       attempt are one event, shown with the journal's time and status. */
+    for (i = 0; i < ax_nf; i++) {
+        ax_fail *f = &ax_f[i];
+        if (f->source != ST_SRC_ACCOUNTING) continue;
+        for (j = 0; j < ax_nf; j++) {
+            ax_fail *g = &ax_f[j];
+            if (g->source == ST_SRC_AUDIT && ax_ieq(g->user, f->user) && !strcmp(g->from, f->from)
+                && ax_abs(g->start - f->start) <= AX_NEAR) { f->taken = 1; break; }
+        }
+    }
+    for (i = 0; i < ax_nf; i++) {
+        ax_fail *f = &ax_f[i];
+        if (f->source != ST_SRC_SSH) continue;
+        for (j = 0; j < ax_nf; j++) {
+            ax_fail *g = &ax_f[j];
+            if (g->source == ST_SRC_AUDIT && !g->taken && ax_ieq(g->user, f->user) && !strcmp(g->from, f->from)
+                && ax_abs(g->start - f->start) <= AX_NEAR + 60) {
+                g->taken = 1;          /* the journal's time and status; the route from SSH */
+                st_copy(g->route, sizeof g->route, "SSH");
+                f->taken = 1;
+                break;
+            }
+        }
+    }
+    for (i = 0; i < ax_nf; i++) {
+        ax_fail *f = &ax_f[i];
+        st_access_event a;
+        if (f->source != ST_SRC_AUDIT && f->taken) continue;
+        if (f->start < since || f->start > until) continue;
+        memset(&a, 0, sizeof a);
+        a.start = f->start;
+        a.kind = f->kind;
+        a.source = f->source;
+        st_copy(a.user, sizeof a.user, f->user);
+        st_copy(a.route, sizeof a.route, f->route);
+        st_copy(a.from, sizeof a.from, f->from);
+        st_copy(a.terminal, sizeof a.terminal, f->term);
+        st_copy(a.detail, sizeof a.detail, f->detail);
+        if (fn(&a, ctx)) return 1;
+    }
+    return 0;
+}
+
+int st_plat_access(long long since, long long until, st_access_cb fn, void *ctx,
+                   unsigned int src_cond[ST_SRC_COUNT], char src_text[ST_SRC_COUNT][96], st_err *e)
+{
+    unsigned int st;
+    int i, stop = 0;
+    (void) e;
+    for (i = 0; i < ST_SRC_COUNT; i++) { src_cond[i] = 0; src_text[i][0] = '\0'; }
+    ax_np = ax_ns = ax_nf = 0;
+    ax_off = local_offset();
+    if (!((st = ax_accounting(since, until)) & 1)) ax_cond(&src_cond[ST_SRC_ACCOUNTING], src_text[ST_SRC_ACCOUNTING], st);
+    if (until >= st_plat_time() - 60) ax_live();
+    if (!((st = ax_ssh_logs(since, until)) & 1)) ax_cond(&src_cond[ST_SRC_SSH], src_text[ST_SRC_SSH], st);
+    if (!((st = ax_journal(since, until)) & 1)) ax_cond(&src_cond[ST_SRC_AUDIT], src_text[ST_SRC_AUDIT], st);
+    if (!((st = ax_steward(since, until, fn, ctx, &stop)) & 1)) ax_cond(&src_cond[ST_SRC_STEWARD], src_text[ST_SRC_STEWARD], st);
+    if (!stop) ax_report(since, until, fn, ctx);
     return 0;
 }
 

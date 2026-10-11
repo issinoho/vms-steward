@@ -300,6 +300,35 @@ int st_plat_user_delete(const char *username, st_err *e);
 /* The service's own account (STEWARD), read at start-up. */
 const char *st_plat_service_account(void);
 
+/* ---- access history (Phase 6, D13), read as the current persona ----
+
+   Who reached the system, when, from where and how, merged from accounting, the
+   security audit journal, OpenSSH's logs, Steward's own audit log and the live
+   process list. OpenVMS decides, source by source, what the viewer may read. */
+enum { ST_SRC_ACCOUNTING, ST_SRC_AUDIT, ST_SRC_SSH, ST_SRC_STEWARD, ST_SRC_LIVE, ST_SRC_COUNT };
+enum { ST_AE_SESSION, ST_AE_FAILURE, ST_AE_BREAKIN, ST_AE_CONNECTED };
+
+typedef struct {
+    long long    start, end;      /* seconds since 1970 UTC; end 0: none (a failure) or not yet */
+    int          kind;            /* ST_AE_* */
+    int          source;          /* ST_SRC_*: where it came from (the first, when merged) */
+    char         user[33];        /* as the source has it */
+    char         route[24];       /* "SSH", "TELNET", "DECnet", "LAT", "local", "batch", "network", "Steward" */
+    char         from[64];        /* the client: address, node or host */
+    char         terminal[24];
+    char         detail[128];     /* e.g. "publickey ED25519", "queue SYS$BATCH", a status message */
+    unsigned int pid;
+} st_access_event;
+
+typedef int (*st_access_cb)(const st_access_event *ev, void *ctx);
+
+/* Calls fn for the events overlapping [since, until], in no particular order.
+   src_cond[ST_SRC_COUNT] gets each source's outcome: 0 read, else the condition that
+   refused or failed it (and its text in src_text). Returns 0 unless nothing at all
+   could be read. */
+int st_plat_access(long long since, long long until, st_access_cb fn, void *ctx,
+                   unsigned int src_cond[ST_SRC_COUNT], char src_text[ST_SRC_COUNT][96], st_err *e);
+
 /* ---- crypto and time ---- */
 int  st_plat_random(void *p, size_t n);
 void st_plat_sha256(const void *p, size_t n, unsigned char out[32]);

@@ -35,7 +35,7 @@ static void ascic(const unsigned char *pkt, unsigned plen, unsigned off, char *o
 }
 
 /* A word-counted string: the remote full name is one (2-byte count; found by dumping a
-   record, 2026-10-11: "0D 00 31 39 32 ..." = 13 bytes, "192.168.0.131"). */
+   record, 2026-10-11: "0D 00" then the 13-byte client address). */
 static void asciw(const unsigned char *pkt, unsigned plen, unsigned off, char *out, size_t outlen)
 {
     unsigned n;

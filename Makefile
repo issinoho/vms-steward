@@ -15,7 +15,7 @@ LDLIBS  ?= -lcrypto
 
 CORE = src/core/st_buf.c src/core/st_fcgi.c src/core/st_json.c src/core/st_http.c \
        src/core/st_route.c
-SVC  = src/svc/st_app.c src/svc/svc_session.c src/svc/svc_users.c src/svc/svc_idents.c src/svc/svc_edit.c src/svc/svc_system.c
+SVC  = src/svc/st_app.c src/svc/svc_session.c src/svc/svc_users.c src/svc/svc_idents.c src/svc/svc_edit.c src/svc/svc_system.c src/svc/svc_access.c
 STUB = src/plat/stub/st_plat_stub.c src/plat/st_crypto_openssl.c
 
 B = build

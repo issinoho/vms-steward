@@ -866,6 +866,84 @@ static void test_system(void)
     CHECK(!st_plat_persona_active(), "no persona left active");
 }
 
+/* ------------------------------------------------- access history (Phase 6) */
+
+static void test_access(void)
+{
+    result b;
+    char tc[140], ac[140], tcsrf[65], acsrf[65], uri[160];
+    const char *body, *p, *q;
+    long long now = st_plat_time();
+    hdr t[2], adm[3];
+
+    call("GET", "/api/v1/access", NULL, NULL, &b);
+    CHECK(b.resp.status == 401, "access history needs a session");
+    st_resp_free(&b.resp);
+
+    sign_in("{\"username\":\"steward_test\",\"password\":\"test-pass\"}", tc, sizeof tc, tcsrf);
+    t[0].n = "HTTP_COOKIE"; t[0].v = tc; t[1].n = NULL;
+    call("GET", "/api/v1/access", t, NULL, &b);
+    body = b.resp.body.data;
+    CHECK(b.resp.status == 200 && strstr(body, "\"accounting\":{\"read\":false,\"vms_status\":\"%X0001829A\"") &&
+          strstr(body, "\"live\":{\"read\":true}"),
+          "without privilege each file source is refused by name, with OpenVMS's status; the live list is still read");
+    CHECK(!strstr(body, "\"source\":\"accounting\"") && !strstr(body, "\"user\":\"SYSTEM\""),
+          "nothing from a refused source, and no one else's processes without WORLD");
+    st_resp_free(&b.resp);
+
+    sign_in("{\"username\":\"steward_adm\",\"password\":\"admin-pass\"}", ac, sizeof ac, acsrf);
+    adm[0].n = "HTTP_COOKIE"; adm[0].v = ac; adm[1].n = "HTTP_X_STEWARD_CSRF"; adm[1].v = acsrf; adm[2].n = NULL;
+    call("PUT", "/api/v1/session/privileges", adm, "{\"enabled\":[\"sysprv\"]}", &b);
+    st_resp_free(&b.resp);
+    call("GET", "/api/v1/access", adm, NULL, &b);
+    body = b.resp.body.data;
+    CHECK(b.resp.status == 200 && !strstr(body, "\"read\":false"), "with SYSPRV every source is read");
+    CHECK(strstr(body, "\"kind\":\"breakin\"") && strstr(body, "\"route\":\"Steward\"") &&
+          strstr(body, "\"route\":\"batch\""), "the day's sessions, failures and break-ins, by route");
+    /* newest first */
+    p = strstr(body, "\"start\":");
+    q = p ? strstr(p + 1, "\"start\":") : NULL;
+    CHECK(p && q && atoll(p + 8) >= atoll(q + 8), "newest first");
+    CHECK(strstr(body, "\"truncated\":false") != NULL, "nothing cut off");
+    st_resp_free(&b.resp);
+
+    call("GET", "/api/v1/access?outcome=failure&user=root", adm, NULL, &b);
+    body = b.resp.body.data;
+    CHECK(b.resp.status == 200 && strstr(body, "\"user\":\"ROOT\"") && !strstr(body, "\"kind\":\"session\"") &&
+          !strstr(body, "\"user\":\"ADMIN\""), "filtered by outcome and user");
+    st_resp_free(&b.resp);
+    call("GET", "/api/v1/access?route=steward", adm, NULL, &b);
+    CHECK(b.resp.status == 200 && !strstr(b.resp.body.data, "\"route\":\"SSH\"") &&
+          strstr(b.resp.body.data, "\"route\":\"Steward\""), "and by route, ignoring case");
+    st_resp_free(&b.resp);
+    call("GET", "/api/v1/access?limit=2", adm, NULL, &b);
+    CHECK(b.resp.status == 200 && strstr(b.resp.body.data, "\"truncated\":true"), "a limit cuts the list and says so");
+    st_resp_free(&b.resp);
+    snprintf(uri, sizeof uri, "/api/v1/access?since=%lld&until=%lld", now - 2000, now - 1000);
+    call("GET", uri, adm, NULL, &b);
+    CHECK(b.resp.status == 200 && strstr(b.resp.body.data, "\"start\":") && !strstr(b.resp.body.data, "\"route\":\"Steward\""),
+          "a time window");
+    st_resp_free(&b.resp);
+
+    call("GET", "/api/v1/access?since=abc", adm, NULL, &b);
+    CHECK(b.resp.status == 400, "a bad time is refused");
+    st_resp_free(&b.resp);
+    snprintf(uri, sizeof uri, "/api/v1/access?since=%lld&until=%lld", now, now - 10);
+    call("GET", uri, adm, NULL, &b);
+    CHECK(b.resp.status == 400, "since after until is refused");
+    st_resp_free(&b.resp);
+    call("GET", "/api/v1/access?outcome=everything", adm, NULL, &b);
+    CHECK(b.resp.status == 400, "an unknown outcome is refused");
+    st_resp_free(&b.resp);
+    call("GET", "/api/v1/access?limit=0", adm, NULL, &b);
+    CHECK(b.resp.status == 400, "a limit of 0 is refused");
+    st_resp_free(&b.resp);
+    call("GET", "/api/v1/access?user=a%22b", adm, NULL, &b);
+    CHECK(b.resp.status == 400, "a filter with a quote is refused");
+    st_resp_free(&b.resp);
+    CHECK(!st_plat_persona_active(), "no persona left active");
+}
+
 /* ------------------------------------------------- create, copy, delete (Phase 4) */
 
 static void test_create(void)
@@ -1060,6 +1138,7 @@ int main(void)
     test_users();
     test_edit();
     test_system();
+    test_access();
     test_create();
     test_gateway();
     printf("%d checks, %d failed\n", checks, failures);

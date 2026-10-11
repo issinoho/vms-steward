@@ -371,6 +371,64 @@ service's own.
 `{"uic": "[362,4]"}`: the lowest free member of the group, from the rights
 database's UIC identifiers. A suggestion: the create still refuses a UIC in use.
 
+## Access history (Phase 6, D13): `GET api/v1/access`
+
+`?since=&until=&user=&route=&outcome=&limit=`
+
+Who reached the system, when, from where and by which route, merged from the system's
+own records and read **as you**. A source OpenVMS will not let you read is reported,
+not hidden, and the others are still shown.
+
+```json
+{"since": 1791651600, "until": 1791738000,
+ "sources": {"accounting": {"read": true}, "audit": {"read": true}, "ssh": {"read": true},
+             "steward": {"read": false, "vms_status": "%X0001829A",
+                         "vms_message": "%RMS-E-PRV, insufficient privilege or file protection violation"},
+             "live": {"read": true}},
+ "events": [
+   {"start": 1791737990, "end": null, "kind": "connected", "source": "live", "user": "SYSTEM",
+    "route": "TELNET", "from": "198.51.100.45", "terminal": "TNA3:", "detail": "", "pid": "00008211"},
+   {"start": 1791737510, "end": 1791737920, "kind": "session", "source": "accounting", "user": "IAIN",
+    "route": "SSH", "from": "198.51.100.20", "terminal": "", "detail": "publickey ED25519", "pid": "000081F3"},
+   {"start": 1791737400, "end": null, "kind": "failure", "source": "audit", "user": "STEWARD_TEST",
+    "route": "SSH", "from": "198.51.100.20", "terminal": "_FTA581:",
+    "detail": "%LOGIN-F-INVPWD, invalid password"}],
+ "truncated": false}
+```
+
+- **Parameters.** `since` and `until` are seconds since 1970 (UTC); the default is the
+  last 24 hours. `user` filters as the user list does (wildcards `*` and `%`, or a
+  substring). `route` is one of the routes below, any case. `outcome` is `session`,
+  `failure`, `breakin` or `connected`. `limit` is 1 to 2000 (default 500); past it,
+  `truncated` is true. Events are newest first.
+- **Kinds.** `connected`: still on now (from the live process list; `end` is null).
+  `session`: a finished one (`end` set; null if no end was recorded). `failure`: a
+  sign-in that was refused. `breakin`: OpenVMS's break-in detection fired.
+- **Routes.** `SSH`, `TELNET` (TNA terminals), `DECnet` (RTA: SET HOST), `LAT`,
+  `local` (console and other local terminals), `batch` (`detail` names the queue),
+  `network` (a network process that is not SSH, such as DECnet or FTP), `Steward`.
+- **Sources**, each read as you:
+
+| Source | File | Gives |
+|---|---|---|
+| `accounting` | `ACCOUNTNG` (default `SYS$MANAGER:ACCOUNTNG.DAT`) | every finished process: interactive, network, batch; and LOGINOUT's failures |
+| `audit` | `SYS$MANAGER:SECURITY.AUDIT$JOURNAL` | login failures and break-ins, including `$ACM` failures that never reach accounting |
+| `ssh` | `SSH$ROOT:[VAR]*_*.LOG` (VSI OpenSSH) | the method, user and address of each SSH connection, while the logs last |
+| `steward` | Steward's own audit log | sign-ins to Steward, with the browser's address |
+| `live` | `$GETJPI` | who is on now: as at a terminal, without WORLD you see only your own processes |
+
+  The files are protected from ordinary users, so a viewer needs SYSPRV or READALL
+  switched on (D9) to read them. A refused source carries OpenVMS's status and message.
+- **One connection, one event.** An SSH connection appears in accounting as the SSH
+  server's network process under `SSH$SSH`. The user's session process and commands run
+  beneath it, and its log is named after its PID. These are joined into one event:
+  `pid` is the `SSH$SSH` process. A failure seen by the journal, the SSH log and
+  LOGINOUT's accounting record is shown once, with the journal's time and status.
+  Steward's own `$ACM` sign-in failures (remote user `STEWARD` in the journal) are taken
+  from Steward's log instead, which has the browser's address rather than the proxy's.
+- Times from OpenSSH's logs are the log file's creation and last-write dates: its lines
+  carry none.
+
 ## Coming
 
-Access history is Phase 6 (`docs/PLAN.md`).
+Logical names, processes and queues (`docs/PLAN.md`).

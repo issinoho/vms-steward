@@ -64,7 +64,9 @@ int main(int argc, char **argv)
     }
     memset(&pc, 0, sizeof pc);
     pc.session_file = "[.build]probe_sessions.dat";
-    pc.audit_file = "";
+    /* An audit log to append to and read back (access history): a scratch copy,
+       never the service's own. Unset, records go to stderr. */
+    pc.audit_file = getenv("API_PROBE_AUDIT") ? getenv("API_PROBE_AUDIT") : "";
     if (st_plat_init(&pc, &e)) { fprintf(stderr, "init: %s\n", e.text); return 1; }
     memset(&cfg, 0, sizeof cfg);
     cfg.idle_secs = 900;
