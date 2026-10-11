@@ -70,3 +70,24 @@ owner and flags were back as they were, and the identifier was gone.
   TMPMBX, NETMBX; SYSPRV off) with a wrong password, `$ACMW` returned normally, and
   the ACMESB said `AUTHFAILURE`. As with sign-in, the reason is hidden from a caller
   without SYSPRV. A *successful* change as the service is verified at the phase exit.
+
+## Browser exit checks and the 0.1.0 release (2026-10-11)
+
+The user's first browser run (as STEWARD_ADM) sent no change request: the lighttpd log
+shows the user page loaded and no PATCH. The user reported that the dialog opened and
+Save did nothing. It did not reproduce on the dev server, with stub data shaped like
+the real record, in headless Firefox. Before it was found, the user asked to stop and
+release what exists as an early test ("everything looks good from here"). So Phase 3
+ships in 0.1.0 with its browser checks still open. If the Save failure shows up again,
+the next step is the browser console's output.
+
+0.1.0 was installed from its PCSI kit on the x86 node and set up with
+STEWARD$CONFIGURE for the existing STEWARD account. The pool was started with
+STEWARD$CONTROL (current privileges DETACH, TMPMBX, NETMBX), and the test lighttpd
+serves the generated STEWARD.CONF. Through nginx proxy manager:
+- the page, its scripts and styles came back 200 with the right types, despite PCSI's
+  upper-case file names;
+- the CSP and X-Frame-Options headers were present;
+- the API answered through the gateway secret;
+- a failed sign-in was refused and audited in the new data directory, with the client
+  address.

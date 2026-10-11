@@ -10,19 +10,43 @@ see and change.
 
 ## Status
 
-Phases 1 and 2 are closed: sign-in and a read-only view of users and rights
-identifiers, running on OpenVMS x86-64 behind lighttpd as a least-privilege service
-account. Their exit checks passed through nginx proxy manager on 2026-10-10. See [`docs/PLAN.md`](docs/PLAN.md), [`docs/api.md`](docs/api.md)
-and [`docs/security.md`](docs/security.md).
+**0.1.0, an early test release** for OpenVMS x86-64: a PCSI kit is on the
+[releases page](https://github.com/issinoho/vms-steward/releases). It covers users and
+rights identifiers, roughly what AUTHORIZE does, apart from creating and deleting
+users. Please try it on a test system first and report what you find.
+
+Phases 1 and 2 are closed. Their exit checks passed through nginx proxy manager on
+2026-10-10. Phase 3 (changes) is in this release: it was verified on the x86 node
+through the real code against AUTHORIZE (`tests/vms/phase3_live.py`), and its browser
+exit checks continue alongside the test release. See [`docs/PLAN.md`](docs/PLAN.md),
+[`docs/api.md`](docs/api.md) and [`docs/security.md`](docs/security.md).
 
 | Area | Status |
 | --- | --- |
 | Scaffolding, sign-in, sessions | done (Phase 1, closed 2026-10-10) |
 | Users and rights identifiers: read-only views | done (Phase 2, closed 2026-10-10) |
-| Users and rights identifiers: changes, passwords, grants | built; exit checks in progress (Phase 3) |
+| Users and rights identifiers: changes, passwords, grants | in 0.1.0; browser exit checks continuing (Phase 3) |
 | Users: create, copy, delete | planned (Phase 4) |
 | Access history: who connected, when, how (SSH, TELNET, FTP, DECnet, batch, Steward) in one view | planned (Phase 6) |
 | Logical names, processes, queues, SYSGEN, licences, products, monitoring, error log, terminal | later |
+
+## Installing
+
+Needs OpenVMS x86-64, VSI TCP/IP Services, VSI SSL3, and
+[vms-lighttpd](https://github.com/issinoho/vms-lighttpd) installed and set up. Browsers
+must reach Steward over HTTPS, through a proxy that ends TLS or with TLS in lighttpd.
+
+```
+$ PRODUCT INSTALL STEWARD /SOURCE=dev:[dir]
+$ @STEWARD$ROOT:[COM]STEWARD$CONFIGURE         ! once, as SYSTEM
+$ ! add the include line it prints to lighttpd's LIGHTTPD.CONF, then:
+$ @STEWARD$ROOT:[COM]STEWARD$CONTROL START
+$ @VMSLIGHTTPD$ROOT:[COM]VMSLIGHTTPD$CONTROL RESTART
+```
+
+`[STEWARD.DOC]README.VMS` in the kit has the details: the service account and why it
+holds what it holds, the gateway secret, running behind a reverse proxy, and the audit
+log. `tools/kit.sh <node>` builds the kit (`kit/`).
 
 ## Building
 
