@@ -61,10 +61,10 @@ asking.
 - **Never name a DCL symbol after a verb the procedure uses.** A symbol `RUN` turned
   `RUN/DETACHED` into an invalid command (`%DCL-W-IVVERB`), and the pool printed
   "started" for processes that never existed. Check `$STATUS` after creating one.
-- **Do not use ACCOUNTING to find out why a process died:** it runs for many minutes on
-  these nodes. Read the process's /OUTPUT log, or start a minimal detached process
-  that writes one. If you cut a remote command short, stop the VMS process it
-  started (by PID, your own only).
+- **ACCOUNTING is slow only when its file is large.** It took many minutes until the
+  user rotated SYS$MANAGER:ACCOUNTNG.DAT (2026-10-11); now it is fine to use. If it
+  turns slow again, suggest rotating the file. If you cut a remote command short, stop
+  the VMS process it started (by PID, your own only).
 - **`#include "../x.h"` does not work in VSI C:** use bare names and include directories.
 - **The C RTL lowercases unquoted `argv`.** Compare command-line arguments
   case-insensitively.
