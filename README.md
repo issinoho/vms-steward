@@ -16,15 +16,16 @@ see and change.
 
 ## Status
 
-**0.4.0, an early test release** for OpenVMS x86-64: a PCSI kit is on the
+**0.5.1, an early test release** for OpenVMS x86-64: a PCSI kit is on the
 [releases page](https://github.com/issinoho/vms-steward/releases). It opens on a dashboard
 of the system, covers users and rights identifiers (what AUTHORIZE does, from
-creating and copying accounts to deleting them), and shows the system's access
-history: who signed in, when, from where and by which route. Please try it on a test system first and report what you find.
+creating and copying accounts to deleting them), shows the system's access
+history (who signed in, when, from where and by which route), and lets you browse
+logical names as `SHOW LOGICAL` shows them to you. Please try it on a test system first and report what you find.
 
-Phases 1 to 6 are closed: sign-in, the read-only views, changes, creating and
-deleting users, hardening (a load run and soak, [`docs/PHASE5.md`](docs/PHASE5.md)) and
-access history. Their exit checks passed on the x86 test system and in a browser
+Phases 1 to 6 and 7a are closed: sign-in, the read-only views, changes, creating and
+deleting users, hardening (a load run and soak, [`docs/PHASE5.md`](docs/PHASE5.md)),
+access history and logical names, read-only. Their exit checks passed on the x86 test system and in a browser
 through nginx proxy manager. An independent code review and an external review and
 penetration test are still to come ([`docs/REVIEW-BRIEF.md`](docs/REVIEW-BRIEF.md)). See [`docs/PLAN.md`](docs/PLAN.md),
 [`docs/api.md`](docs/api.md) and [`docs/security.md`](docs/security.md).
@@ -38,7 +39,9 @@ penetration test are still to come ([`docs/REVIEW-BRIEF.md`](docs/REVIEW-BRIEF.m
 | Users: create, copy, delete | done (Phase 4, closed 2026-10-11) |
 | Hardening: load run, soak, review of the new code | done (Phase 5, closed 2026-10-11; external review open) |
 | Access history: who connected, when, how (SSH, TELNET, DECnet, LAT, batch, Steward) in one view | done (Phase 6, closed 2026-10-11) |
-| Logical names, processes, queues, SYSGEN, licences, products, monitoring, error log, terminal | later |
+| Logical names: tables, names and translations, read-only | done (Phase 7a, closed 2026-10-13, 0.5.1) |
+| Logical names: define and deassign | next (Phase 7b) |
+| Processes, queues, SYSGEN, licences, products, monitoring, error log, terminal | later |
 
 ## Installing
 

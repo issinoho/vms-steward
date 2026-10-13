@@ -69,7 +69,13 @@ Each exit criterion, with what showed it. `tests/vms/phase7_live.py` on x86,
 | Browser checks | the user, on the installed 0.5.0, 2026-10-13 | done |
 | Security gate (security.md) | Phase 7 threat-model section, invariants and audit record. `/security-review` of the 2026-10-13 commits: no findings. Independent review of the whole Phase 7 code (two reviewers, findings checked by hand), 2026-10-13: the job tables, the helper path, the deadline, the dead helper, the procedure's symbols and the table pin fixed (audit record); smaller items listed below | done |
 
-## Where this stands (2026-10-11, end of session): resume here
+## 7a closed (2026-10-13)
+
+The user's browser checks passed, and the security gate is met (the exit record
+above). Released as 0.5.1 (T0.5-1). Next: 7b, define and deassign, after the items
+left from the review are weighed (end of this file).
+
+## How 7a was built (2026-10-11 to 2026-10-13)
 
 **Built (7a, read-only), installed on x86 as 0.5.1 (2026-10-13), not yet published:**
 - **Core:** `src/core/st_lnm.{h,c}`: the input checks, which refuse process and job
@@ -120,11 +126,9 @@ Found on the node and handled:
    user over T0.5-0. `phase7_live.py` with `PHASE7_FAILDIR` against the installed
    procedure: 22 ok, 0 failed. Two single failures on the way were dropped ssh calls,
    each passing on repeat. The test directory for the failure procedures was removed.
-4. **Exit:** ask the user for the 7a browser exit checks, then commit, push and release
-   per the standing pattern. 7b (define, deassign) comes after.
+4. ~~**Exit.**~~ Done 2026-10-13: browser checks passed; pushed and released as v0.5.1.
 
-Also open from earlier: 0.4.1, the Phase 5 review fixes, was never released on its
-own. It will go out with 0.5.0 unless the user wants it sooner.
+The Phase 5 review fixes (0.4.1, never released on their own) went out in 0.5.1.
 
 **Left from the Phase 7 review (2026-10-13), for 7b or a 0.5.x:** a listing over
 4 MB answers 500 (cap by bytes as well as names); a plain-text filter over 61
