@@ -16,6 +16,11 @@ cluster), and covers users and rights identifiers, roughly what AUTHORIZE does:
     REMOVE: with their UIC identifier and holdings)
   - modify users (owner, flags, days and hours, privileges, quotas, ...), set
     passwords, grant and revoke identifiers, create, rename and delete identifiers
+  - access history: who reached the system, when, from where and by which route
+    (SSH, TELNET, DECnet, LAT, batch, Steward), from accounting, the audit
+    journal, OpenSSH's logs and Steward's own log
+  - logical names: the shareable tables, the names in each and what a name
+    translates to, as SHOW LOGICAL shows them to you (read-only for now)
 
 Every request runs as you: Steward takes on your OpenVMS identity (a persona) for
 the request, so OpenVMS decides what you may see and change, exactly as at a
@@ -52,8 +57,9 @@ Install and set up vms-lighttpd first. Then, as SYSTEM:
 
 It asks for (or takes as parameters) the service account (default STEWARD) and
 its UIC, a data directory (default SYS$SYSDEVICE:[STEWARD_DATA]), the port lighttpd
-should serve Steward on (default 8443), lighttpd's account, and any reverse
-proxies to trust. It:
+should serve Steward on (default 8443), lighttpd's account (see below), any
+reverse proxies to trust, and whether to start the pool at boot (default NO; see
+"Starting at boot"). It:
 
   - creates the service account: batch access only, RESTRICTED, DISCTLY, a
     random password nobody knows. Privileges IMPERSONATE, TMPMBX and NETMBX by
@@ -72,7 +78,8 @@ proxies to trust. It:
   - writes [.CONF]STEWARD.CONF, a lighttpd server block for the port, and the
     site settings, SYS$MANAGER:STEWARD$CONFIG.COM
 
-Then add the line it prints to lighttpd's LIGHTTPD.CONF:
+Then add the line it prints to lighttpd's LIGHTTPD.CONF, after server.modules
+(which must list mod_fastcgi and mod_setenv; vms-lighttpd's default does):
 
     include "/<device>/STEWARD_DATA/conf/steward.conf"
 
@@ -88,13 +95,79 @@ Browse to https://<host>:<port>/ (or your proxy's address) and sign in.
 shows the pool's processes and their privileges (they should be DETACH,TMPMBX,NETMBX:
 SYSPRV off) and the end of the audit log.
 
+lighttpd's account
+------------------
+Give STEWARD$CONFIGURE the account vms-lighttpd actually runs as (by default it
+offers the one in SYS$MANAGER:VMSLIGHTTPD$CONFIG.COM, normally LIGHTTPD). It
+makes that account the owner of [.CONF]STEWARD_GATEWAY.CONF, which holds the
+gateway secret and is readable by its owner only. If lighttpd runs as any other
+account, it cannot read that file, and lighttpd then refuses its whole
+configuration and does not start: every site it serves goes down, not only
+Steward. Check before restarting lighttpd:
+
+    $ DIRECTORY/SECURITY <data>[.CONF]STEWARD_GATEWAY.CONF
+
+The owner must be lighttpd's account (SHOW PROCESS/ID=<pid> of VMSLIGHTTPD shows
+it). To fix it without running STEWARD$CONFIGURE again:
+
+    $ SET SECURITY/OWNER=LIGHTTPD <data>[.CONF]STEWARD_GATEWAY.CONF;
+
+Starting at boot
+----------------
+Two things are needed:
+
+  1. Autostart: answer YES to "Start the pool at boot" in STEWARD$CONFIGURE.
+     It is recorded in SYS$MANAGER:STEWARD$CONFIG.COM as
+         $ steward_autostart == "YES"
+     and you can change that line by hand later. With NO, STEWARD$STARTUP only
+     defines STEWARD$ROOT at boot and the pool stays stopped.
+  2. The calls, as SYSTEM, in SYS$MANAGER:SYSTARTUP_VMS.COM:
+         $ @SYS$STARTUP:STEWARD$STARTUP
+     and in SYS$MANAGER:SYSHUTDWN.COM:
+         $ @SYS$STARTUP:STEWARD$SHUTDOWN
+
+Place the startup call where everything the pool needs is already up:
+  - TCP/IP Services and SSL3 (the pool listens on 127.0.0.1 and uses OpenSSL);
+  - the disk holding the data directory, mounted;
+  - the queue manager and SYS$BATCH (a batch queue, a generic queue feeding
+    one, or a logical name for one): STEWARD$STARTUP starts the pool by
+    submitting a job to SYS$BATCH as the service account (SUBMIT/USER, which
+    needs CMKRNL: SYSTEM has it at boot). If the queue is stopped, the pool
+    starts when it is started.
+Steward and lighttpd may start in either order, but vms-lighttpd must also start
+at boot (vmslighttpd_autostart in its own settings). STEWARD$CONFIG.COM's
+steward_node limits autostart to one cluster member.
+
+The service account must keep batch access and must not be disabled: each pool
+process is a login of that account. Its password is never needed.
+
+After a reboot, check:
+
+    $ @STEWARD$ROOT:[COM]STEWARD$CONTROL STATUS
+
+Running STEWARD$CONFIGURE again
+-------------------------------
+It is safe to run again (as SYSTEM), but answer every question again: the
+defaults are not your earlier answers. In particular, autostart defaults to NO,
+and lighttpd's account to vms-lighttpd's.
+  - Kept: the account's UIC and password, the gateway secret, and the whole of
+    [.RUN]STEWARD_SETTINGS.COM. The trusted-proxies answer is therefore ignored
+    once that file exists: to change trusted proxies later, edit
+    STEWARD_TRUSTED_PROXIES there and RESTART the pool.
+  - Rewritten: the account's privileges and default directory, STEWARD.CONF,
+    STEWARD_GATEWAY.CONF (owned by the lighttpd account you give) and
+    SYS$MANAGER:STEWARD$CONFIG.COM (autostart).
+Then restart the pool (STEWARD$CONTROL RESTART), and lighttpd if the port or its
+account changed.
+
 Behind a reverse proxy
 ----------------------
 Point the proxy at lighttpd's Steward port, and give STEWARD$CONFIGURE the address
-the proxy connects from (it goes in STEWARD_SETTINGS.COM as
-STEWARD_TRUSTED_PROXIES). Steward then believes the proxy's X-Forwarded-For,
--Proto, -Host and -Prefix headers, so break-in evasion and the audit log name the
-real client. Never list an address untrusted clients can connect from.
+the proxy connects from. It goes in STEWARD_SETTINGS.COM as
+STEWARD_TRUSTED_PROXIES; to change it after the first run, edit it there and
+RESTART the pool. Steward then believes the proxy's X-Forwarded-For, -Proto,
+-Host and -Prefix headers, so break-in evasion and the audit log name the real
+client. Never list an address untrusted clients can connect from.
 
 The audit log
 -------------
@@ -111,6 +184,9 @@ Notes for this test release
 - Steward shows what OpenVMS lets you see, no more and no less: any signed-in
   user can read the rights database, and can tell whether a username exists,
   as at a terminal.
+- Listing a logical name table runs SHOW LOGICAL in a short-lived detached
+  process that logs in as you: it appears in accounting, counts against your
+  process limits while it runs, and runs your SYLOGIN and LOGIN.COM first.
 
 Removing
 --------

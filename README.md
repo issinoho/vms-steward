@@ -57,9 +57,28 @@ $ @STEWARD$ROOT:[COM]STEWARD$CONTROL START
 $ @VMSLIGHTTPD$ROOT:[COM]VMSLIGHTTPD$CONTROL RESTART
 ```
 
-`[STEWARD.DOC]README.VMS` in the kit has the details: the service account and why it
-holds what it holds, the gateway secret, running behind a reverse proxy, and the audit
-log. `tools/kit.sh <node>` builds the kit (`kit/`).
+To start at boot, answer YES to STEWARD$CONFIGURE's autostart question (or set
+`steward_autostart` to `"YES"` in `SYS$MANAGER:STEWARD$CONFIG.COM`). Then add
+`@SYS$STARTUP:STEWARD$STARTUP` to `SYSTARTUP_VMS.COM`, after TCP/IP, SSL3 and the queues:
+it starts the pool by submitting a job to `SYS$BATCH` as the service account. Add
+`@SYS$STARTUP:STEWARD$SHUTDOWN` to `SYSHUTDWN.COM`. vms-lighttpd needs its own autostart too.
+
+Two account points:
+- **lighttpd's account.** Give STEWARD$CONFIGURE the account vms-lighttpd really runs as
+  (normally `LIGHTTPD`). It becomes the only reader of the gateway secret. If lighttpd
+  cannot read that file, it refuses its whole configuration and serves no site at all.
+- **The service account** must keep batch access and must not be disabled.
+
+`[STEWARD.DOC]README.VMS` in the kit has the details:
+- the service account and why it holds what it holds;
+- the gateway secret;
+- starting at boot;
+- running STEWARD$CONFIGURE again: answer every question again, because the defaults
+  are not your earlier answers;
+- running behind a reverse proxy;
+- the audit log.
+
+`tools/kit.sh <node>` builds the kit (`kit/`).
 
 ## Building
 

@@ -271,8 +271,18 @@ $ say "     proxy manager: list its address as a trusted proxy) or uncomment ssl
 $ say "     STEWARD.CONF with a PEM readable by ", webacct, " only."
 $ say "  3. Start:   @STEWARD$ROOT:[COM]STEWARD$CONTROL START"
 $ say "     Check:   @STEWARD$ROOT:[COM]STEWARD$CONTROL STATUS"
-$ say "  4. At boot: add @SYS$STARTUP:STEWARD$STARTUP to SYS$MANAGER:SYSTARTUP_VMS.COM"
+$ say "  4. At boot: add @SYS$STARTUP:STEWARD$STARTUP to SYS$MANAGER:SYSTARTUP_VMS.COM,"
+$ say "     after TCP/IP, SSL3 and the queues (it SUBMITs the pool to SYS$BATCH)."
+$ if autostart .eqs. "YES"
+$ then
+$   say "     Autostart is YES: it starts the pool on this node."
+$ else
+$   say "     Autostart is NO: at boot it only defines STEWARD$ROOT. To start the pool,"
+$   say "     set steward_autostart to ""YES"" in SYS$MANAGER:STEWARD$CONFIG.COM."
+$ endif
 $ say "     At shutdown: add @SYS$STARTUP:STEWARD$SHUTDOWN to SYS$MANAGER:SYSHUTDWN.COM"
+$ say "  5. lighttpd must run as ", webacct, ", the owner of STEWARD_GATEWAY.CONF: if it"
+$ say "     cannot read that file, lighttpd refuses its whole configuration (README.VMS)."
 $ exit 1
 $!
 $! new_secret: secret = 64 hex characters from STEWARD -g
