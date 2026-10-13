@@ -75,6 +75,42 @@ The user's browser checks passed, and the security gate is met (the exit record
 above). Released as 0.5.1 (T0.5-1). Next: 7b, define and deassign, after the items
 left from the review are weighed (end of this file).
 
+## 7b: define and deassign (started 2026-10-13)
+
+Design: DECISIONS D15. The user chose any listable table; user, supervisor and
+executive mode; and a 409 unless the request says replace.
+
+**Probe** (`probes/probe_crelnm.c`, 2026-10-13, NOTES.md), with the name
+`STEWARD_PROBE_7B`, which was left nowhere. For it, the user agreed to authorize SYSNAM
+for STEWARD_ADM (it now has NETMBX, SYSNAM, SYSPRV, TMPMBX authorized).
+
+| Persona, switched on | Table | user / super / exec | Note |
+|---|---|---|---|
+| STEWARD_TEST, none | group 362 | NOPRIV | my process had every privilege: the persona's count |
+| STEWARD_TEST, GRPPRV | group 362 | all OK, all **user mode** | super and exec quietly replaced the user name |
+| STEWARD_ADM, SYSPRV | group 362 | all OK, all user mode | |
+| STEWARD_ADM, SYSNAM | group 362 | NOPRIV | SYSNAM does not open a group table |
+| STEWARD_ADM, none | system | NOPRIV | |
+| STEWARD_ADM, SYSPRV | system | all OK, all user mode | through the table's protection |
+| STEWARD_ADM, SYSNAM | system | each mode its own name | `$DELLNM` at exec removed all three |
+
+**API** (D15):
+- `GET api/v1/logical?table=&name=`: as `logicals/{table}/{name}`, plus `modes`: the
+  modes the name has in that table (SHOW LOGICAL shows only the outermost).
+- `PUT api/v1/logical`: `{"table", "name", "mode", "attributes", "equivalences":
+  [{"value", "attributes"}], "replace"}`. 201 defined, 200 replaced, 409 exists, 403
+  for an inner mode without SYSNAM switched on.
+- `DELETE api/v1/logical?table=&name=&mode=`: 200 with the modes removed.
+
+**Exit (7b):**
+- Defines and deassigns match DEFINE and DEASSIGN (`SHOW LOGICAL` after each), for
+  STEWARD_ADM with SYSNAM in the system table and STEWARD_TEST with GRPPRV in its
+  group table.
+- What OpenVMS refuses is refused (NOPRIV), and an inner mode without SYSNAM is
+  refused before OpenVMS is asked, with nothing changed.
+- Every change is audited, without its equivalences.
+- The browser asks first, naming what is replaced or removed.
+
 ## How 7a was built (2026-10-11 to 2026-10-13)
 
 **Built (7a, read-only), installed on x86 as 0.5.1 (2026-10-13), not yet published:**

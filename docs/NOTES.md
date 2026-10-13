@@ -165,3 +165,30 @@ STEWARD$STARTUP, but STEWARD$CONFIG.COM said `steward_autostart == "NO"`
 (STEWARD$CONFIGURE's default), so it only defined STEWARD$ROOT. The user installed
 `STEWARD$CONFIG.COM;4` with YES (`;3` kept). Not yet seen across a reboot. If
 STEWARD$CONFIGURE is run again: YES to autostart, LIGHTTPD for lighttpd's account.
+
+**`$CRELNM` and `$DELLNM` without SYSNAM quietly use user mode** (Phase 7b, 2026-10-13).
+Asked for supervisor or executive mode from user-mode code without SYSNAM, `$CRELNM`
+succeeds at *user* mode: `SS$_SUPERSEDE` if a user-mode name was there, which it then
+replaces. `$DELLNM` at executive mode deletes the user-mode name the same way. With
+SYSNAM switched on, each mode gets its own name. Steward checks SYSNAM itself before
+either call for an inner mode. Observed with `probes/probe_crelnm.c` under STEWARD_ADM's
+persona in LNM$SYSTEM_TABLE, with SYSPRV and then with SYSNAM.
+
+**Which privilege opens which table, under a persona** (same probe). The persona's
+privileges are what count: my work process holds every privilege, yet STEWARD_TEST's
+persona gets NOPRIV for its own group table. Then:
+- **Group table** (`(RWCD,R,R,)`, owner `[362,*]`): GRPPRV or SYSPRV opens it, as
+  system access to the table. SYSNAM does not.
+- **System table:** SYSPRV opens it through its protection, but only at user mode
+  (above). SYSNAM gives the real modes.
+- **LNM$GROUP** under the persona still names the *process's* group table
+  (`LNM$GROUP_000200` here, not STEWARD_TEST's 000362): it is a name in the process
+  directory, set at login. Steward names the viewer's group table explicitly.
+
+**Deassigning at a mode also removes the name at every outer mode** (same day). With a
+name at user, supervisor and executive mode in the system table, `$DELLNM` at
+executive mode removed all three. DCL does the same: `DEASSIGN/SYSTEM/SUPERVISOR_MODE`
+removed the supervisor and user names and left the executive one. And `SHOW
+LOGICAL/FULL` showed only the user-mode one of the three: it lists a name's outermost
+mode only. Observed with `tools/vms.sh x86 dcl`, defining `STEWARD_PROBE_7B` at each
+mode and deassigning (the user agreed to the name; nothing was left).

@@ -384,3 +384,38 @@ Found by probe (`probes/probe_lnm.c`, PHASE7.md), each of these refused:
   reply, the deadline and a termination mailbox together, and checks the deadline
   after every wake, so neither a helper that floods the reply nor one that dies holds
   a pool process. A listing over 100,000 messages is refused.
+
+## D15. Logical names: define and deassign in-process, refusing what OpenVMS would quietly change
+
+**Status:** tables, modes and replacing approved by the user 2026-10-13; the rest
+follows from the probe (`probes/probe_crelnm.c`, NOTES.md). Phase 7b.
+
+Defining (`$CRELNM`) and deassigning (`$DELLNM`) run in-process under the persona, as
+D14 planned. OpenVMS checks the persona's privileges and the table's protection (the
+probe: my all-privileged process, STEWARD_TEST's persona, NOPRIV). On top of that:
+- **Tables:** any table the read-only endpoints can list. A table in
+  LNM$SYSTEM_DIRECTORY with the table attribute, not the directory, never a process or
+  job table (`st_valid_lnm_table`), and `LNM$GROUP` named as the viewer's group table:
+  under a persona it would be the service's.
+- **Modes:** user, supervisor and executive, as DEFINE offers. Kernel is refused.
+  Without SYSNAM, OpenVMS would quietly use user mode for an inner mode, and replace a
+  user-mode name the request never mentioned. So Steward refuses supervisor and
+  executive with a 403 unless SYSNAM is switched on in the session (D9), before calling
+  OpenVMS.
+- **Replacing:** a define of a name that exists at that mode in that table is a 409
+  unless the request says `"replace": true`. The browser shows the current value and
+  asks first. The check and the define are two calls: a name defined in between is
+  replaced, which is what `$CRELNM` does anyway.
+- **Deassigning at a mode removes the name at that mode and every outer one**, as
+  `$DELLNM` and DCL's DEASSIGN do. The answer lists the modes removed, and the browser
+  names them before asking.
+- **The audit log** records the table, the name, the mode and OpenVMS's answer, never
+  the equivalences: logical names sometimes carry passwords or connection strings.
+- **One name by query** (from the 7a review): `api/v1/logical?table=&name=` for GET,
+  PUT and DELETE, so a name with `/` in it can be reached. The 7a path
+  `logicals/{table}/{name}` stays for reading.
+
+Alternatives not taken: letting OpenVMS downgrade the mode and reporting it afterwards
+(the user-mode name would already be gone); `SET PROCESS/PRIVILEGE=SYSNAM` implied for
+inner modes (D9: the session's privileges are the user's choice); a DEFINE in the D14
+helper (in-process is simpler, and the probe shows OpenVMS checks the persona).
