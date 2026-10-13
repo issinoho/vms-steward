@@ -71,7 +71,7 @@ Each exit criterion, with what showed it. `tests/vms/phase7_live.py` on x86,
 
 ## Where this stands (2026-10-11, end of session): resume here
 
-**Built (7a, read-only), installed on x86 as 0.5.0 (2026-10-13), not yet published:**
+**Built (7a, read-only), installed on x86 as 0.5.1 (2026-10-13), not yet published:**
 - **Core:** `src/core/st_lnm.{h,c}`: the input checks, which refuse process and job
   tables and search lists through them, and the SHOW LOGICAL/FULL parser. It is unit
   tested and fuzzed; the fuzzer gives each line a buffer of exactly its length, and
@@ -115,6 +115,11 @@ Found on the node and handled:
    deleted the hand-copied `STEWARD_LNM.COM;3`, installed the kit over T0.4-0 and
    restarted the pool. The pool runs the kit's `STEWARD.EXE;1` with DETACH, TMPMBX,
    NETMBX. `phase7_live.py` against the kit's `STEWARD_LNM.COM;1`: 17 ok, 0 failed.
+3a. **0.5.1 (T0.5-1), the review fixes** (2026-10-13): kit SHA-256
+   `3b390f3a078d90c2fb5672b59d23d82c35e7a64f0713e9fcdb884f76a9a348b3`, installed by the
+   user over T0.5-0. `phase7_live.py` with `PHASE7_FAILDIR` against the installed
+   procedure: 22 ok, 0 failed. Two single failures on the way were dropped ssh calls,
+   each passing on repeat. The test directory for the failure procedures was removed.
 4. **Exit:** ask the user for the 7a browser exit checks, then commit, push and release
    per the standing pattern. 7b (define, deassign) comes after.
 
