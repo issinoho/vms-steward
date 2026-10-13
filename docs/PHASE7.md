@@ -122,6 +122,10 @@ removed by `no_alias` or a deassign, a name already there) before anything is se
   findings; "replaced" now comes from Steward's own read; the table race is accepted
   (security.md).
 
+**Kit T0.6-0** (2026-10-13), built by `tools/kit.sh x86`, SHA-256
+`6f68160c8e8f811172b85f7372d29352c76e6bffa4313ee74c03dfff433c83fd`. To be installed by
+the user; then the browser checks.
+
 **Exit (7b):**
 - Defines and deassigns match DEFINE and DEASSIGN (`SHOW LOGICAL` after each), for
   STEWARD_ADM with SYSNAM in the system table and STEWARD_TEST with GRPPRV in its
