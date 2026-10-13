@@ -75,6 +75,8 @@ browser ─(1)─ nginx proxy manager ─(2)─ lighttpd ─(3)─ STEWARD.EXE �
 | The service's process and job logical names are never read or listed for a viewer | `st_valid_lnm_table`; `st_plat_lnm_get` translates only in a real table of LNM$SYSTEM_DIRECTORY | unit `test_lnm_parser` (the table checks); `phase7_live.py` "refused before OpenVMS is asked" |
 | A listing of logical names is the viewer's own, run as them, with commands never built from input | the D14 helper: data-only mailboxes, checks in Steward and in `STEWARD_LNM.COM` | `phase7_live.py` |
 | No helper process outlives its request | `st_plat_lnm_list` deletes it on timeout or error | `phase7_live.py` "no helper process left behind" |
+| An inner mode is never quietly made user mode | `st_plat_lnm_define` and `_deassign` refuse supervisor and executive without SYSNAM, before OpenVMS is asked | unit "executive mode without SYSNAM"; `phase7b_live.py` "the user-mode name is untouched" |
+| A logical name change never records its equivalences | `svc_logical_define`, `svc_logical_deassign` | API suite "without the equivalence"; `phase7b_live.py` "never an equivalence" |
 
 ## Phase 2 additions (users and identifiers, read-only)
 
@@ -233,6 +235,45 @@ browser ─(1)─ nginx proxy manager ─(2)─ lighttpd ─(3)─ STEWARD.EXE �
 - **New data shown:** names and equivalences the viewer can already read. Equivalence
   strings are written by whoever defines the names, may hold any byte, and reach the
   page only through the JSON writer and `dom.js`.
+
+## Phase 7b additions (define and deassign; D15)
+
+- **New endpoints:** `PUT api/v1/logical`, `DELETE api/v1/logical`, and `GET
+  api/v1/logical` (reading by query). The two changes need a session and the CSRF
+  header, run under the persona, and are audited (docs/api.md).
+- **New system services, under the persona:** `$CRELNM`, `$DELLNM`, and `$GETJPI`
+  (the persona's current privileges, for the SYSNAM check). In-process, as every
+  other change: no helper process.
+- **OpenVMS decides who may change what.** The probe (`probes/probe_crelnm.c`) showed
+  that it checks the persona, not the process: STEWARD_TEST's persona got NOPRIV from
+  a process holding every privilege. Steward grants nothing: the privileges are the
+  ones the user switched on (D9).
+- **What Steward refuses that OpenVMS would quietly change.**
+  - Without SYSNAM, OpenVMS makes a supervisor or executive request a user-mode one,
+    replacing a user-mode name nobody named. Steward refuses those modes without
+    SYSNAM (403 NOSYSNAM) before calling. Kernel mode is always refused.
+  - A define over an existing name at that mode is a 409 unless the request says
+    `replace`. The browser shows the current value first.
+  - What OpenVMS does by design is let through, but named first in the browser:
+    `no_alias` removes the name at outer modes, and a deassign removes the outer modes
+    too.
+- **Tables:** as for reading. Never a process or job table (the service's), never the
+  directory, `LNM$GROUP` named explicitly as the viewer's group table (under a persona
+  it is the service's), and nothing the service's process directory also names
+  (`$CRELNM` and `$DELLNM` look there first).
+- **Input:** the name and each equivalence are 1 to 255 printable ASCII characters,
+  1 to 16 equivalences, attributes from fixed lists; the body is parsed in core
+  (`st_lnm_def_parse`, unit tested) and anything unknown is refused.
+- **The audit log** records the table, the name, the mode and OpenVMS's answer, never
+  the equivalences: logical names sometimes hold passwords or connection strings.
+- **A change to the system, made as the user.** A viewer with SYSNAM, GRPNAM or SYSPRV
+  can now define names from the browser that they could define at a terminal. That
+  includes names the service itself translates (`STEWARD$ROOT`, the OpenSSL images,
+  names in the service account's group table). No new privilege is needed, but the
+  route is new. **Open, to probe:** which of the service's own translations a
+  user-mode or group-table name can shadow. LOGINOUT opens the helper procedure in
+  executive mode, which would ignore outer-mode names. Until that is shown, keep the
+  service account in a UIC group of its own.
 
 ## Phase 5: load run and review (2026-10-11)
 

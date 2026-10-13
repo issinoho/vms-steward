@@ -108,6 +108,18 @@ checks (Linux and x86), 50 API checks. `tests/vms/phase7b_live.py` on x86: 21 ok
 failed, against DCL's `SHOW LOGICAL/FULL` and `F$TRNLNM` at each mode. It found the
 NO_ALIAS behaviour (NOTES.md). Next: the view.
 
+**The view (2026-10-13):** a Define button over the list; Modify and Deassign under a
+name's translation. The dialogs name what OpenVMS would do quietly (outer modes
+removed by `no_alias` or a deassign, a name already there) before anything is sent.
+
+**Open before the 7b exit:**
+- Browser checks (the user's).
+- `LNM$SYSCLUSTER_TABLE` was not written on the node (only the system and group tables
+  were agreed). A define there is untested.
+- Which of the service's own translations a user-mode or group-table name can shadow
+  (security.md, Phase 7b). To probe, with the user's agreement.
+- The security gate's review of the changed files.
+
 **Exit (7b):**
 - Defines and deassigns match DEFINE and DEASSIGN (`SHOW LOGICAL` after each), for
   STEWARD_ADM with SYSNAM in the system table and STEWARD_TEST with GRPPRV in its
