@@ -150,3 +150,14 @@ The D14 helper runs after the viewer's LOGIN.COM, so it sets the scope first.
 the node with `F$CVTIME`: the termination message arrives at once and Steward reads
 for a 2 s grace. Through `tools/vms.sh` the same call took 18 s once, so the live
 test times these on the node.
+
+**On x86, Steward is now served by the site's lighttpd** (2026-10-13). Until then it
+ran behind a separate test lighttpd (`vms/lighttpd_test.com`, port 8443, as the work
+account), which nothing restarts after a reboot: two reboots that afternoon left the
+proxy with nothing on 8443, and it answered 502. At the user's request,
+`LIGHTTPD.CONF;7` adds the include README.VMS describes, and STEWARD_GATEWAY.CONF is
+now owned by LIGHTTPD: STEWARD$CONFIGURE had made it the work account's, for the test
+server, and LIGHTTPD (not a system UIC) could not have read the secret. `;6` is
+kept to roll back. Checked: the board on 80, Steward's page and health through the
+proxy, and 401 (not 403) for an API request without a session, so the gateway secret
+arrives. Still open: the Steward pool did not start at boot after the reboots.
