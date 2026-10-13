@@ -66,8 +66,8 @@ Each exit criterion, with what showed it. `tests/vms/phase7_live.py` on x86,
 | A name the viewer may not read is not shown | another group's table: 404 IVLOGTAB for STEWARD_TEST, and for STEWARD_ADM without SYSPRV | done |
 | Hostile tables and patterns refused, by Steward and by the procedure | five hostile requests refused with 400 before OpenVMS is asked; the directory refused for a single name | Steward done; the procedure's own check was shown by probe (PHASE7 table above), not by the live test |
 | No helper process left behind | `SHOW SYSTEM` after the run: no `STW` process | done (normal path); the timeout path is by review only |
-| Browser checks | | **open**: the user's |
-| Security gate (security.md) | Phase 7 threat-model section, invariants and audit record written 2026-10-13 | review of the changed files still to run |
+| Browser checks | the user, on the installed 0.5.0, 2026-10-13 | done |
+| Security gate (security.md) | Phase 7 threat-model section, invariants and audit record written 2026-10-13. `/security-review` of the 2026-10-13 commits (origin/main..8f54198): no findings | **open**: the 7a code itself (ff48318) has not had an independent review |
 
 ## Where this stands (2026-10-11, end of session): resume here
 
