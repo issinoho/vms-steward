@@ -25,6 +25,9 @@ int st_valid_lnm_table(const char *in, char out[ST_LNM_TABLE_MAX + 1])
     out[n] = '\0';
     for (i = 0; i < sizeof own / sizeof own[0]; i++)
         if (!strcmp(out, own[i])) return 0;
+    /* A job table by its own name (LNM$JOB_<address>): one of them is the service's
+       job's, and nothing tells a viewer's job from the service's. */
+    if (!strncmp(out, "LNM$JOB_", 8)) return 0;
     return 1;
 }
 

@@ -50,6 +50,8 @@ tables = {t["name"]: t for t in (doc or {}).get("tables", [])}
 check(st == 200 and "LNM$SYSTEM_TABLE" in tables and doc["your_group_table"] == "LNM$GROUP_000362",
       "the tables, and STEWARD_TEST's own group table named", (st, doc and list(tables)[:5]))
 check(all(not n.startswith("LNM$PROCESS") for n in tables), "no process table among them")
+jobs = [n for n in tables if n.startswith("LNM$JOB_")]
+check(jobs and not any(tables[n]["listable"] for n in jobs), "job tables are shown, none listable (%d)" % len(jobs))
 
 # SHOW LOGICAL/STRUCTURE nests each table under its parent (the table its quota comes
 # from), so compare the names under LNM$SYSTEM_DIRECTORY, at any depth. Two differences
@@ -101,7 +103,9 @@ for path, what in (("/api/v1/logicals?table=LNM$PROCESS", "the process table"),
                    ("/api/v1/logicals?table=LNM$FILE_DEV", "a search list through the process table"),
                    ("/api/v1/logicals/LNM$PROCESS_TABLE/STEWARD_GATEWAY_SECRET", "the gateway secret by name"),
                    ("/api/v1/logicals?table=LNM$SYSTEM_TABLE/OUTPUT=X", "a table with a qualifier in it"),
-                   ("/api/v1/logicals?table=LNM$SYSTEM_TABLE&filter=A%27B", "a pattern with a quote")):
+                   ("/api/v1/logicals?table=LNM$SYSTEM_TABLE&filter=A%27B", "a pattern with a quote"),
+                   ("/api/v1/logicals?table=" + (jobs[0] if jobs else "LNM$JOB_0"), "a job table by its own name"),
+                   ("/api/v1/logicals/%s/X" % (jobs[0] if jobs else "LNM$JOB_0"), "one name in a job table")):
     st, doc = api("STEWARD_ADM", "SYSPRV", path)
     check(st == 400 and "secret" not in json.dumps(doc).lower(), "refused before OpenVMS is asked: " + what, (st, doc))
 

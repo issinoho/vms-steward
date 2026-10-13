@@ -48,9 +48,10 @@ typedef struct {
 
 /* A table name as Steward accepts one: 1-31 characters from A-Z, 0-9, '$' and '_',
    case-insensitive; upper case into out. Refused, whatever their case: the tables
-   that are the *process's own*, or that search it. Under a persona those are the
-   service's (its settings, the gateway secret among them, are process logical names),
-   never the viewer's. Returns 1 if valid. */
+   that are the *process's own*, or that search it, and every job table by its own
+   name (LNM$JOB_<address>). Under a persona those are the service's (its settings,
+   the gateway secret among them, are process logical names), never the viewer's.
+   Returns 1 if valid. */
 int st_valid_lnm_table(const char *in, char out[ST_LNM_TABLE_MAX + 1]);
 
 /* A SHOW LOGICAL pattern: 1-63 characters from A-Z, 0-9, '$', '_', '*' and '%';

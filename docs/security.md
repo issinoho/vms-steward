@@ -213,8 +213,9 @@ browser ─(1)─ nginx proxy manager ─(2)─ lighttpd ─(3)─ STEWARD.EXE �
   STEWARD_ADM sees group 1's table only with SYSPRV switched on).
 - **The service's own names.** The service keeps its settings, among them the gateway
   secret, in process logical names. Under a persona, `$TRNLNM` in the process table
-  would read them. `st_valid_lnm_table` refuses the process and job tables, and every
-  search list through them (`LNM$FILE_DEV`, `LNM$DCL_LOGICAL`, ...), before any
+  would read them. `st_valid_lnm_table` refuses the process and job tables, every
+  search list through them (`LNM$FILE_DEV`, `LNM$DCL_LOGICAL`, ...), and every job
+  table by its own name (`LNM$JOB_<address>`; one is the pool's job's), before any
   service is called. `st_plat_lnm_get` also translates only in a real table of
   `LNM$SYSTEM_DIRECTORY` (not an alias, not a search list, not the directory itself).
   The translation chain looks only in the viewer's group table, the system table and
@@ -324,3 +325,4 @@ instance behind nginx proxy manager.
 | 2026-10-11 | 5 | Phase 5 review: the SSH log search left RMS's wildcard context open when it stopped early (a refusal, or 256 logs) | Informational (no channel leak measured) | Phase 5 commit: the search is ended on every exit | soak: open-file quota unchanged |
 | 2026-10-11 | 7 | The SHOW LOGICAL parser could read past the end of a line. The fuzzer found it once each line had a buffer of exactly its length (the shape of the line was not recorded) | Medium (memory safety, signed-in; the input is the viewer's own listing) | ff48318 | fuzz target with exact-length lines |
 | 2026-10-13 | 7 | `logicals/LNM$SYSTEM_DIRECTORY/{name}` translated in the directory, which has the table attribute; the stub refused it | Informational (consistency; no access gained: nothing went through the process table) | 2505c0f | `phase7_live.py` "a single-name lookup only in a real table" |
+| 2026-10-13 | 7 | Phase 7 review: `st_valid_lnm_table` refused `LNM$JOB` but not a job table by its own name, which `GET logicals/tables` lists (the pool's own among them). A single-name lookup in it ran `$TRNLNM` under the persona in the service's job table. Whether OpenVMS's protection check stops an unprivileged viewer there was not probed; the table holds SYS$LOGIN and the like, and the settings (the gateway secret) are process names | Low (unverified exposure of the service's job names) | this commit: every `LNM$JOB_` table refused | unit "a job table by its own name is refused"; `phase7_live.py` "a job table by its own name", "one name in a job table" |

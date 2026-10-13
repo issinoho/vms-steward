@@ -442,8 +442,9 @@ Read **as you**: what you could not see with `SHOW LOGICAL` at a terminal, you d
 see here. The process and job tables, and the names that search them (`LNM$PROCESS`,
 `LNM$PROCESS_TABLE`, `LNM$PROCESS_DIRECTORY`, `LNM$JOB`, `LNM$FILE_DEV`,
 `LNM$DCL_LOGICAL`, `LNM$DIRECTORIES`, `LNM$TEMPORARY_MAILBOX`,
-`LNM$PERMANENT_MAILBOX`), are refused with `400`. Under a persona they would be the
-service's own, not yours. A table name is 1 to 31 characters from `A-Z 0-9 $ _`, in
+`LNM$PERMANENT_MAILBOX`), and every job table by its own name (`LNM$JOB_8217EDC0`),
+are refused with `400`. Under a persona they would be the service's own, not yours,
+and one of the job tables is the service's job's. A table name is 1 to 31 characters from `A-Z 0-9 $ _`, in
 any case.
 
 OpenVMS has no service that lists a table. To list one, Steward has `SHOW
@@ -471,7 +472,7 @@ The shareable tables, from `LNM$SYSTEM_DIRECTORY`, as your listing of it shows t
 
 - `kind` is `system`, `cluster` (`LNM$SYSCLUSTER_TABLE` or a clusterwide table),
   `group`, `job` or `other`, and is used for grouping in the view.
-- `listable` is false for a table the endpoints below refuse.
+- `listable` is false for a table the endpoints below refuse: the job tables.
 - `your_group_table` is your UIC group's table. `LNM$GROUP` in the endpoints below
   means that table.
 

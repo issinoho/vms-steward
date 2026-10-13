@@ -954,6 +954,9 @@ static void test_lnm_parser(void)
           !st_valid_lnm_table("LNM$PROCESS_DIRECTORY", out) && !st_valid_lnm_table("LNM$JOB", out) &&
           !st_valid_lnm_table("LNM$FILE_DEV", out) && !st_valid_lnm_table("LNM$DIRECTORIES", out),
           "the process's own tables, and the names that search them, are refused (the service's settings)");
+    CHECK(!st_valid_lnm_table("LNM$JOB_8217EDC0", out) && !st_valid_lnm_table("lnm$job_8217edc0", out) &&
+          !st_valid_lnm_table("LNM$JOB_", out) && st_valid_lnm_table("LNM$JOBS", out),
+          "a job table by its own name is refused, whatever its case (one of them is the service's)");
     CHECK(!st_valid_lnm_table("LNM$SYSTEM_TABLE/OUTPUT=X", out) && !st_valid_lnm_table("A B", out) &&
           !st_valid_lnm_table("", out) && !st_valid_lnm_table("ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456", out),
           "a table name with anything DCL could read as a qualifier, or too long, is refused");

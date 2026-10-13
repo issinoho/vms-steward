@@ -29,8 +29,8 @@ What it could not see, it did not show.
 **Read-only (7a):**
 - `GET api/v1/logicals/tables`: the shareable tables (the system directory), with
   protection, owner and attributes. The viewer's group table is shown as theirs.
-  Process and job tables are left out: under a persona they would be the service
-  process's own, not the viewer's.
+  Process tables are left out. Job tables are shown, as `/STRUCTURE` shows them,
+  but not listable (2026-10-13, the user's decision): one of them is the service's.
 - `GET api/v1/logicals?table=&filter=`: the names in a table, each with its access
   mode, attributes and equivalences (with their own attributes), parsed from
   `SHOW LOGICAL/FULL`.

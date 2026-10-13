@@ -372,3 +372,9 @@ Found by probe (`probes/probe_lnm.c`, PHASE7.md), each of these refused:
   `GET logicals/tables` lists them, and a translation there (LNM$FILE_DEV, say) would
   only show a search list the other endpoints refuse. Refusing it keeps one rule for
   every single-name lookup rather than relaxing the live test.
+- **Job tables refused by name too (2026-10-13, the user's decision).** Any
+  `LNM$JOB_<address>` is refused for listing and lookup, as `LNM$JOB` is. The tables
+  list still shows them, not listable. One of them is the pool process's job's, and
+  Steward cannot tell a viewer's job from the service's. The alternative, leaving the
+  check to OpenVMS's protection on the table, was not probed for the in-process
+  `$TRNLNM` under a persona in the service's own job table.
