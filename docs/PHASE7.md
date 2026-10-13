@@ -53,6 +53,22 @@ asks first.
 - Hostile tables and patterns are refused by both Steward and the procedure.
 - No helper process is left behind, on timeout or error.
 
+## Exit record (7a), in progress
+
+Each exit criterion, with what showed it. `tests/vms/phase7_live.py` on x86,
+2026-10-13: 16 ok, 0 failed.
+
+| Criterion | Shown by | State |
+|---|---|---|
+| Names match `SHOW LOGICAL/FULL`, unprivileged | STEWARD_TEST: the system table, 341 names here and there; SYS$SYSROOT's equivalences and attributes as `F$TRNLNM` gives them | done |
+| Names match, privileged | STEWARD_ADM with SYSPRV: group 1's table, the same names as `SHOW LOGICAL` with SYSPRV | done |
+| Tables match `SHOW LOGICAL/STRUCTURE` | the live test checks only that the system table and the viewer's group table are listed, and no process table | **open**: compare the whole list by hand or in the test |
+| A name the viewer may not read is not shown | another group's table: 404 IVLOGTAB for STEWARD_TEST, and for STEWARD_ADM without SYSPRV | done |
+| Hostile tables and patterns refused, by Steward and by the procedure | five hostile requests refused with 400 before OpenVMS is asked; the directory refused for a single name | Steward done; the procedure's own check was shown by probe (PHASE7 table above), not by the live test |
+| No helper process left behind | `SHOW SYSTEM` after the run: no `STW` process | done (normal path); the timeout path is by review only |
+| Browser checks | | **open**: the user's |
+| Security gate (security.md) | Phase 7 threat-model section, invariants and audit record written 2026-10-13 | review of the changed files still to run |
+
 ## Where this stands (2026-10-11, end of session): resume here
 
 **Built (7a, read-only), not yet released or installed by kit:**
@@ -91,9 +107,8 @@ Found on the node and handled:
 **Next, in order:**
 1. ~~**The one failing live check.**~~ Done 2026-10-13: `st_plat_lnm_get` on VMS
    refuses LNM$SYSTEM_DIRECTORY as the stub did (DECISIONS D14). Live: 16 ok, 0 failed.
-2. **Docs:** api.md (the three endpoints), security.md (Phase 7: the helper process,
-   data-only mailboxes, the process-table refusal, the D9 privileges, IVLOGTAB), and
-   the PHASE7 exit record.
+2. ~~**Docs.**~~ Done 2026-10-13: api.md (the three endpoints), security.md (Phase 7
+   section, invariants, audit record) and the exit record above, with its open rows.
 3. **Release:** `make audit`, then commit. Build the kit (bump to 0.5.0, T0.5-0),
    install it on x86, and remove the hand-copied `STEWARD$ROOT:[COM]STEWARD_LNM.COM;*`
    versions first, or purge after the kit puts its own there.

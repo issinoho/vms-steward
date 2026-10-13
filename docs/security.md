@@ -72,6 +72,9 @@ browser ─(1)─ nginx proxy manager ─(2)─ lighttpd ─(3)─ STEWARD.EXE �
 | Every change is audited, without passwords | handlers | API suite "no password reaches the audit log" |
 | A failed create leaves nothing behind | `st_plat_user_create` undoes the record and identifier | unit "nothing was left behind"; on VMS `phase4_live.py` (PWDSYNTAX after `$PUT`) |
 | Steward cannot delete the signed-in account or itself | `svc_user_delete` | unit 409s |
+| The service's process and job logical names are never read or listed for a viewer | `st_valid_lnm_table`; `st_plat_lnm_get` translates only in a real table of LNM$SYSTEM_DIRECTORY | unit `test_lnm_parser` (the table checks); `phase7_live.py` "refused before OpenVMS is asked" |
+| A listing of logical names is the viewer's own, run as them, with commands never built from input | the D14 helper: data-only mailboxes, checks in Steward and in `STEWARD_LNM.COM` | `phase7_live.py` |
+| No helper process outlives its request | `st_plat_lnm_list` deletes it on timeout or error | `phase7_live.py` "no helper process left behind" |
 
 ## Phase 2 additions (users and identifiers, read-only)
 
@@ -172,6 +175,57 @@ browser ─(1)─ nginx proxy manager ─(2)─ lighttpd ─(3)─ STEWARD.EXE �
   A very large journal or accounting file makes this slow, as it makes ANALYZE/AUDIT and
   ACCOUNTING slow; the answer is to rotate them (PHASE6.md).
 
+## Phase 7 additions (logical names, read-only; D14)
+
+- **New endpoints:** three GETs (docs/api.md). They need a session, run under the
+  persona, and change nothing.
+- **New system services, under the persona:** `$TRNLNM` in-process, and, to list a
+  table, `$CREMBX`, `$CREPRC` (detached, `LOGINOUT`), `$QIO` on the mailboxes,
+  `$SETIMR`/`$CANTIM` and `$DELPRC`.
+- **The helper process.** OpenVMS cannot list a table through a service, so the listing
+  runs in a short-lived detached process created while the persona is assumed. That
+  process *is* the viewer: their UIC, and their authorized privileges as LOGINOUT
+  gives them. It runs the fixed procedure `STEWARD_LNM.COM` from the kit, and `SHOW
+  LOGICAL` shows what OpenVMS lets the viewer see. Steward never builds a command line.
+  - **Data only.** The table, the pattern and the session's privileges go as three
+    mailbox messages. The procedure checks each against its own character set (`A-Z
+    0-9 $ _ * %` for the first two; letters, `_` and `,` for the privileges), as
+    Steward did, before DCL sees them. Nothing that would be a qualifier, a symbol or
+    a second command gets through (live: "a table with a qualifier in it", "a pattern
+    with a quote").
+  - **The mailboxes** are temporary, created under the persona, and protected for
+    system and owner only. Only the viewer's own processes could touch them.
+  - **The output is untrusted.** The viewer's own login procedures run before the
+    helper procedure, and the reply mailbox is the viewer's, so they could write
+    anything into their own listing. It is parsed with bounded copies (the parser is
+    fuzzed, each line in a buffer of exactly its length) and goes back only to that
+    viewer.
+  - **Never left behind.** Steward waits on a blocking read with a 30-second timer.
+    On a timeout or a read error it deletes the helper by PID (live: "no helper
+    process left behind").
+  - **Cost to the viewer.** Each listing is a short login of the viewer: accounting
+    records it, and it counts against their process and job limits while it runs.
+    The pool serves one request per process, so a user can keep at most one helper
+    per pool process running.
+- **Privileges (D9).** The helper starts with the account's default privileges only.
+  The privileges switched on in the session are sent as data, and the procedure runs
+  `SET PROCESS/PRIVILEGE`, which OpenVMS caps at the account's authorized set (live:
+  STEWARD_ADM sees group 1's table only with SYSPRV switched on).
+- **The service's own names.** The service keeps its settings, among them the gateway
+  secret, in process logical names. Under a persona, `$TRNLNM` in the process table
+  would read them. `st_valid_lnm_table` refuses the process and job tables, and every
+  search list through them (`LNM$FILE_DEV`, `LNM$DCL_LOGICAL`, ...), before any
+  service is called. `st_plat_lnm_get` also translates only in a real table of
+  `LNM$SYSTEM_DIRECTORY` (not an alias, not a search list, not the directory itself).
+  The translation chain looks only in the viewer's group table, the system table and
+  the cluster table.
+- **What OpenVMS says, accepted as it is.** `SHOW LOGICAL` answers IVLOGTAB, as a
+  warning, both for a table that does not exist and for one the viewer may not read.
+  Steward gives 404 for both, so it reveals no more than the terminal does.
+- **New data shown:** names and equivalences the viewer can already read. Equivalence
+  strings are written by whoever defines the names, may hold any byte, and reach the
+  page only through the JSON writer and `dom.js`.
+
 ## Phase 5: load run and review (2026-10-11)
 
 - **Load run, Linux** (`tests/load/load.py fcgi`). There were 8 concurrent clients, each
@@ -268,3 +322,5 @@ instance behind nginx proxy manager.
 | 2026-10-11 | 5 | Phase 5 review of access history: when 6,000 process records were held, each new one scanned them all for the oldest, so a busy accounting file made a request quadratic | Low (slow responses; needs SYSPRV or READALL to reach) | Phase 5 commit: a ring | 10,000-request soak on the node |
 | 2026-10-11 | 5 | Phase 5 review: one accounting or journal record longer than the buffer (8 KB for the journal) ended the read of the whole file (`RMS-W-RTB`), silently hiding everything after it | Low (incomplete history) | Phase 5 commit: 64 KB buffers, an over-long record is skipped | code review; no such record on the node |
 | 2026-10-11 | 5 | Phase 5 review: the SSH log search left RMS's wildcard context open when it stopped early (a refusal, or 256 logs) | Informational (no channel leak measured) | Phase 5 commit: the search is ended on every exit | soak: open-file quota unchanged |
+| 2026-10-11 | 7 | The SHOW LOGICAL parser could read past the end of a line. The fuzzer found it once each line had a buffer of exactly its length (the shape of the line was not recorded) | Medium (memory safety, signed-in; the input is the viewer's own listing) | ff48318 | fuzz target with exact-length lines |
+| 2026-10-13 | 7 | `logicals/LNM$SYSTEM_DIRECTORY/{name}` translated in the directory, which has the table attribute; the stub refused it | Informational (consistency; no access gained: nothing went through the process table) | 2505c0f | `phase7_live.py` "a single-name lookup only in a real table" |

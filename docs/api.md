@@ -436,6 +436,104 @@ not hidden, and the others are still shown.
 - Times from OpenSSH's logs are the log file's creation and last-write dates: its lines
   carry none.
 
+## Logical names (Phase 7, D14): read-only
+
+Read **as you**: what you could not see with `SHOW LOGICAL` at a terminal, you do not
+see here. The process and job tables, and the names that search them (`LNM$PROCESS`,
+`LNM$PROCESS_TABLE`, `LNM$PROCESS_DIRECTORY`, `LNM$JOB`, `LNM$FILE_DEV`,
+`LNM$DCL_LOGICAL`, `LNM$DIRECTORIES`, `LNM$TEMPORARY_MAILBOX`,
+`LNM$PERMANENT_MAILBOX`), are refused with `400`. Under a persona they would be the
+service's own, not yours. A table name is 1 to 31 characters from `A-Z 0-9 $ _`, in
+any case.
+
+OpenVMS has no service that lists a table. To list one, Steward has `SHOW
+LOGICAL/FULL` list it in a short-lived process that is you, with the privileges you
+switched on (D9), and parses the output. That takes about half a second. One name is
+translated in-process with `$TRNLNM`.
+
+Refusals common to all three:
+- `404` with `vms_status`: a table that does not exist, or that you may not read
+  (OpenVMS says IVLOGTAB or NOLOGTAB for both), or a name not in the table (NOLOGNAM).
+- `500` if the listing does not finish within 30 seconds. The helper process is
+  deleted.
+
+### `GET api/v1/logicals/tables`
+
+The shareable tables, from `LNM$SYSTEM_DIRECTORY`, as your listing of it shows them.
+
+```json
+{"your_group_table": "LNM$GROUP_000362",
+ "tables": [
+   {"name": "LNM$SYSTEM_TABLE", "mode": "kernel", "kind": "system", "listable": true},
+   {"name": "LNM$SYSCLUSTER_TABLE", "mode": "kernel", "kind": "cluster", "listable": true},
+   {"name": "LNM$GROUP_000362", "mode": "kernel", "kind": "group", "listable": true}]}
+```
+
+- `kind` is `system`, `cluster` (`LNM$SYSCLUSTER_TABLE` or a clusterwide table),
+  `group`, `job` or `other`, and is used for grouping in the view.
+- `listable` is false for a table the endpoints below refuse.
+- `your_group_table` is your UIC group's table. `LNM$GROUP` in the endpoints below
+  means that table.
+
+### `GET api/v1/logicals?table=&filter=`
+
+The names in a table, as `SHOW LOGICAL/FULL/TABLE=table filter` lists them.
+- `table` defaults to `LNM$SYSTEM_TABLE`.
+- `filter` defaults to `*`. With `*` or `%` in it, it is a DCL pattern. Without them, it
+  matches anywhere in the name (`SYS` is `*SYS*`). Either way it is 1 to 63 characters
+  from `A-Z 0-9 $ _ * %`, upper-cased, and anything else is a `400`.
+
+```json
+{"table": "LNM$SYSTEM_TABLE", "filter": "SYS$SYSROOT",
+ "tables": [
+   {"name": "LNM$SYSTEM_TABLE", "mode": "kernel", "attributes": ["shareable", "system"],
+    "protection": "(RWC,RWC,R,R)", "owner": "[SYSTEM]",
+    "names": [
+      {"name": "SYS$SYSROOT", "mode": "exec", "attributes": [],
+       "equivalences": [
+         {"value": "X86VMS$DKA0:[SYS0.]", "attributes": ["concealed", "terminal"]},
+         {"value": "SYS$COMMON:", "attributes": []}]}]}],
+ "truncated": false}
+```
+
+- `tables` has one entry per table the listing went through. A table name that is a
+  search list (`LNM$FILE_DEV` aside, which is refused) lists each of its tables in turn.
+- A name keeps its first 16 equivalences. Past that, `more_equivalences` gives how
+  many more there are.
+- At most 2,000 names are returned. Past that, `truncated` is true.
+
+### `GET api/v1/logicals/{table}/{name}`
+
+One name, every equivalence (`$TRNLNM`), and what each equivalence translates to in
+turn, as `SHOW LOGICAL` does.
+
+- `{table}` must be a table in `LNM$SYSTEM_DIRECTORY` with the table attribute, or
+  `LNM$GROUP`. A search list of tables, or the directory itself, is a `404`.
+- `{name}` is 1 to 255 printable characters (URL-encoded), taken as given: logical names
+  are case-sensitive.
+
+```json
+{"table": "LNM$SYSTEM_TABLE",
+ "logical": {"name": "SYS$SYSROOT", "mode": "exec", "attributes": [],
+             "equivalences": [
+               {"value": "X86VMS$DKA0:[SYS0.]", "attributes": ["concealed", "terminal"]},
+               {"value": "SYS$COMMON:", "attributes": []}]},
+ "translations": [
+   [],
+   [{"name": "SYS$COMMON", "table": "LNM$SYSTEM_TABLE",
+     "value": "X86VMS$DKA0:[SYS0.SYSCOMMON.]", "attributes": ["concealed", "terminal"]}]]}
+```
+
+- `table` is the table the name was found in.
+- `translations` has one list per equivalence: each step's name, the table it was found
+  in, and its first equivalence. A value leads on if it is a bare name or a device
+  (`SYS$COMMON`, `SYS$COMMON:`, `DATA:[LOG]`). The chain ends at a `terminal`
+  equivalence, at a value that is not a name, or after nine steps, as OpenVMS stops.
+- Each step is looked up in your group table, then `LNM$SYSTEM_TABLE`, then
+  `LNM$SYSCLUSTER_TABLE`, and never in the process or job table. So a step that only a
+  process or job name would resolve is not shown.
+
 ## Coming
 
-Logical names, processes and queues (`docs/PLAN.md`).
+Defining and deassigning logical names (Phase 7b), then processes and queues
+(`docs/PLAN.md`).
