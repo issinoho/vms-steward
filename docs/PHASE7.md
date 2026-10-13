@@ -71,7 +71,7 @@ Each exit criterion, with what showed it. `tests/vms/phase7_live.py` on x86,
 
 ## Where this stands (2026-10-11, end of session): resume here
 
-**Built (7a, read-only), not yet released or installed by kit:**
+**Built (7a, read-only), installed on x86 as 0.5.0 (2026-10-13), not yet published:**
 - **Core:** `src/core/st_lnm.{h,c}`: the input checks, which refuse process and job
   tables and search lists through them, and the SHOW LOGICAL/FULL parser. It is unit
   tested and fuzzed; the fuzzer gives each line a buffer of exactly its length, and
@@ -109,9 +109,12 @@ Found on the node and handled:
    refuses LNM$SYSTEM_DIRECTORY as the stub did (DECISIONS D14). Live: 16 ok, 0 failed.
 2. ~~**Docs.**~~ Done 2026-10-13: api.md (the three endpoints), security.md (Phase 7
    section, invariants, audit record) and the exit record above, with its open rows.
-3. **Release:** `make audit`, then commit. Build the kit (bump to 0.5.0, T0.5-0),
-   install it on x86, and remove the hand-copied `STEWARD$ROOT:[COM]STEWARD_LNM.COM;*`
-   versions first, or purge after the kit puts its own there.
+3. ~~**Release.**~~ Done 2026-10-13: `make audit` passes (cppcheck and flawfinder
+   left to CI). Kit T0.5-0 built by `tools/kit.sh x86` (250 native checks),
+   SHA-256 `4fa5b40f3b6a417ec10572f14f3712ad499183a515d98709284cfa8e4a13e9ca`. The user
+   deleted the hand-copied `STEWARD_LNM.COM;3`, installed the kit over T0.4-0 and
+   restarted the pool. The pool runs the kit's `STEWARD.EXE;1` with DETACH, TMPMBX,
+   NETMBX. `phase7_live.py` against the kit's `STEWARD_LNM.COM;1`: 17 ok, 0 failed.
 4. **Exit:** ask the user for the 7a browser exit checks, then commit, push and release
    per the standing pattern. 7b (define, deassign) comes after.
 
