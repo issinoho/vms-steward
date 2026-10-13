@@ -20,7 +20,10 @@ cluster), and covers users and rights identifiers, roughly what AUTHORIZE does:
     (SSH, TELNET, DECnet, LAT, batch, Steward), from accounting, the audit
     journal, OpenSSH's logs and Steward's own log
   - logical names: the shareable tables, the names in each and what a name
-    translates to, as SHOW LOGICAL shows them to you (read-only for now)
+    translates to, as SHOW LOGICAL shows them to you; define, change and
+    deassign names (as DEFINE and DEASSIGN), with the privileges you switched
+    on: SYSNAM for supervisor and executive mode, GRPNAM or GRPPRV for your
+    group table
 
 Every request runs as you: Steward takes on your OpenVMS identity (a persona) for
 the request, so OpenVMS decides what you may see and change, exactly as at a
@@ -185,6 +188,10 @@ Notes for this test release
 - Steward shows what OpenVMS lets you see, no more and no less: any signed-in
   user can read the rights database, and can tell whether a username exists,
   as at a terminal.
+- Logical names you define from Steward are as if defined at a terminal: they
+  can change what any process on the system translates, Steward's own included.
+  Keep Steward's service account in a UIC group of its own, so that no other
+  user's group logical names apply to it.
 - Listing a logical name table runs SHOW LOGICAL in a short-lived detached
   process that logs in as you: it appears in accounting, counts against your
   process limits while it runs, and runs your SYLOGIN and LOGIN.COM first.

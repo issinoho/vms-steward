@@ -21,7 +21,8 @@ see and change.
 of the system, covers users and rights identifiers (what AUTHORIZE does, from
 creating and copying accounts to deleting them), shows the system's access
 history (who signed in, when, from where and by which route), and lets you browse
-logical names as `SHOW LOGICAL` shows them to you. Please try it on a test system first and report what you find.
+logical names as `SHOW LOGICAL` shows them to you. The 0.6.0 test kit adds
+defining and deassigning them. Please try it on a test system first and report what you find.
 
 Phases 1 to 6 and 7a are closed: sign-in, the read-only views, changes, creating and
 deleting users, hardening (a load run and soak, [`docs/PHASE5.md`](docs/PHASE5.md)),
@@ -40,7 +41,7 @@ penetration test are still to come ([`docs/REVIEW-BRIEF.md`](docs/REVIEW-BRIEF.m
 | Hardening: load run, soak, review of the new code | done (Phase 5, closed 2026-10-11; external review open) |
 | Access history: who connected, when, how (SSH, TELNET, DECnet, LAT, batch, Steward) in one view | done (Phase 6, closed 2026-10-11) |
 | Logical names: tables, names and translations, read-only | done (Phase 7a, closed 2026-10-13, 0.5.1) |
-| Logical names: define and deassign | next (Phase 7b) |
+| Logical names: define, change and deassign | built (Phase 7b, 0.6.0 test kit); exit checks open |
 | Processes, queues, SYSGEN, licences, products, monitoring, error log, terminal | later |
 
 ## Installing
