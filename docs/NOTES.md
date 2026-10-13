@@ -160,4 +160,8 @@ now owned by LIGHTTPD: STEWARD$CONFIGURE had made it the work account's, for the
 server, and LIGHTTPD (not a system UIC) could not have read the secret. `;6` is
 kept to roll back. Checked: the board on 80, Steward's page and health through the
 proxy, and 401 (not 403) for an API request without a session, so the gateway secret
-arrives. Still open: the Steward pool did not start at boot after the reboots.
+arrives. The pool did not start at boot after the reboots: SYSTARTUP_VMS.COM calls
+STEWARD$STARTUP, but STEWARD$CONFIG.COM said `steward_autostart == "NO"`
+(STEWARD$CONFIGURE's default), so it only defined STEWARD$ROOT. The user installed
+`STEWARD$CONFIG.COM;4` with YES (`;3` kept). Not yet seen across a reboot. If
+STEWARD$CONFIGURE is run again: YES to autostart, LIGHTTPD for lighttpd's account.
