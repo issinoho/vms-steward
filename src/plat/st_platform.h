@@ -388,7 +388,8 @@ int st_plat_lnm_modes(const char *table, const char *name, st_err *e);
    checked d->replace). Supervisor and executive mode need SYSNAM switched on:
    without it this fails with ST_E_NOPRIV (NOSYSNAM) and asks OpenVMS nothing, since
    OpenVMS would quietly define the name at user mode instead (NOTES.md). Returns 1
-   defined, 2 replaced, -1 on error. */
+   defined, 2 if OpenVMS said SUPERSEDE (which it also says when no_alias removed
+   the name at an outer mode only), -1 on error. */
 int st_plat_lnm_define(const st_lnm_def *d, st_err *e);
 
 /* Deassign <name> at <mode> and every outer mode, as DEASSIGN does ($DELLNM). The same

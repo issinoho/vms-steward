@@ -581,6 +581,8 @@ mode instead, replacing a user-mode name you did not mention.
 - **`no_alias` removes the name at every outer mode**, as OpenVMS does.
 - The answer is the name as `GET logical` gives it: `201` if new, `200` if replaced.
   Its `modes` shows what is left.
+- A body that is not an object is a `400`. A bad or missing member is a `422`, whose
+  `detail` names it.
 
 ### `DELETE api/v1/logical?table=&name=&mode=`
 

@@ -4,7 +4,7 @@ dispatcher and platform (tests/vms/api_probe), checked against DCL.
     python3 tests/vms/phase7b_live.py [node]      (default x86; run from the repo top)
 
 WRITES LOGICAL NAMES: the one name STEWARD_PROBE_7B, in LNM$SYSTEM_TABLE (as
-STEWARD_ADM, which needs SYSNAM authorized) and in STEWARD_TEST's group table
+STEWARD_ADM, which needs SYSNAM authorized), LNM$SYSCLUSTER_TABLE, and in STEWARD_TEST's group table
 (LNM$GROUP_000362, with GRPPRV), as the user agreed on 2026-10-13. Whatever happens it
 deassigns that name from both tables at the end, as the work account. Needs @BUILD_VMS
 run on the node first; the node's paths come from tools/nodes.conf."""
@@ -125,7 +125,19 @@ try:
     check(st == 200 and doc["removed"] == ["exec"] and modes_in("LNM$SYSTEM_TABLE") == {}, "and at executive mode", (st, doc))
     st, doc = deassign("STEWARD_ADM", "SYSPRV,SYSNAM", "LNM$SYSTEM_TABLE", "exec")
     check(st == 404 and "NOLOGNAM" in json.dumps(doc), "deassigning what is gone: 404 NOLOGNAM", (st, doc))
+    # A new name no_alias over an outer one: is it reported as new (201) or as replaced?
+    define("STEWARD_ADM", "SYSPRV,SYSNAM", "LNM$SYSTEM_TABLE", "user", ["U"])
+    st, doc = define("STEWARD_ADM", "SYSPRV,SYSNAM", "LNM$SYSTEM_TABLE", "exec", ["N"], attrs=["no_alias"])
+    check(st == 201 and doc["modes"] == ["exec"] and modes_in("LNM$SYSTEM_TABLE") == {"executive": ("N", "0")},
+          "no_alias, new at exec mode over a user-mode name: 201, the user-mode name gone", (st, doc))
+    deassign("STEWARD_ADM", "SYSPRV,SYSNAM", "LNM$SYSTEM_TABLE", "exec")
 
+    # The cluster table: on a standalone node, as the system table (probe_crelnm).
+    st, doc = define("STEWARD_ADM", "SYSPRV,SYSNAM", "LNM$SYSCLUSTER_TABLE", "exec", ["C"])
+    got = modes_in("LNM$SYSCLUSTER_TABLE")
+    st2, doc2 = deassign("STEWARD_ADM", "SYSPRV,SYSNAM", "LNM$SYSCLUSTER_TABLE", "exec")
+    check(st == 201 and got == {"executive": ("C", "0")} and st2 == 200 and modes_in("LNM$SYSCLUSTER_TABLE") == {},
+          "the cluster table: defined at exec mode and deassigned", (st, doc, got, st2, doc2))
     st, doc = define("STEWARD_ADM", "SYSPRV,SYSNAM", "LNM$SYSTEM_DIRECTORY", "exec", ["X"])
     check(st == 404, "never in the directory", (st, doc))
     st, doc = api("STEWARD_ADM", "SYSPRV,SYSNAM", "/api/v1/logical?table=LNM$SYSTEM_TABLE&name=SYS$SYSROOT")
@@ -137,10 +149,11 @@ try:
           'outcome="failed" detail="%SYSTEM-F-NOPRIV' in log and "X86VMS$DKA0:[P.]" not in log and '"S2"' not in log,
           "audited on the node: changes and refusals, never an equivalence", log[-600:])
 finally:
-    vms("deassign/system/executive_mode " + NAME, "deassign/table=%s/executive_mode %s" % (GROUP, NAME),
+    vms("deassign/system/executive_mode " + NAME, "deassign/table=LNM$SYSCLUSTER_TABLE/executive_mode " + NAME, "deassign/table=%s/executive_mode %s" % (GROUP, NAME),
         "delete/nolog " + AUDIT + ";*")
-    left = vms("show logical/table=LNM$SYSTEM_TABLE " + NAME, "show logical/table=%s %s" % (GROUP, NAME))
-    check(NAME + '"' not in left, "nothing left in either table", left)
+    left = vms("show logical/table=LNM$SYSTEM_TABLE " + NAME, "show logical/table=%s %s" % (GROUP, NAME),
+               "show logical/table=LNM$SYSCLUSTER_TABLE " + NAME)
+    check(NAME + '"' not in left, "nothing left in any of the tables", left)
 
 print("%d ok, %d failed" % (ok, bad))
 sys.exit(1 if bad else 0)

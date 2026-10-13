@@ -261,6 +261,13 @@ browser ─(1)─ nginx proxy manager ─(2)─ lighttpd ─(3)─ STEWARD.EXE �
   directory, `LNM$GROUP` named explicitly as the viewer's group table (under a persona
   it is the service's), and nothing the service's process directory also names
   (`$CRELNM` and `$DELLNM` look there first).
+- **Accepted: the table is resolved twice** (Phase 7b review). Steward checks the
+  table in LNM$SYSTEM_DIRECTORY, and `$CRELNM` or `$DELLNM` then resolves the name
+  again. Someone who can rewrite LNM$SYSTEM_DIRECTORY between the two (SYSNAM or
+  system access) could point the change at the pool's own process table. That person
+  can already read the gateway file and every session record, so nothing new is
+  reachable. The process-table refusal is absolute against the request's input, not
+  against such a person.
 - **Input:** the name and each equivalence are 1 to 255 printable ASCII characters,
   1 to 16 equivalences, attributes from fixed lists; the body is parsed in core
   (`st_lnm_def_parse`, unit tested) and anything unknown is refused.

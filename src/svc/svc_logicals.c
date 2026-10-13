@@ -343,7 +343,7 @@ void svc_logical_define(st_ctx *c)
     st_jdoc doc;
     const char *why;
     char group[24], target[ST_LNM_TABLE_MAX + ST_LNM_NAME_MAX + 16];
-    int rc, modes;
+    int rc, modes, replaced;
     st_err e;
 
     if (st_app_body(c, &doc)) return;
@@ -367,13 +367,16 @@ void svc_logical_define(st_ctx *c)
         return;
     }
     /* Never the equivalences in the audit log: names sometimes carry secrets. */
-    if ((rc = st_plat_lnm_define(&d, &e)) < 0) {
+    if (st_plat_lnm_define(&d, &e) < 0) {
         st_app_audit(c, c->session.username, "logical-define", target, "failed", e.text);
         st_app_error(c, &e);
         return;
     }
-    st_app_audit(c, c->session.username, "logical-define", target, "ok", rc == 2 ? "replaced" : NULL);
-    one_name(c, d.table, d.name, rc == 2 ? 200 : 201);
+    /* Replaced if it was there at that mode. Not OpenVMS's SUPERSEDE: it says that
+       too when no_alias removes the name at an outer mode (NOTES.md). */
+    replaced = (modes & (1 << d.mode)) != 0;
+    st_app_audit(c, c->session.username, "logical-define", target, "ok", replaced ? "replaced" : NULL);
+    one_name(c, d.table, d.name, replaced ? 200 : 201);
 }
 
 /* DELETE api/v1/logical?table=&name=&mode=: the name at that mode and every outer
