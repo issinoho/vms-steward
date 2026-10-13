@@ -2694,7 +2694,10 @@ int st_plat_lnm_get(const char *table, const char *name, st_lnm *out,
 
     /* Only a real shareable table: one listed with the table attribute in
        LNM$SYSTEM_DIRECTORY. Not a search list of tables (which could name the
-       process table, the service's own), not a process or job table of this process. */
+       process table, the service's own), not a process or job table of this process.
+       Not the directory itself either: it has the table attribute, but its names are
+       tables, listed by GET logicals/tables. The table is uppercase (st_valid_lnm_table). */
+    if (!strcmp(table, "LNM$SYSTEM_DIRECTORY")) { set_cond(e, SS$_NOLOGTAB); return -1; }
     desc(&dir, "LNM$SYSTEM_DIRECTORY", 20);
     desc(&tab, table, (unsigned short) strlen(table));
     item(&it[0], LNM$_ATTRIBUTES, &attrs, 4, 0);

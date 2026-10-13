@@ -74,8 +74,8 @@ asks first.
   table header, names, and the chain on click.
 - **Kit:** `vms/steward_lnm.com` and `LOGICALS.JS` are in the kit, and the
   `kit-has-files` audit rule checks them.
-- **Tests:** 250 unit checks pass. `tests/vms/phase7_live.py` on x86 gives 15 ok,
-  1 failed (below).
+- **Tests:** 250 unit checks pass. `tests/vms/phase7_live.py` on x86 gives 16 ok,
+  0 failed (2026-10-13).
 
 Found on the node and handled:
 - `$STATUS` is a string: the procedure uses `F$INTEGER`.
@@ -89,12 +89,8 @@ Found on the node and handled:
   0.37s.
 
 **Next, in order:**
-1. **The one failing live check:** `GET logicals/LNM$SYSTEM_DIRECTORY/LNM$FILE_DEV`
-   returns 200. The directory passes the "real table" check, since it has the table
-   attribute. It does no harm: nothing is translated through the process table, and
-   the chain is empty. But decide whether single-name lookups in the *directories*
-   should be refused for consistency (then refuse LNM$SYSTEM_DIRECTORY in
-   st_plat_lnm_get, VMS and stub), or the test relaxed.
+1. ~~**The one failing live check.**~~ Done 2026-10-13: `st_plat_lnm_get` on VMS
+   refuses LNM$SYSTEM_DIRECTORY as the stub did (DECISIONS D14). Live: 16 ok, 0 failed.
 2. **Docs:** api.md (the three endpoints), security.md (Phase 7: the helper process,
    data-only mailboxes, the process-table refusal, the D9 privileges, IVLOGTAB), and
    the PHASE7 exit record.

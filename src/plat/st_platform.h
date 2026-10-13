@@ -368,8 +368,8 @@ int st_plat_lnm_list(const char *table, const char *pattern, const char *privs,
                      st_lnm_cb fn, void *ctx, st_err *e);
 
 /* One name, in-process ($TRNLNM), every equivalence. The table must be a real
-   shareable table (a table in LNM$SYSTEM_DIRECTORY, never a search list, never a
-   process or job table: st_valid_lnm_table), or LNM$GROUP, which means the
+   shareable table (a table in LNM$SYSTEM_DIRECTORY, never the directory itself,
+   never a search list, never a process or job table: st_valid_lnm_table), or LNM$GROUP, which means the
    *viewer's* group table. table_out gets the table it was found in. Returns 1 if
    found, 0 if not (e->kind ST_E_NOTFOUND), -1 on error. */
 int st_plat_lnm_get(const char *table, const char *name, st_lnm *out,

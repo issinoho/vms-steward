@@ -366,3 +366,9 @@ Found by probe (`probes/probe_lnm.c`, PHASE7.md), each of these refused:
   prompt.
 - DCL refuses a mailbox as SYS$OUTPUT (`%RMS-F-DEV`), so the procedure writes the
   listing with `SHOW LOGICAL/OUTPUT=`.
+- **One name, only in a table (2026-10-13).** `GET logicals/{table}/{name}` refuses
+  LNM$SYSTEM_DIRECTORY with a 404, on VMS as the stub already did. The directory has
+  the table attribute, so it passed the "real table" check, but its names are tables:
+  `GET logicals/tables` lists them, and a translation there (LNM$FILE_DEV, say) would
+  only show a search list the other endpoints refuse. Refusing it keeps one rule for
+  every single-name lookup rather than relaxing the live test.
