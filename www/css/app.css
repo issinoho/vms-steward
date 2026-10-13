@@ -442,4 +442,8 @@ tr.detail td { background: var(--panel-2); }
 .chain { display: grid; gap: .4em; }
 .chainrow { display: flex; flex-wrap: wrap; align-items: center; gap: .4em .6em; }
 .chainrow .arrow { color: var(--muted); }
+.lnm-actions { margin-top: .6em; align-items: center; }
+.eqrows { display: grid; gap: .5em; margin-bottom: .5em; }
+.eqrow { display: flex; flex-wrap: wrap; align-items: center; gap: .4em .8em; }
+.eqrow input { flex: 1 1 18em; }
 @media (max-width: 720px) { .lnm { grid-template-columns: minmax(0, 1fr); } .lnm .panel.tables { max-height: 40vh; } }

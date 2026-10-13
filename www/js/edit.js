@@ -59,14 +59,14 @@ export function dialog(title, body, actions) {
   return dlg;
 }
 
-function field(label, input, hint) {
+export function field(label, input, hint) {
   const id = `f${Math.random().toString(36).slice(2, 9)}`;
   input.id = id;
   return h('div', { class: 'field' }, h('label', { for: id }, label), input, hint ? h('small', { class: 'muted' }, hint) : null);
 }
 
 // LK201-style toggle keys for a set of names; returns { el, value() }.
-function toggles(all, on, title) {
+export function toggles(all, on, title) {
   const state = new Set(on);
   const el = h('ul', { class: 'keys', 'aria-label': title }, all.map((name) => {
     const b = h('button', { type: 'button', class: state.has(name) ? 'key on' : 'key', 'aria-pressed': String(state.has(name)) }, name);

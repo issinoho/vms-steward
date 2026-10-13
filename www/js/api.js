@@ -66,7 +66,13 @@ export const api = {
   // Phase 7: logical names (D14).
   logicalTables: () => call('GET', 'logicals/tables'),
   logicals: (q) => call('GET', `logicals${query(q)}`),
-  logical: (table, name) => call('GET', `logicals/${encodeURIComponent(table)}/${encodeURIComponent(name)}`),
+  // One name by query, so a name with / in it works too; with every mode it has.
+  logical: (table, name) => call('GET', `logical${query({ table, name })}`),
+  // Phase 7b (D15). def: { table, name, mode, attributes, equivalences, replace }.
+  // 409 if the name exists at that mode and replace is not set.
+  defineLogical: (def) => call('PUT', 'logical', def),
+  // At that mode and every outer one, as DEASSIGN; answers { removed: [modes] }.
+  deassignLogical: (table, name, mode) => call('DELETE', `logical${query({ table, name, mode })}`),
   // Phase 2: users and rights identifiers, read-only. Lists take
   // { filter, after, limit } (and type for identifiers) and return { ..., next }.
   users: (q) => call('GET', `users${query(q)}`),
