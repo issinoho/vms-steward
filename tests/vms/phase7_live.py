@@ -51,6 +51,24 @@ check(st == 200 and "LNM$SYSTEM_TABLE" in tables and doc["your_group_table"] == 
       "the tables, and STEWARD_TEST's own group table named", (st, doc and list(tables)[:5]))
 check(all(not n.startswith("LNM$PROCESS") for n in tables), "no process table among them")
 
+# SHOW LOGICAL/STRUCTURE nests each table under its parent (the table its quota comes
+# from), so compare the names under LNM$SYSTEM_DIRECTORY, at any depth. Two differences
+# are expected: the directory lists itself, and job tables come and go (the helper's
+# own job, this script's).
+structure, inside = set(), False
+for l in vms("show logical/structure").splitlines():
+    m = re.match(r"^( *)\((.+)\)\s*$", l)
+    if not m:
+        continue
+    if not m.group(1):
+        inside = m.group(2) == "LNM$SYSTEM_DIRECTORY"
+    elif inside:
+        structure.add(m.group(2))
+diff = (set(tables) - {"LNM$SYSTEM_DIRECTORY"}) ^ structure
+check(len(structure) > 10 and all(n.startswith("LNM$JOB_") for n in diff) and len(diff) <= 6,
+      "the tables as SHOW LOGICAL/STRUCTURE lists them: %d here, %d there, child tables too, %d job tables differ"
+      % (len(tables), len(structure), len(diff)), sorted(diff)[:8])
+
 st, doc = api("STEWARD_TEST", "-", "/api/v1/logicals?table=LNM$SYSTEM_TABLE")
 ours, theirs = names(doc), show_names("LNM$SYSTEM_TABLE")
 check(st == 200 and len(ours) > 100 and len(ours ^ theirs) <= 3,

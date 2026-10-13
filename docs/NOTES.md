@@ -129,3 +129,12 @@ privileges.
   - With a **mailbox** as its output, DCL fails with `%RMS-F-DEV`.
   - With a **procedure file** as input and NLA0: as output, it runs, after SYLOGIN and
     the user's LOGIN.COM, as any detached process does.
+
+**`SHOW LOGICAL/STRUCTURE` nests tables by parent, not by directory** (Phase 7,
+2026-10-13). Under `(LNM$SYSTEM_DIRECTORY)` each table is indented under its parent
+table, the one its quota comes from: `JBC$QUEUE_TO_QMAN` under `LNM$SYSTEM_TABLE`,
+`LNM$SYSCLUSTER_TABLE` under `LNM$CLUSTER_TABLE`. Every one of them is still a name in
+LNM$SYSTEM_DIRECTORY, so `GET logicals/tables` lists them all, unnested. The directory
+does not appear as its own child in /STRUCTURE, but `SHOW LOGICAL/FULL/TABLE=
+LNM$SYSTEM_DIRECTORY` lists it as one of its own names. Observed with
+`tools/vms.sh x86 dcl "show logical/structure"` against the tables endpoint.

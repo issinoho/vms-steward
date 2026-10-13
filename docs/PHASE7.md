@@ -56,13 +56,13 @@ asks first.
 ## Exit record (7a), in progress
 
 Each exit criterion, with what showed it. `tests/vms/phase7_live.py` on x86,
-2026-10-13: 16 ok, 0 failed.
+2026-10-13: 17 ok, 0 failed.
 
 | Criterion | Shown by | State |
 |---|---|---|
 | Names match `SHOW LOGICAL/FULL`, unprivileged | STEWARD_TEST: the system table, 341 names here and there; SYS$SYSROOT's equivalences and attributes as `F$TRNLNM` gives them | done |
 | Names match, privileged | STEWARD_ADM with SYSPRV: group 1's table, the same names as `SHOW LOGICAL` with SYSPRV | done |
-| Tables match `SHOW LOGICAL/STRUCTURE` | the live test checks only that the system table and the viewer's group table are listed, and no process table | **open**: compare the whole list by hand or in the test |
+| Tables match `SHOW LOGICAL/STRUCTURE` | STEWARD_TEST's list against every table under LNM$SYSTEM_DIRECTORY, child tables included: 66 here, 64 there. The difference is the directory (which lists itself) and 3 job tables (they come and go) | done |
 | A name the viewer may not read is not shown | another group's table: 404 IVLOGTAB for STEWARD_TEST, and for STEWARD_ADM without SYSPRV | done |
 | Hostile tables and patterns refused, by Steward and by the procedure | five hostile requests refused with 400 before OpenVMS is asked; the directory refused for a single name | Steward done; the procedure's own check was shown by probe (PHASE7 table above), not by the live test |
 | No helper process left behind | `SHOW SYSTEM` after the run: no `STW` process | done (normal path); the timeout path is by review only |
@@ -90,7 +90,7 @@ Each exit criterion, with what showed it. `tests/vms/phase7_live.py` on x86,
   table header, names, and the chain on click.
 - **Kit:** `vms/steward_lnm.com` and `LOGICALS.JS` are in the kit, and the
   `kit-has-files` audit rule checks them.
-- **Tests:** 250 unit checks pass. `tests/vms/phase7_live.py` on x86 gives 16 ok,
+- **Tests:** 250 unit checks pass. `tests/vms/phase7_live.py` on x86 gives 17 ok,
   0 failed (2026-10-13).
 
 Found on the node and handled:
