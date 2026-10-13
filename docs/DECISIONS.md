@@ -378,3 +378,9 @@ Found by probe (`probes/probe_lnm.c`, PHASE7.md), each of these refused:
   Steward cannot tell a viewer's job from the service's. The alternative, leaving the
   check to OpenVMS's protection on the table, was not probed for the in-process
   `$TRNLNM` under a persona in the service's own job table.
+- **The helper is fixed, and watched three ways (2026-10-13, the Phase 7 review).**
+  Its path is a constant: a logical-name override would be translated through the
+  service's group and system tables, which others can define. Steward waits on the
+  reply, the deadline and a termination mailbox together, and checks the deadline
+  after every wake, so neither a helper that floods the reply nor one that dies holds
+  a pool process. A listing over 100,000 messages is refused.

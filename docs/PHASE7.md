@@ -65,9 +65,9 @@ Each exit criterion, with what showed it. `tests/vms/phase7_live.py` on x86,
 | Tables match `SHOW LOGICAL/STRUCTURE` | STEWARD_TEST's list against every table under LNM$SYSTEM_DIRECTORY, child tables included: 66 here, 64 there. The difference is the directory (which lists itself) and 3 job tables (they come and go) | done |
 | A name the viewer may not read is not shown | another group's table: 404 IVLOGTAB for STEWARD_TEST, and for STEWARD_ADM without SYSPRV | done |
 | Hostile tables and patterns refused, by Steward and by the procedure | five hostile requests refused with 400 before OpenVMS is asked; the directory refused for a single name | Steward done; the procedure's own check was shown by probe (PHASE7 table above), not by the live test |
-| No helper process left behind | `SHOW SYSTEM` after the run: no `STW` process | done (normal path); the timeout path is by review only |
+| No helper process left behind | `SHOW SYSTEM` after the run: no `STW` process. With `PHASE7_FAILDIR`: a helper that floods the mailbox is stopped at 30 s and one that dies is noticed in 3 s (on the node, 2026-10-13) | done |
 | Browser checks | the user, on the installed 0.5.0, 2026-10-13 | done |
-| Security gate (security.md) | Phase 7 threat-model section, invariants and audit record written 2026-10-13. `/security-review` of the 2026-10-13 commits (origin/main..8f54198): no findings | **open**: the 7a code itself (ff48318) has not had an independent review |
+| Security gate (security.md) | Phase 7 threat-model section, invariants and audit record. `/security-review` of the 2026-10-13 commits: no findings. Independent review of the whole Phase 7 code (two reviewers, findings checked by hand), 2026-10-13: the job tables, the helper path, the deadline, the dead helper, the procedure's symbols and the table pin fixed (audit record); smaller items listed below | done |
 
 ## Where this stands (2026-10-11, end of session): resume here
 
@@ -120,3 +120,11 @@ Found on the node and handled:
 
 Also open from earlier: 0.4.1, the Phase 5 review fixes, was never released on its
 own. It will go out with 0.5.0 unless the user wants it sooner.
+
+**Left from the Phase 7 review (2026-10-13), for 7b or a 0.5.x:** a listing over
+4 MB answers 500 (cap by bytes as well as names); a plain-text filter over 61
+characters is cut rather than refused; the tables list has no `truncated`; names
+with `/` or bytes above 7E cannot be translated (take the name as a query
+parameter); the stub accepts the aliases LNM$SYSTEM and LNM$CLUSTER, which VMS
+refuses; a member of the viewer's UIC group can squat `STW<a>_<b>` names and make
+that group's listings fail.

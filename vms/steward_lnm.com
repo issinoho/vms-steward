@@ -8,6 +8,9 @@ $! two mailboxes. It reads the table, the pattern and the privileges switched on
 $! the session ("-" for none) from the first, checks them again, and writes the listing to the second, then a last line "%%END%% <status>":
 $! SHOW LOGICAL's own exit status, in hexadecimal.
 $!
+$! The viewer's SYLOGIN and LOGIN.COM have run first: none of their symbols, global
+$! or local (a verb redefined, a symbol named like one of ours), reaches this level.
+$ set symbol/scope=(nolocal,noglobal)
 $ set noon
 $ set message/nofacility/noseverity/noidentification/notext
 $ prc = f$edit(f$getjpi("", "PRCNAM"), "TRIM")
@@ -15,10 +18,10 @@ $ if f$extract(0, 3, prc) .nes. "STW" then exit
 $ units = prc - "STW"
 $ req = "_MBA" + f$element(0, "_", units) + ":"
 $ rep = "_MBA" + f$element(1, "_", units) + ":"
-$ open/read r 'req'
-$ read/end_of_file=done r table
-$ read/end_of_file=done r pattern
-$ read/end_of_file=done r privs
+$ open/read/error=done r 'req'
+$ read/end_of_file=done/error=done r table
+$ read/end_of_file=done/error=done r pattern
+$ read/end_of_file=done/error=done r privs
 $ close r
 $! Only the characters of a table name and a wildcard pattern: nothing that DCL
 $! would read as a qualifier, a symbol or a second command.

@@ -200,9 +200,16 @@ browser ─(1)─ nginx proxy manager ─(2)─ lighttpd ─(3)─ STEWARD.EXE �
     anything into their own listing. It is parsed with bounded copies (the parser is
     fuzzed, each line in a buffer of exactly its length) and goes back only to that
     viewer.
-  - **Never left behind.** Steward waits on a blocking read with a 30-second timer.
-    On a timeout or a read error it deletes the helper by PID (live: "no helper
-    process left behind").
+  - **Never left behind, never longer than 30 s.** Steward waits on the reply, a
+    30-second timer and the helper's termination mailbox together, and checks the
+    deadline after every wake, so a helper that floods the reply mailbox is stopped
+    too. One that ends without answering is noticed at once. On a timeout or error
+    it deletes the helper by PID (live: "no helper process left behind", and with
+    `PHASE7_FAILDIR` the dead and flooding helpers in `probes/`).
+  - **The procedure is fixed.** Its path is a constant in the server, never taken
+    from a logical name; only the test probe can swap it.
+  - **The viewer's symbols do not reach it.** The procedure starts with `SET
+    SYMBOL/SCOPE=(NOLOCAL,NOGLOBAL)`.
   - **Cost to the viewer.** Each listing is a short login of the viewer: accounting
     records it, and it counts against their process and job limits while it runs.
     The pool serves one request per process, so a user can keep at most one helper
@@ -326,3 +333,8 @@ instance behind nginx proxy manager.
 | 2026-10-11 | 7 | The SHOW LOGICAL parser could read past the end of a line. The fuzzer found it once each line had a buffer of exactly its length (the shape of the line was not recorded) | Medium (memory safety, signed-in; the input is the viewer's own listing) | ff48318 | fuzz target with exact-length lines |
 | 2026-10-13 | 7 | `logicals/LNM$SYSTEM_DIRECTORY/{name}` translated in the directory, which has the table attribute; the stub refused it | Informational (consistency; no access gained: nothing went through the process table) | 2505c0f | `phase7_live.py` "a single-name lookup only in a real table" |
 | 2026-10-13 | 7 | Phase 7 review: `st_valid_lnm_table` refused `LNM$JOB` but not a job table by its own name, which `GET logicals/tables` lists (the pool's own among them). A single-name lookup in it ran `$TRNLNM` under the persona in the service's job table. Whether OpenVMS's protection check stops an unprivileged viewer there was not probed; the table holds SYS$LOGIN and the like, and the settings (the gateway secret) are process names | Low (unverified exposure of the service's job names) | this commit: every `LNM$JOB_` table refused | unit "a job table by its own name is refused"; `phase7_live.py` "a job table by its own name", "one name in a job table" |
+| 2026-10-13 | 7 | Phase 7 review: the helper procedure's path could be overridden by `getenv("STEWARD_LNM_HELPER")`, which nothing in the kit defined. On VMS `getenv` also translates logical names through the service's group and system tables, so anyone with GRPNAM in the service account's group, or SYSNAM, could have made every viewer's listing run their own procedure, as that viewer and with their privileges switched on | Medium (code execution as other users; needs GRPNAM or SYSNAM) | this commit: the path is fixed; only `api_probe` can swap it (`st_plat_vms_test_helper`) | `audit_rules.sh lnm-helper-test-only`; `env-only-in-main` now covers `src/plat` |
+| 2026-10-13 | 7 | Phase 7 review: the 30 s deadline was noticed only when the reply read had not completed. A helper whose login procedure kept the reply mailbox full, never sending `%%END%%`, held the pool process for ever. `$SETIMR`, `$GETDVIW` and the request writes' IOSBs were also unchecked | Medium (availability: a few requests pin every pool process; any signed-in user) | this commit: the timer is checked after every wake, at most 100,000 messages per listing, every status checked | `phase7_live.py` with `PHASE7_FAILDIR`: `probes/lnm_flood.com` stopped at 30 s on the node |
+| 2026-10-13 | 7 | Phase 7 review: a helper that died without answering (a refused login, a LOGIN.COM that logs out) cost the full 30 s | Low (availability) | this commit: a termination mailbox; the error carries the helper's final status | `probes/lnm_dead.com`: an error in 3 s on the node |
+| 2026-10-13 | 7 | Phase 7 review: the viewer's global symbols reached `STEWARD_LNM.COM` (a global `DIRECTORY ==` replaced the verb, probe), and a READ error left the checks spinning until the deadline | Low (the viewer's own listing only) | this commit: `SET SYMBOL/SCOPE=(NOLOCAL,NOGLOBAL)`, `/ERROR=` on the OPEN and READs. A global symbol named `SET` would still act before the scope line | `probes/lnm_scope.com` |
+| 2026-10-13 | 7 | Phase 7 review: `st_plat_lnm_get` checked the table in LNM$SYSTEM_DIRECTORY but `$TRNLNM` resolves the table name through LNM$PROCESS_DIRECTORY first | Informational (only the service's own login could define such a name) | this commit: refused unless `$TRNLNM` reports the checked table | `phase7_live.py` (every lookup) |

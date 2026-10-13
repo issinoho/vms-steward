@@ -37,7 +37,12 @@ rule persona-only-in-dispatcher "persona begin/end outside st_app.c" \
 
 # Configuration is read in one place, where its defaults are documented.
 rule env-only-in-main "getenv outside steward_main.c" \
-    --include='*.c' 'getenv\(' src/core src/svc
+    --include='*.c' 'getenv\(' src/core src/svc src/plat
+
+# The D14 helper procedure is fixed in the server. Only the test probe may swap it,
+# to run an edited procedure before it is installed.
+rule lnm-helper-test-only "st_plat_vms_test_helper called outside tests/" \
+    --include='*.c' 'st_plat_vms_test_helper\(' src/ --exclude=st_plat_vms.c
 
 # The core does no I/O (vmsguard's rule), which is what makes it testable and
 # fuzzable on Linux.

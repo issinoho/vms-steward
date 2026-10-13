@@ -138,3 +138,15 @@ LNM$SYSTEM_DIRECTORY, so `GET logicals/tables` lists them all, unnested. The dir
 does not appear as its own child in /STRUCTURE, but `SHOW LOGICAL/FULL/TABLE=
 LNM$SYSTEM_DIRECTORY` lists it as one of its own names. Observed with
 `tools/vms.sh x86 dcl "show logical/structure"` against the tables endpoint.
+
+**A global verb symbol takes over a command in a procedure, unless the procedure
+sets `SET SYMBOL/SCOPE=NOGLOBAL`** (Phase 7 review, 2026-10-13). With `directory ==
+"write sys$output ..."` defined, `$ directory nl:` in a procedure ran the symbol;
+after `set symbol/scope=(nolocal,noglobal)` it ran the verb. A global `SHOW` symbol
+never replaced the SHOW verb, scope or not. Observed with `probes/lnm_scope.com`.
+The D14 helper runs after the viewer's LOGIN.COM, so it sets the scope first.
+
+**A dead D14 helper costs about 2 s, a flooding one 30 s** (2026-10-13), timed on
+the node with `F$CVTIME`: the termination message arrives at once and Steward reads
+for a 2 s grace. Through `tools/vms.sh` the same call took 18 s once, so the live
+test times these on the node.

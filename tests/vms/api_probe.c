@@ -28,6 +28,8 @@
 #include <starlet.h>
 #include <jpidef.h>
 
+void st_plat_vms_test_helper(const char *path);   /* st_plat_vms.c, tests only */
+
 static void nv(st_buf *b, const char *n, const char *v)
 {
     size_t ln = strlen(n), lv = strlen(v);
@@ -173,6 +175,8 @@ int main(int argc, char **argv)
        never the service's own. Unset, records go to stderr. */
     pc.audit_file = getenv("API_PROBE_AUDIT") ? getenv("API_PROBE_AUDIT") : "";
     if (st_plat_init(&pc, &e)) { fprintf(stderr, "init: %s\n", e.text); return 1; }
+    /* A D14 helper procedure to test in place of the installed one. */
+    if (getenv("API_PROBE_LNM_HELPER")) st_plat_vms_test_helper(getenv("API_PROBE_LNM_HELPER"));
     memset(&cfg, 0, sizeof cfg);
     cfg.idle_secs = 900;
     cfg.absolute_secs = 3600;

@@ -41,6 +41,8 @@
 #include <uaidef.h>
 #include <uafdef.h>         /* SYS$LIB_C.TLB: the SYSUAF record (D6) */
 #include <acrdef.h>         /* accounting records (Phase 6) */
+#include <accdef.h>         /* the termination message (D14 helper) */
+#include <msgdef.h>
 #include <nsadef.h>         /* security audit journal records (Phase 6) */
 #include <lib$routines.h>
 #include <utcblkdef.h>   /* acmedef.h uses utcblk without including it (PHASE0) */
@@ -233,8 +235,14 @@ static unsigned int open_sessions(const char *path)
 static unsigned int sysprv[2] = { PRV$M_SYSPRV, 0 };
 
 static char service_account[13];
-static char steward_log[256];
-static char lnm_helper[256] = "STEWARD$ROOT:[COM]STEWARD_LNM.COM";   /* D14 */      /* Steward's audit log, read back for access history */
+static char steward_log[256];       /* Steward's audit log, read back for access history */
+/* The D14 helper procedure, fixed: never taken from a logical name the service would
+   translate through its group or system tables, which others could define. */
+static char lnm_helper[256] = "STEWARD$ROOT:[COM]STEWARD_LNM.COM";
+
+/* For tests/vms/api_probe.c only, to run an edited procedure before it is installed.
+   STEWARD.EXE never calls it. */
+void st_plat_vms_test_helper(const char *path) { st_copy(lnm_helper, sizeof lnm_helper, path); }
 
 const char *st_plat_service_account(void) { return service_account; }
 
@@ -266,7 +274,6 @@ int st_plat_init(const st_plat_config *cfg, st_err *e)
         return -1;
     }
     if (cfg->audit_file) st_copy(steward_log, sizeof steward_log, cfg->audit_file);
-    if (getenv("STEWARD_LNM_HELPER") && *getenv("STEWARD_LNM_HELPER")) st_copy(lnm_helper, sizeof lnm_helper, getenv("STEWARD_LNM_HELPER"));
     st = open_sessions(cfg->session_file);
     if (!(st & 1)) { set_cond(e, st); return -1; }
 
@@ -2566,103 +2573,173 @@ int st_plat_access(long long since, long long until, st_access_cb fn, void *ctx,
 
 #define LNM_REQ_MAXMSG 512
 #define LNM_REP_MAXMSG 1024      /* reads never ask for more: MBTOOSML otherwise */
+#define LNM_TRM_LEN    ACC$K_TERMLEN   /* the helper's termination message */
 #define LNM_TIMEOUT_S  30
+#define LNM_GRACE_S    2         /* after the helper ends: to read what it left queued */
+#define LNM_MAX_MSGS   100000    /* lines, end-of-file messages included: a listing of
+                                    MAX_NAMES names is far fewer */
 
-static unsigned int mbx_unit(unsigned short chan)
+static unsigned int mbx_unit(unsigned short chan, unsigned int *unit)
 {
-    unsigned int unit = 0, iosb[2];
+    unsigned int st;
+    unsigned short iosb[4];
     st_ile3 it[2];
-    item(&it[0], DVI$_UNIT, &unit, 4, 0);
+    *unit = 0;
+    item(&it[0], DVI$_UNIT, unit, 4, 0);
     item_end(&it[1]);
-    sys$getdviw(0, chan, 0, it, (void *) iosb, 0, 0, 0);
-    return unit;
+    st = sys$getdviw(0, chan, 0, it, (void *) iosb, 0, 0, 0);
+    if (st & 1) st = iosb[0];
+    return st;
+}
+
+static unsigned int mbx_write(unsigned short chan, const char *s)
+{
+    unsigned short iosb[4];
+    unsigned int st = sys$qiow(0, chan, IO$_WRITEVBLK | IO$M_NOW, (void *) iosb, 0, 0,
+                               (void *) s, strlen(s), 0, 0, 0, 0);
+    if (st & 1) st = iosb[0];
+    return st;
+}
+
+static unsigned int lnm_timer(unsigned int ef, unsigned int seconds, unsigned long reqidt)
+{
+    unsigned int delta[2];
+    delta[0] = (unsigned int) (-(long long) seconds * 10000000LL);
+    delta[1] = 0xFFFFFFFFu;
+    return sys$setimr(ef, (void *) delta, 0, reqidt, 0);
+}
+
+static unsigned int le32(const unsigned char *b)
+{
+    return (unsigned int) b[0] | ((unsigned int) b[1] << 8) | ((unsigned int) b[2] << 16) |
+           ((unsigned int) b[3] << 24);
 }
 
 int st_plat_lnm_list(const char *table, const char *pattern, const char *privs,
                      st_lnm_cb fn, void *ctx, st_err *e)
 {
-    static unsigned int efr, eft;   /* read and timer event flags, from LIB$GET_EF once */
+    /* Event flags from LIB$GET_EF once, all in one cluster for $WFLOR: the reply
+       read, the timer, the termination message. */
+    static unsigned int efr, eft, efm;
     static char line[LNM_REP_MAXMSG + 1];
-    unsigned short reqchan = 0, repchan = 0, iosb[4];
-    unsigned int st, pid = 0, status = 0, delta[2], mask;
+    static unsigned char trm[LNM_TRM_LEN];
+    unsigned short reqchan = 0, repchan = 0, trmchan = 0, iosb[4], tiosb[4];
+    unsigned int st, pid = 0, status = 0, final = 0, mask, ureq = 0, urep = 0, utrm = 0, nmsg = 0, state;
+    unsigned long reqidt = (unsigned long) &efr;
     char prc[16];
     struct dsc$descriptor_s img, in, nl, pn;
     st_lnm_parser p;
-    int done = 0, timed_out = 0;
+    int done = 0, timed_out = 0, ended = 0, reading = 0, waiting = 0;
 
-    if (!efr && (!(lib$get_ef(&efr) & 1) || !(lib$get_ef(&eft) & 1) || (efr / 32) != (eft / 32))) {
+    if (!efr && (!(lib$get_ef(&efr) & 1) || !(lib$get_ef(&eft) & 1) || !(lib$get_ef(&efm) & 1) ||
+                 efr / 32 != eft / 32 || efr / 32 != efm / 32)) {
         efr = 0;
         set_text(e, ST_E_INTERNAL, "no event flags");
         return -1;
     }
+    st_lnm_parse_init(&p, fn, ctx);
+
     /* System and owner only (deny group and world). The owner is the persona. */
     st = sys$crembx(0, &reqchan, LNM_REQ_MAXMSG, 3 * LNM_REQ_MAXMSG, 0xFF00, 0, 0, 0, 0);
     if (st & 1) st = sys$crembx(0, &repchan, LNM_REP_MAXMSG, 16 * LNM_REP_MAXMSG, 0xFF00, 0, 0, 0, 0);
-    if (!(st & 1)) goto fail;
-    snprintf(prc, sizeof prc, "STW%u_%u", mbx_unit(reqchan), mbx_unit(repchan));
-    st = sys$qiow(0, reqchan, IO$_WRITEVBLK | IO$M_NOW, (void *) iosb, 0, 0, (void *) table, strlen(table), 0, 0, 0, 0);
-    if (st & 1) st = sys$qiow(0, reqchan, IO$_WRITEVBLK | IO$M_NOW, (void *) iosb, 0, 0, (void *) pattern, strlen(pattern), 0, 0, 0, 0);
-    if (st & 1) st = sys$qiow(0, reqchan, IO$_WRITEVBLK | IO$M_NOW, (void *) iosb, 0, 0, (void *) privs, strlen(privs), 0, 0, 0, 0);
-    if (!(st & 1)) goto fail;
+    if (st & 1) st = sys$crembx(0, &trmchan, LNM_TRM_LEN, 4 * LNM_TRM_LEN, 0xFF00, 0, 0, 0, 0);
+    if (st & 1) st = mbx_unit(reqchan, &ureq);
+    if (st & 1) st = mbx_unit(repchan, &urep);
+    if (st & 1) st = mbx_unit(trmchan, &utrm);
+    if (!(st & 1)) goto out;
+    snprintf(prc, sizeof prc, "STW%u_%u", ureq, urep);
+    st = mbx_write(reqchan, table);
+    if (st & 1) st = mbx_write(reqchan, pattern);
+    if (st & 1) st = mbx_write(reqchan, privs);
+    if (!(st & 1)) goto out;
+
+    /* However the helper ends (its procedure done, LOGINOUT refusing it, its login
+       procedure logging out), OpenVMS sends its termination message here, so a dead
+       helper is noticed at once instead of at the deadline. */
+    memset(tiosb, 0, sizeof tiosb);
+    st = sys$qio(efm, trmchan, IO$_READVBLK, (void *) tiosb, 0, 0, trm, LNM_TRM_LEN, 0, 0, 0, 0);
+    if (!(st & 1)) goto out;
+    waiting = 1;
 
     desc(&img, "SYS$SYSTEM:LOGINOUT.EXE", 23);
     desc(&in, lnm_helper, (unsigned short) strlen(lnm_helper));
     desc(&nl, "NLA0:", 5);
     desc(&pn, prc, (unsigned short) strlen(prc));
-    st = sys$creprc(&pid, &img, &in, &nl, &nl, 0, 0, &pn, 4, 0, 0, PRC$M_DETACH, 0, 0);
-    if (!(st & 1)) goto fail;
+    st = sys$creprc(&pid, &img, &in, &nl, &nl, 0, 0, &pn, 4, 0, (unsigned short) utrm, PRC$M_DETACH, 0, 0);
+    if (!(st & 1)) { pid = 0; goto out; }
 
-    /* The listing, line by line, until the procedure's last line or the deadline. */
-    delta[0] = (unsigned int) (-(long long) LNM_TIMEOUT_S * 10000000LL);
-    delta[1] = 0xFFFFFFFFu;
-    sys$clref(eft);
-    sys$setimr(eft, (void *) delta, 0, (unsigned long) &efr, 0);
-    st_lnm_parse_init(&p, fn, ctx);
-    mask = (1u << (efr % 32)) | (1u << (eft % 32));
-    while (!done) {
-        unsigned int rst;
-        memset(iosb, 0, sizeof iosb);
-        rst = sys$qio(efr, repchan, IO$_READVBLK, (void *) iosb, 0, 0, line, LNM_REP_MAXMSG, 0, 0, 0, 0);
-        if (!(rst & 1)) { st = rst; break; }
-        sys$wflor(efr, mask);
-        if (!iosb[0]) {                      /* the timer, not the read */
-            sys$cancel(repchan);
-            sys$synch(efr, (void *) iosb);
-            timed_out = 1;
-            break;
+    /* The listing, line by line, until the procedure's last line or the deadline.
+       The deadline is checked after every wake, whatever woke it: a helper whose
+       login procedure keeps the reply mailbox full must not outlive it. */
+    st = lnm_timer(eft, LNM_TIMEOUT_S, reqidt);
+    if (!(st & 1)) goto out;
+    mask = (1u << (efr % 32)) | (1u << (eft % 32)) | (1u << (efm % 32));
+    for (;;) {
+        if (!reading) {
+            memset(iosb, 0, sizeof iosb);
+            st = sys$qio(efr, repchan, IO$_READVBLK, (void *) iosb, 0, 0, line, LNM_REP_MAXMSG, 0, 0, 0, 0);
+            if (!(st & 1)) break;
+            reading = 1;
         }
-        /* RMS writes an end-of-file message when SHOW LOGICAL/OUTPUT= closes the
-           mailbox, and again after the last line: the procedure's own last line, not
-           these, ends the listing. */
-        if (iosb[0] == SS$_ENDOFFILE) continue;
-        if (!(iosb[0] & 1)) { st = iosb[0]; break; }
-        line[iosb[1]] = '\0';
-        if (!strncmp(line, "%%END%% ", 8)) {
-            status = (unsigned int) strtoul(line + 8, NULL, 16);
-            status &= 0x0FFFFFFFu;   /* without DCL's "message already shown" bit */
-            /* SHOW LOGICAL returns IVLOGTAB as a warning (%X158), SSDEF has it fatal
-               (%X15C): the same message. Compare without the severity. */
-            if ((status & ~7u) == (SS$_IVLOGTAB & ~7u)) status = SS$_IVLOGTAB;
-            done = 1;
-            break;
+        st = sys$wflor(efr, mask);
+        if (!(st & 1)) break;
+        if (reading && iosb[0]) {
+            reading = 0;
+            if (++nmsg > LNM_MAX_MSGS) { st = SS$_DATAOVERUN; break; }
+            /* RMS writes an end-of-file message when SHOW LOGICAL/OUTPUT= closes the
+               mailbox, and again after the last line: the procedure's own last line,
+               not these, ends the listing. */
+            if (iosb[0] != SS$_ENDOFFILE) {
+                if (!(iosb[0] & 1)) { st = iosb[0]; break; }
+                line[iosb[1]] = '\0';
+                if (!strncmp(line, "%%END%% ", 8)) {
+                    status = (unsigned int) strtoul(line + 8, NULL, 16);
+                    status &= 0x0FFFFFFFu;   /* without DCL's "message already shown" bit */
+                    /* SHOW LOGICAL returns IVLOGTAB as a warning (%X158), SSDEF has it
+                       fatal (%X15C): the same message. Compare without the severity. */
+                    if ((status & ~7u) == (SS$_IVLOGTAB & ~7u)) status = SS$_IVLOGTAB;
+                    done = 1;
+                    break;
+                }
+                st_lnm_parse_line(&p, line, iosb[1]);   /* once stopped, it only drains */
+            }
         }
-        st_lnm_parse_line(&p, line, iosb[1]);   /* once stopped, it only drains */
+        if (waiting && tiosb[0]) {
+            /* The helper has gone. What it wrote is already queued: a short grace to
+               read it, then stop. Its final status explains a helper that never ran
+               the procedure. Explicit offsets (ACCDEF): type at 0, status at 4, PID at 8. */
+            waiting = 0;
+            ended = 1;
+            if ((tiosb[0] & 1) && tiosb[1] >= 12 && (trm[0] | (trm[1] << 8)) == MSG$_DELPROC &&
+                le32(trm + 8) == pid)
+                final = le32(trm + 4);
+            sys$clref(efm);
+            mask &= ~(1u << (efm % 32));
+            sys$cantim(reqidt, 0);
+            st = lnm_timer(eft, LNM_GRACE_S, reqidt);
+            if (!(st & 1)) break;
+        }
+        if (sys$readef(eft, &state) == SS$_WASSET) { timed_out = !ended; break; }
     }
-    sys$cantim((unsigned long) &efr, 0);
-    if (!done && pid) sys$delprc(&pid, 0, 0);   /* never leave one behind */
-    sys$dassgn(reqchan);
-    sys$dassgn(repchan);
+
+out:
+    sys$cantim(reqidt, 0);
+    if (!done && !ended && pid) sys$delprc(&pid, 0, 0);   /* never leave one behind */
+    if (reading) { sys$cancel(repchan); sys$synch(efr, (void *) iosb); }
+    if (waiting) { sys$cancel(trmchan); sys$synch(efm, (void *) tiosb); }
+    if (reqchan) sys$dassgn(reqchan);
+    if (repchan) sys$dassgn(repchan);
+    if (trmchan) sys$dassgn(trmchan);
     if (timed_out) { set_cond(e, SS$_TIMEOUT); return -1; }
-    if (!done) { set_cond(e, st); return -1; }
+    if (!done) {
+        if (!(st & 1)) set_cond(e, st);
+        else if (final && !(final & 1)) set_cond(e, final);   /* e.g. the login refused */
+        else set_text(e, ST_E_INTERNAL, "the listing process ended without an answer");
+        return -1;
+    }
     st_lnm_parse_end(&p);
     if (!(status & 1)) { set_cond(e, status); return -1; }   /* SHOW LOGICAL's own failure */
     return 0;
-
-fail:
-    if (reqchan) sys$dassgn(reqchan);
-    if (repchan) sys$dassgn(repchan);
-    set_cond(e, st);
-    return -1;
 }
 
 static void lnm_attrs(unsigned int a, int name, char *out, size_t outlen)
@@ -2729,6 +2806,10 @@ int st_plat_lnm_get(const char *table, const char *name, st_lnm *out,
             st_copy(out->mode, sizeof out->mode, acmode < 4 ? modes[acmode] : "?");
             lnm_attrs(attrs, 1, out->attributes, sizeof out->attributes);
             tname[tlen] = '\0';
+            /* Only in the table that was checked: $TRNLNM resolves the table name
+               through LNM$PROCESS_DIRECTORY first, so a process-directory name that
+               shadowed it would send the lookup elsewhere. */
+            if (strcmp(tname, table)) { set_cond(e, SS$_NOLOGTAB); return -1; }
             st_copy(table_out, ST_LNM_TABLE_MAX + 1, tname);
         }
         if (out->neq < ST_LNM_MAXEQ) {

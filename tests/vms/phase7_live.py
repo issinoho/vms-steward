@@ -5,8 +5,13 @@ dispatcher and platform (tests/vms/api_probe), checked against SHOW LOGICAL.
 
 READ-ONLY: it lists and translates logical names; it defines nothing. The helper
 procedure must be at STEWARD$ROOT:[COM]STEWARD_LNM.COM (the kit puts it there). Needs
-@BUILD_VMS run on the node first; the node's paths come from tools/nodes.conf."""
-import json, re, subprocess, sys
+@BUILD_VMS run on the node first; the node's paths come from tools/nodes.conf.
+
+    PHASE7_HELPER=dev:[dir]STEWARD_LNM.COM   test that procedure instead of the
+        installed one (API_PROBE_LNM_HELPER); STEWARD_TEST must be able to read it.
+    PHASE7_FAILDIR=dev:[dir]   also run LNM_DEAD.COM and LNM_FLOOD.COM (probes/) from
+        there, as helpers that die at once and that flood the reply mailbox."""
+import json, os, re, subprocess, sys
 
 NODE = sys.argv[1] if len(sys.argv) > 1 else "x86"
 VMS = ["tools/vms.sh", NODE, "dcl"]
@@ -18,14 +23,24 @@ def vms(*cmds):
     # Latin-1: logical names may hold any byte (the node's system table has a 0xC0)
     return subprocess.run(VMS + list(cmds), capture_output=True, encoding="latin-1").stdout.replace("\r", "")
 
-def api(user, privs, path):
-    out = vms(AP, 'ap %s %s "%s"' % (user, privs, path))
+def api(user, privs, path, helper=os.environ.get("PHASE7_HELPER"), timed=False):
+    pre = ['define/nolog API_PROBE_LNM_HELPER "%s"' % helper] if helper else []
+    run = ['ap %s %s "%s"' % (user, privs, path)]
+    if timed:   # on the node: ssh and the network vary by seconds
+        run = ['t0 = f$cvtime(,,"SECONDOFYEAR")'] + run + \
+              ['write sys$output "TOOK ", f$cvtime(,,"SECONDOFYEAR") - t0']
+    out = vms(*([AP] + pre + run))
     m = re.search(r"^(\d{3})\s*$", out, re.M)
     body = out[m.end():].replace("\n", "") if m else ""
+    took = re.search(r"^TOOK (\d+)", out, re.M)
+    if took:
+        body = body[:body.rindex("TOOK")]
     try:
         doc = json.loads(body[body.index("{"):]) if "{" in body else None
     except ValueError:
         doc = None
+    if timed:
+        return (int(m.group(1)) if m else None), doc, (int(took.group(1)) if took else None)
     return (int(m.group(1)) if m else None), doc
 
 def show_names(table, pattern="*", privs=""):
@@ -111,6 +126,19 @@ for path, what in (("/api/v1/logicals?table=LNM$PROCESS", "the process table"),
 
 st, doc = api("STEWARD_ADM", "SYSPRV", "/api/v1/logicals/LNM$SYSTEM_DIRECTORY/LNM$FILE_DEV")
 check(st == 404, "a single-name lookup only in a real table, never a directory or search list", (st, doc))
+
+FAIL = os.environ.get("PHASE7_FAILDIR")
+if FAIL:
+    # The termination mailbox: a helper that ends without answering is noticed at
+    # once (plus the 2 s grace), not at the 30 s deadline.
+    st, doc, took = api("STEWARD_TEST", "-", "/api/v1/logicals?table=LNM$SYSTEM_TABLE", FAIL + "LNM_DEAD.COM", timed=True)
+    check(st == 500 and took is not None and took <= 5,
+          "a helper that ends without answering: an error in %ss on the node, not 30" % took, (st, doc))
+    # The deadline holds whatever wakes the reader: a helper that keeps the reply
+    # mailbox full is stopped at 30 s and deleted.
+    st, doc, took = api("STEWARD_TEST", "-", "/api/v1/logicals?table=LNM$SYSTEM_TABLE", FAIL + "LNM_FLOOD.COM", timed=True)
+    check(st == 500 and "TIMEOUT" in json.dumps(doc) and took is not None and 29 <= took <= 33,
+          "a helper that floods the mailbox: stopped at the deadline (%ss on the node)" % took, (st, doc))
 
 left = vms('pipe show system | search sys$pipe "STW"')
 check("STW" not in left.replace("search sys$pipe", ""), "no helper process left behind", left[-200:])
