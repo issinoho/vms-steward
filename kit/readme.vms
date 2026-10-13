@@ -147,13 +147,14 @@ After a reboot, check:
 
 Running STEWARD$CONFIGURE again
 -------------------------------
-It is safe to run again (as SYSTEM), but answer every question again: the
-defaults are not your earlier answers. In particular, autostart defaults to NO,
-and lighttpd's account to vms-lighttpd's.
+It is safe to run again (as SYSTEM). It offers your earlier answers (from
+SYS$MANAGER:STEWARD$CONFIG.COM), so pressing Return keeps them, autostart
+included. The exception is lighttpd's account: it always offers the account
+vms-lighttpd is set up to run as, and says so if the gateway file belonged to
+another.
   - Kept: the account's UIC and password, the gateway secret, and the whole of
-    [.RUN]STEWARD_SETTINGS.COM. The trusted-proxies answer is therefore ignored
-    once that file exists: to change trusted proxies later, edit
-    STEWARD_TRUSTED_PROXIES there and RESTART the pool.
+    [.RUN]STEWARD_SETTINGS.COM. So it does not ask about trusted proxies again:
+    to change them, edit STEWARD_TRUSTED_PROXIES there and RESTART the pool.
   - Rewritten: the account's privileges and default directory, STEWARD.CONF,
     STEWARD_GATEWAY.CONF (owned by the lighttpd account you give) and
     SYS$MANAGER:STEWARD$CONFIG.COM (autostart).

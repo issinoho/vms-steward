@@ -11,7 +11,9 @@ $!   web-account  lighttpd's account, which must read the gateway secret
 $!                (default: VMSLIGHTTPD's, else LIGHTTPD)
 $!   proxies      reverse proxies to trust (D7), e.g. 192.0.2.10; "" for none
 $!   autostart    YES: STEWARD$STARTUP starts the pool at boot (default NO)
-$! Missing values are asked for when run interactively.
+$! Missing values are asked for when run interactively. On a second run the
+$! defaults are the earlier answers (but lighttpd's account is always
+$! vms-lighttpd's), and the proxies are not asked: STEWARD_SETTINGS.COM is kept.
 $!
 $! What it does (README.VMS):
 $!  - the account: batch access only, RESTRICTED, DISCTLY, an unknown password;
@@ -51,12 +53,40 @@ $ then
 $   @SYS$MANAGER:VMSLIGHTTPD$CONFIG.COM
 $   webdefault = vmslighttpd_account
 $ endif
-$ call ask account "Service account" "STEWARD" 'p1'
-$ call ask datadir "Data directory" "SYS$SYSDEVICE:[STEWARD_DATA]" 'p3'
-$ call ask port "Port lighttpd serves Steward on" "8443" 'p4'
+$! A second run offers the earlier answers (SYS$MANAGER:STEWARD$CONFIG.COM), so
+$! pressing Return changes nothing; a first run, the defaults. lighttpd's account
+$! is the exception: always vms-lighttpd's own, the account it really runs as.
+$ accdef = "STEWARD"
+$ datadef = "SYS$SYSDEVICE:[STEWARD_DATA]"
+$ portdef = "8443"
+$ autodef = "NO"
+$ if f$search("SYS$MANAGER:STEWARD$CONFIG.COM") .nes. ""
+$ then
+$   @SYS$MANAGER:STEWARD$CONFIG.COM
+$   if f$type(steward_account) .nes. "" then accdef = steward_account
+$   if f$type(steward_data) .nes. "" then datadef = steward_data
+$   if f$type(steward_port) .nes. "" then portdef = steward_port
+$   if f$type(steward_autostart) .nes. "" then autodef = steward_autostart
+$ endif
+$ call ask account "Service account" "''accdef'" 'p1'
+$ call ask datadir "Data directory" "''datadef'" 'p3'
+$ call ask port "Port lighttpd serves Steward on" "''portdef'" 'p4'
 $ call ask webacct "lighttpd's account" 'webdefault' 'p5'
-$ call ask proxies "Reverse proxies to trust (addresses, comma-separated; empty for none)" "" "''p6'"
-$ call ask autostart "Start the pool at boot (YES/NO)" "NO" 'p7'
+$! Trusted proxies live in STEWARD_SETTINGS.COM, which a second run keeps whole: so
+$! they are asked for only on the first.
+$ top = f$parse(datadir,,,"DEVICE","NO_CONCEAL") + f$parse(datadir,,,"DIRECTORY","NO_CONCEAL")
+$ j = f$locate("][", top)
+$ if j .lt. f$length(top) then top = f$extract(0, j, top) + "." + f$extract(j + 2, 999, top)
+$ top = top - ".000000" - "]"
+$ if f$search(top + ".RUN]STEWARD_SETTINGS.COM") .eqs. ""
+$ then
+$   call ask proxies "Reverse proxies to trust (addresses, comma-separated; empty for none)" "" "''p6'"
+$ else
+$   proxies = ""
+$   say "STEWARD$CONFIGURE: trusted proxies are kept in ", top, ".RUN]STEWARD_SETTINGS.COM"
+$   say "                   (STEWARD_TRUSTED_PROXIES: edit there, then STEWARD$CONTROL RESTART)"
+$ endif
+$ call ask autostart "Start the pool at boot (YES/NO)" "''autodef'" 'p7'
 $ account = f$edit(account, "UPCASE")
 $ webacct = f$edit(webacct, "UPCASE")
 $ autostart = f$edit(autostart, "UPCASE")
@@ -190,6 +220,17 @@ $ purge/nolog 'settings'
 $!
 $! lighttpd's half of the secret: readable by lighttpd's account only
 $ gw = conf + "STEWARD_GATEWAY.CONF"
+$ if f$search(gw) .nes. ""
+$ then   ! the account lighttpd ran as until now, if it was another
+$   was = f$edit(f$file_attributes(gw, "UIC") - "[" - "]", "UPCASE")
+$   if f$locate(",", was) .lt. f$length(was) then was = f$element(1, ",", was)
+$   if was .nes. webacct
+$   then
+$     say "STEWARD$CONFIGURE: STEWARD_GATEWAY.CONF was ", was, "'s; now ", webacct, "'s."
+$     say "                   lighttpd must run as ", webacct, ", or it cannot read the secret and"
+$     say "                   refuses its whole configuration (README.VMS)."
+$   endif
+$ endif
 $ open/write g 'conf'GATEWAY.TMP
 $ write g "# STEWARD_GATEWAY.CONF - written by STEWARD$CONFIGURE; readable by lighttpd only."
 $ write g "# lighttpd sends this with every API request, overwriting any value a client sent,"

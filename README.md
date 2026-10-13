@@ -73,8 +73,8 @@ Two account points:
 - the service account and why it holds what it holds;
 - the gateway secret;
 - starting at boot;
-- running STEWARD$CONFIGURE again: answer every question again, because the defaults
-  are not your earlier answers;
+- running STEWARD$CONFIGURE again: it offers your earlier answers, except lighttpd's
+  account, which is always vms-lighttpd's;
 - running behind a reverse proxy;
 - the audit log.
 
