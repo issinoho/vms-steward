@@ -966,6 +966,70 @@ static void test_lnm_parser(void)
           !st_valid_lnm_name("x\ty"), "a name to translate: printable ASCII, case kept");
 }
 
+/* PUT api/v1/logical's body (D15). */
+static int def_parses(const char *body, st_lnm_def *d, const char **why)
+{
+    st_jdoc doc;
+    char err[64];
+    int rc;
+    *why = "";
+    if (st_json_parse(&doc, body, strlen(body), err, sizeof err)) return -2;
+    rc = st_lnm_def_parse(doc.root, d, why);
+    st_json_free(&doc);
+    return rc;
+}
+
+static void test_lnm_def(void)
+{
+    static st_lnm_def d;
+    const char *why;
+    char many[2048];
+    int i;
+    CHECK(st_lnm_mode("user") == ST_LNM_USER && st_lnm_mode("SUPER") == ST_LNM_SUPER &&
+          st_lnm_mode("supervisor") == ST_LNM_SUPER && st_lnm_mode("Executive") == ST_LNM_EXEC,
+          "modes by name, in any case");
+    CHECK(st_lnm_mode("kernel") < 0 && st_lnm_mode("") < 0 && st_lnm_mode("users") < 0,
+          "kernel mode and anything else refused");
+    CHECK(!strcmp(st_lnm_mode_name(ST_LNM_EXEC), "exec") && !strcmp(st_lnm_mode_name(9), "?"), "mode names");
+    CHECK(def_parses("{\"table\":\"lnm$system_table\",\"name\":\"My_Name\",\"mode\":\"exec\","
+                     "\"attributes\":[\"confine\"],\"equivalences\":[{\"value\":\"DKA0:[A.]\","
+                     "\"attributes\":[\"concealed\",\"terminal\"]},{\"value\":\"B\"}],\"replace\":true}", &d, &why) == 0 &&
+          !strcmp(d.table, "LNM$SYSTEM_TABLE") && !strcmp(d.name, "My_Name") && d.mode == ST_LNM_EXEC &&
+          d.attrs == ST_LNM_CONFINE && d.replace && d.neq == 2 &&
+          d.eq[0].attrs == (ST_LNM_CONCEALED | ST_LNM_TERMINAL) && !strcmp(d.eq[1].value, "B") && !d.eq[1].attrs,
+          "a definition: the table upper-cased, the name kept as given, modes and attributes");
+    CHECK(def_parses("{\"table\":\"LNM$GROUP\",\"name\":\"X\",\"mode\":\"user\",\"equivalences\":[{\"value\":\"Y\"}]}", &d, &why) == 0 &&
+          !d.replace && !d.attrs, "replace and attributes are optional");
+    CHECK(def_parses("{\"table\":\"LNM$PROCESS_TABLE\",\"name\":\"X\",\"mode\":\"user\",\"equivalences\":[{\"value\":\"Y\"}]}", &d, &why) == -1 &&
+          def_parses("{\"table\":\"LNM$JOB_8217EDC0\",\"name\":\"X\",\"mode\":\"user\",\"equivalences\":[{\"value\":\"Y\"}]}", &d, &why) == -1,
+          "the process and job tables refused for a define");
+    CHECK(def_parses("{\"table\":\"LNM$SYSTEM_TABLE\",\"name\":\"X\",\"mode\":\"kernel\",\"equivalences\":[{\"value\":\"Y\"}]}", &d, &why) == -1 &&
+          strstr(why, "mode"), "kernel mode refused");
+    CHECK(def_parses("{\"table\":\"LNM$SYSTEM_TABLE\",\"name\":\"X\",\"mode\":\"user\",\"equivalences\":[]}", &d, &why) == -1 &&
+          def_parses("{\"table\":\"LNM$SYSTEM_TABLE\",\"name\":\"X\",\"mode\":\"user\"}", &d, &why) == -1 &&
+          def_parses("{\"table\":\"LNM$SYSTEM_TABLE\",\"name\":\"X\",\"equivalences\":[{\"value\":\"Y\"}]}", &d, &why) == -1 &&
+          def_parses("{\"table\":\"LNM$SYSTEM_TABLE\",\"mode\":\"user\",\"equivalences\":[{\"value\":\"Y\"}]}", &d, &why) == -1,
+          "table, name, mode and at least one equivalence required");
+    CHECK(def_parses("{\"table\":\"LNM$SYSTEM_TABLE\",\"name\":\"X\",\"mode\":\"user\",\"equivalences\":[{\"value\":\"\"}]}", &d, &why) == -1 &&
+          def_parses("{\"table\":\"LNM$SYSTEM_TABLE\",\"name\":\"X\",\"mode\":\"user\",\"equivalences\":[{\"value\":\"a\\nb\"}]}", &d, &why) == -1 &&
+          def_parses("{\"table\":\"LNM$SYSTEM_TABLE\",\"name\":\"X\\u00e9\",\"mode\":\"user\",\"equivalences\":[{\"value\":\"Y\"}]}", &d, &why) == -1 &&
+          def_parses("{\"table\":\"LNM$SYSTEM_TABLE\",\"name\":\"X\",\"mode\":\"user\",\"equivalences\":[\"Y\"]}", &d, &why) == -1,
+          "empty values, control characters, bytes past 7E and bare strings refused");
+    CHECK(def_parses("{\"table\":\"LNM$SYSTEM_TABLE\",\"name\":\"X\",\"mode\":\"user\",\"equivalences\":[{\"value\":\"Y\"}],\"other\":1}", &d, &why) == -1 &&
+          def_parses("{\"table\":\"LNM$SYSTEM_TABLE\",\"name\":\"X\",\"mode\":\"user\",\"attributes\":[\"table\"],\"equivalences\":[{\"value\":\"Y\"}]}", &d, &why) == -1 &&
+          def_parses("{\"table\":\"LNM$SYSTEM_TABLE\",\"name\":\"X\",\"mode\":\"user\",\"equivalences\":[{\"value\":\"Y\",\"attributes\":[\"confine\"]}]}", &d, &why) == -1 &&
+          def_parses("{\"table\":\"LNM$SYSTEM_TABLE\",\"name\":\"X\",\"mode\":\"user\",\"replace\":1,\"equivalences\":[{\"value\":\"Y\"}]}", &d, &why) == -1,
+          "unknown members and attributes refused, replace must be a boolean");
+    st_copy(many, sizeof many, "{\"table\":\"LNM$SYSTEM_TABLE\",\"name\":\"X\",\"mode\":\"user\",\"equivalences\":[");
+    for (i = 0; i < 17; i++) st_append(many, sizeof many, i ? ",{\"value\":\"V\"}" : "{\"value\":\"V\"}");
+    st_append(many, sizeof many, "]}");
+    CHECK(def_parses(many, &d, &why) == -1, "at most 16 equivalences");
+    st_copy(many, sizeof many, "{\"table\":\"LNM$SYSTEM_TABLE\",\"mode\":\"user\",\"equivalences\":[{\"value\":\"Y\"}],\"name\":\"");
+    for (i = 0; i < 256; i++) st_append(many, sizeof many, "N");
+    st_append(many, sizeof many, "\"}");
+    CHECK(def_parses(many, &d, &why) == -1, "a name over 255 characters refused");
+}
+
 static void test_logicals(void)
 {
     result b;
@@ -1292,6 +1356,122 @@ static void test_gateway(void)
     st_app_init(&cfg);
 }
 
+/* Phase 7b (D15): define and deassign through the dispatcher, on the stub. */
+static void test_logical_changes(void)
+{
+    result b;
+    char tc[140], ac[140], tcsrf[65], acsrf[65];
+    const char *body;
+    hdr t[3], adm[3], nocsrf[2];
+    static const char *sys_user = "{\"table\":\"LNM$SYSTEM_TABLE\",\"name\":\"STEWARD_7B\",\"mode\":\"user\","
+                                  "\"equivalences\":[{\"value\":\"FIRST\"}]}";
+
+    sign_in("{\"username\":\"steward_test\",\"password\":\"test-pass\"}", tc, sizeof tc, tcsrf);
+    t[0].n = "HTTP_COOKIE"; t[0].v = tc; t[1].n = "HTTP_X_STEWARD_CSRF"; t[1].v = tcsrf; t[2].n = NULL;
+    call("PUT", "/api/v1/logical", t, "{\"table\":\"LNM$GROUP\",\"name\":\"MINE\",\"mode\":\"user\",\"equivalences\":[{\"value\":\"X\"}]}", &b);
+    CHECK(b.resp.status == 403 && strstr(b.resp.body.data, "NOPRIV"), "no privilege: OpenVMS's NOPRIV for the group table");
+    st_resp_free(&b.resp);
+
+    sign_in("{\"username\":\"steward_adm\",\"password\":\"admin-pass\"}", ac, sizeof ac, acsrf);
+    adm[0].n = "HTTP_COOKIE"; adm[0].v = ac; adm[1].n = "HTTP_X_STEWARD_CSRF"; adm[1].v = acsrf; adm[2].n = NULL;
+    nocsrf[0].n = "HTTP_COOKIE"; nocsrf[0].v = ac; nocsrf[1].n = NULL;
+    call("PUT", "/api/v1/logical", nocsrf, sys_user, &b);
+    CHECK(b.resp.status == 403 && strstr(b.resp.body.data, "csrf"), "a define needs the CSRF header");
+    st_resp_free(&b.resp);
+    call("PUT", "/api/v1/session/privileges", adm, "{\"enabled\":[\"sysprv\"]}", &b);
+    st_resp_free(&b.resp);
+    call("PUT", "/api/v1/logical", adm, "{\"table\":\"LNM$SYSTEM_TABLE\",\"name\":\"STEWARD_7B\",\"mode\":\"exec\","
+                                       "\"equivalences\":[{\"value\":\"X\"}]}", &b);
+    CHECK(b.resp.status == 403 && strstr(b.resp.body.data, "NOSYSNAM"),
+          "executive mode without SYSNAM: refused, not quietly made user mode");
+    st_resp_free(&b.resp);
+    call("GET", "/api/v1/logical?table=LNM$SYSTEM_TABLE&name=STEWARD_7B", adm, NULL, &b);
+    CHECK(b.resp.status == 404, "and nothing was defined");
+    st_resp_free(&b.resp);
+
+    call("PUT", "/api/v1/logical", adm, sys_user, &b);
+    CHECK(b.resp.status == 201 && strstr(b.resp.body.data, "\"modes\":[\"user\"]") &&
+          strstr(b.resp.body.data, "\"value\":\"FIRST\""), "SYSPRV: a user-mode name in the system table, read back");
+    st_resp_free(&b.resp);
+    call("PUT", "/api/v1/logical", adm, sys_user, &b);
+    CHECK(b.resp.status == 409, "defining it again without replace: 409");
+    st_resp_free(&b.resp);
+    call("PUT", "/api/v1/logical", adm, "{\"table\":\"lnm$system_table\",\"name\":\"STEWARD_7B\",\"mode\":\"user\",\"replace\":true,"
+                                       "\"attributes\":[\"no_alias\"],\"equivalences\":[{\"value\":\"DKA0:[A.]\",\"attributes\":[\"concealed\",\"terminal\"]},"
+                                       "{\"value\":\"say \\\"hi\\\"\"}]}", &b);
+    body = b.resp.body.data;
+    CHECK(b.resp.status == 200 && strstr(body, "\"mode\":\"user\",\"attributes\":[\"no_alias\"]") &&
+          strstr(body, "{\"value\":\"DKA0:[A.]\",\"attributes\":[\"concealed\",\"terminal\"]},{\"value\":\"say \\\"hi\\\"\",\"attributes\":[]}"),
+          "with replace: 200, attributes and a quoted value read back as given");
+    st_resp_free(&b.resp);
+
+    call("PUT", "/api/v1/session/privileges", adm, "{\"enabled\":[\"sysprv\",\"sysnam\"]}", &b);
+    st_resp_free(&b.resp);
+    call("PUT", "/api/v1/logical", adm, "{\"table\":\"LNM$SYSTEM_TABLE\",\"name\":\"STEWARD_7B\",\"mode\":\"exec\","
+                                       "\"equivalences\":[{\"value\":\"INNER\"}]}", &b);
+    CHECK(b.resp.status == 201 && strstr(b.resp.body.data, "\"modes\":[\"user\",\"exec\"]"),
+          "with SYSNAM: executive mode, beside the user-mode name");
+    st_resp_free(&b.resp);
+    call("GET", "/api/v1/logicals?table=LNM$SYSTEM_TABLE&filter=STEWARD_7B", adm, NULL, &b);
+    body = b.resp.body.data;
+    CHECK(b.resp.status == 200 && strstr(body, "\"mode\":\"user\"") && !strstr(body, "INNER"),
+          "listed once, at its outermost mode, as SHOW LOGICAL lists it");
+    st_resp_free(&b.resp);
+
+    call("PUT", "/api/v1/logical", adm, "{\"table\":\"LNM$SYSTEM_TABLE\",\"name\":\"STEWARD_7B\",\"mode\":\"super\","
+                                       "\"attributes\":[\"no_alias\"],\"equivalences\":[{\"value\":\"S\"}]}", &b);
+    CHECK(b.resp.status == 201 && strstr(b.resp.body.data, "\"modes\":[\"super\",\"exec\"]"),
+          "no_alias at supervisor mode: the user-mode name goes, as OpenVMS does it");
+    st_resp_free(&b.resp);
+    call("PUT", "/api/v1/logical", adm, sys_user, &b);
+    st_resp_free(&b.resp);
+    call("DELETE", "/api/v1/logical?table=LNM$SYSTEM_TABLE&name=STEWARD_7B&mode=super", adm, NULL, &b);
+    CHECK(b.resp.status == 200 && strstr(b.resp.body.data, "\"removed\":[\"user\",\"super\"]"),
+          "deassign at supervisor mode removes it and the outer user-mode name");
+    st_resp_free(&b.resp);
+    call("GET", "/api/v1/logical?table=LNM$SYSTEM_TABLE&name=STEWARD_7B", adm, NULL, &b);
+    CHECK(b.resp.status == 200 && strstr(b.resp.body.data, "\"value\":\"INNER\"") &&
+          strstr(b.resp.body.data, "\"modes\":[\"exec\"]"), "the executive-mode name is left");
+    st_resp_free(&b.resp);
+    call("DELETE", "/api/v1/logical?table=LNM$SYSTEM_TABLE&name=STEWARD_7B&mode=kernel", adm, NULL, &b);
+    CHECK(b.resp.status == 400, "kernel mode is refused for a deassign");
+    st_resp_free(&b.resp);
+    call("DELETE", "/api/v1/logical?table=LNM$SYSTEM_TABLE&name=STEWARD_7B&mode=exec", adm, NULL, &b);
+    CHECK(b.resp.status == 200 && strstr(b.resp.body.data, "\"removed\":[\"exec\"]"), "deassign at executive mode");
+    st_resp_free(&b.resp);
+    call("DELETE", "/api/v1/logical?table=LNM$SYSTEM_TABLE&name=STEWARD_7B&mode=user", adm, NULL, &b);
+    CHECK(b.resp.status == 404 && strstr(b.resp.body.data, "NOLOGNAM"), "deassigning what is gone: NOLOGNAM");
+    st_resp_free(&b.resp);
+
+    call("PUT", "/api/v1/logical", adm, "{\"table\":\"LNM$GROUP\",\"name\":\"A/B\",\"mode\":\"user\","
+                                       "\"equivalences\":[{\"value\":\"C\"}]}", &b);
+    CHECK(b.resp.status == 201 && strstr(b.resp.body.data, "\"table\":\"LNM$GROUP_000362\""),
+          "LNM$GROUP is the viewer's group table for a define too");
+    st_resp_free(&b.resp);
+    call("GET", "/api/v1/logical?table=LNM$GROUP_000362&name=A%2FB", adm, NULL, &b);
+    CHECK(b.resp.status == 200 && strstr(b.resp.body.data, "\"name\":\"A/B\""), "a name with / is reached by query");
+    st_resp_free(&b.resp);
+    call("DELETE", "/api/v1/logical?table=LNM$GROUP&name=A%2FB&mode=user", adm, NULL, &b);
+    CHECK(b.resp.status == 200, "and deassigned");
+    st_resp_free(&b.resp);
+
+    call("PUT", "/api/v1/logical", adm, "{\"table\":\"LNM$SYSTEM_DIRECTORY\",\"name\":\"X\",\"mode\":\"user\","
+                                       "\"equivalences\":[{\"value\":\"C\"}]}", &b);
+    CHECK(b.resp.status == 404, "never in the directory");
+    st_resp_free(&b.resp);
+    call("PUT", "/api/v1/logical", adm, "{\"table\":\"LNM$PROCESS_TABLE\",\"name\":\"X\",\"mode\":\"user\","
+                                       "\"equivalences\":[{\"value\":\"C\"}]}", &b);
+    CHECK(b.resp.status == 422, "never in the process table");
+    st_resp_free(&b.resp);
+    call("DELETE", "/api/v1/logical?table=LNM$JOB_8210AE00&name=SYS$LOGIN&mode=user", adm, NULL, &b);
+    CHECK(b.resp.status == 400, "nor deassigned from a job table");
+    st_resp_free(&b.resp);
+    call("DELETE", "/api/v1/logical?table=LNM$SYSTEM_TABLE&name=MOTD", adm, NULL, &b);
+    CHECK(b.resp.status == 400, "a deassign needs a mode");
+    st_resp_free(&b.resp);
+    CHECK(!st_plat_persona_active(), "no persona left active");
+}
+
 int main(void)
 {
     st_app_config cfg;
@@ -1320,6 +1500,8 @@ int main(void)
     test_access();
     test_lnm_parser();
     test_logicals();
+    test_lnm_def();
+    test_logical_changes();
     test_create();
     test_gateway();
     printf("%d checks, %d failed\n", checks, failures);

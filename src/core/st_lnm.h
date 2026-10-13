@@ -62,6 +62,48 @@ int st_valid_lnm_pattern(const char *in, char out[ST_LNM_PATTERN_MAX + 1]);
    (names are case-sensitive; DCL upper-cases only unquoted ones). Returns 1 if valid. */
 int st_valid_lnm_name(const char *in);
 
+/* ---- changes (Phase 7b, D15) ---- */
+
+/* Access modes, as OpenVMS numbers them (PSL$C_*). Kernel is never accepted. */
+#define ST_LNM_EXEC  1
+#define ST_LNM_SUPER 2
+#define ST_LNM_USER  3
+
+#define ST_LNM_CONFINE   1u     /* name attributes */
+#define ST_LNM_NO_ALIAS  2u
+#define ST_LNM_CONCEALED 1u     /* equivalence attributes */
+#define ST_LNM_TERMINAL  2u
+
+typedef struct {
+    char     value[ST_LNM_NAME_MAX + 1];
+    unsigned attrs;             /* ST_LNM_CONCEALED, ST_LNM_TERMINAL */
+} st_lnm_defeq;
+
+/* A name to define. At most ST_LNM_MAXEQ equivalences: as many as the views show, so
+   a name read back can always be written back whole. */
+typedef struct {
+    char         table[ST_LNM_TABLE_MAX + 1];   /* as st_valid_lnm_table gave it */
+    char         name[ST_LNM_NAME_MAX + 1];
+    int          mode;          /* ST_LNM_EXEC, _SUPER or _USER */
+    unsigned     attrs;         /* ST_LNM_CONFINE, ST_LNM_NO_ALIAS */
+    int          replace;       /* replace a name already at that mode */
+    int          neq;
+    st_lnm_defeq eq[ST_LNM_MAXEQ];
+} st_lnm_def;
+
+/* "user", "super" or "exec" (or "supervisor", "executive"), in any case, to
+   ST_LNM_*; -1 for anything else, kernel included. */
+int st_lnm_mode(const char *s);
+/* ST_LNM_* (and 0, kernel) to its name; "?" otherwise. */
+const char *st_lnm_mode_name(int mode);
+
+struct st_jval;
+/* The body of PUT api/v1/logical: {"table", "name", "mode", "attributes": [...],
+   "equivalences": [{"value", "attributes": [...]}], "replace"}. Every member but
+   attributes and replace is required, nothing else is allowed. Returns 0, or -1 with
+   *why naming the problem (a constant string). */
+int st_lnm_def_parse(const struct st_jval *root, st_lnm_def *d, const char **why);
+
 /* The parser: feed it SHOW LOGICAL/FULL's lines one by one; it calls back once per
    name, with the table the name is in. A callback returning nonzero stops it. */
 typedef int (*st_lnm_cb)(const st_lnm_table *t, const st_lnm *n, void *ctx);

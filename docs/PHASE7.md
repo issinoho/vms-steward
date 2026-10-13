@@ -102,6 +102,12 @@ for STEWARD_ADM (it now has NETMBX, SYSNAM, SYSPRV, TMPMBX authorized).
   for an inner mode without SYSNAM switched on.
 - `DELETE api/v1/logical?table=&name=&mode=`: 200 with the modes removed.
 
+**Built so far (2026-10-13):** core (`st_lnm_def_parse`, modes), the stub, the three
+endpoints, and the VMS platform (`st_plat_lnm_modes`, `_define`, `_deassign`). 286 unit
+checks (Linux and x86), 50 API checks. `tests/vms/phase7b_live.py` on x86: 21 ok, 0
+failed, against DCL's `SHOW LOGICAL/FULL` and `F$TRNLNM` at each mode. It found the
+NO_ALIAS behaviour (NOTES.md). Next: the view.
+
 **Exit (7b):**
 - Defines and deassigns match DEFINE and DEASSIGN (`SHOW LOGICAL` after each), for
   STEWARD_ADM with SYSNAM in the system table and STEWARD_TEST with GRPPRV in its

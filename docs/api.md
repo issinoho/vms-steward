@@ -534,7 +534,65 @@ turn, as `SHOW LOGICAL` does.
   `LNM$SYSCLUSTER_TABLE`, and never in the process or job table. So a step that only a
   process or job name would resolve is not shown.
 
+### `GET api/v1/logical?table=&name=`
+
+The same as `logicals/{table}/{name}`, with the name as a query parameter, so a name
+with `/` in it can be reached. Both answers also carry `modes`: every mode the name
+has in that table, outermost first. `SHOW LOGICAL` and `logical` show only the
+outermost one.
+
+```json
+{"table": "LNM$SYSTEM_TABLE", "logical": {"name": "SYS$SYSROOT", "mode": "exec", ...},
+ "modes": ["exec"], "translations": [...]}
+```
+
+## Logical names: define and deassign (Phase 7b, D15)
+
+Done **as you**, in-process (`$CRELNM`, `$DELLNM`), with the privileges you switched
+on (D9). OpenVMS checks your privileges and the table's protection: on x86, a group
+table needs GRPPRV (your own group), GRPNAM or SYSPRV, and the system table needs
+SYSPRV or SYSNAM. Both need the CSRF header, and both are audited, without the
+equivalences.
+
+Tables are as for reading: a shareable table, never the directory, a process or a job
+table. `LNM$GROUP` means your group table.
+
+**Modes** are `user`, `super` (or `supervisor`) and `exec` (or `executive`). Kernel is
+refused. Supervisor and executive need **SYSNAM switched on**: without it, Steward
+answers `403` with `NOSYSNAM` and does nothing. OpenVMS itself would quietly use user
+mode instead, replacing a user-mode name you did not mention.
+
+### `PUT api/v1/logical`
+
+```json
+{"table": "LNM$SYSTEM_TABLE", "name": "PROJECT_DATA", "mode": "exec",
+ "attributes": ["no_alias"],
+ "equivalences": [{"value": "DKA100:[PROJECT.]", "attributes": ["concealed", "terminal"]},
+                  {"value": "DKA200:[ARCHIVE]"}],
+ "replace": false}
+```
+
+- `name` and each `value` are 1 to 255 printable ASCII characters, kept as given. 1 to
+  16 equivalences.
+- `attributes`: `confine` and `no_alias` on the name; `concealed` and `terminal` on an
+  equivalence. Optional.
+- **`replace`:** if the name already exists at that mode in that table, the answer is
+  `409` unless this is `true`.
+- **`no_alias` removes the name at every outer mode**, as OpenVMS does.
+- The answer is the name as `GET logical` gives it: `201` if new, `200` if replaced.
+  Its `modes` shows what is left.
+
+### `DELETE api/v1/logical?table=&name=&mode=`
+
+Deassigns the name at that mode **and every outer mode**, as `DEASSIGN` does. `mode` is
+required. The answer names the modes removed:
+
+```json
+{"table": "LNM$SYSTEM_TABLE", "name": "PROJECT_DATA", "removed": ["user", "super"]}
+```
+
+`404` with `NOLOGNAM` if the name is at none of those modes.
+
 ## Coming
 
-Defining and deassigning logical names (Phase 7b), then processes and queues
-(`docs/PLAN.md`).
+Processes and queues (`docs/PLAN.md`).

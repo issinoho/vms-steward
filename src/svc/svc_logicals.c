@@ -229,36 +229,63 @@ static int next_name(const char *value, char *out, size_t outlen)
     return 1;
 }
 
-void svc_logical_get(st_ctx *c)
+static int bad_table_name(st_ctx *c, const char *rawtable, const char *name,
+                          char table[ST_LNM_TABLE_MAX + 1])
 {
-    static st_lnm n, step;
-    char table[ST_LNM_TABLE_MAX + 1], found[ST_LNM_TABLE_MAX + 1], group[24];
-    st_whoami me;
-    st_err e;
-    st_jw w;
-    int rc, i;
-
-    if (!st_valid_lnm_table(c->args[0], table)) {
+    if (!st_valid_lnm_table(rawtable, table)) {
         st_resp_problem(c->resp, 400, "bad-request", "Bad table",
                         "A shareable table: process and job tables are not shown.", 0, NULL);
-        return;
+        return 1;
     }
-    if (!st_valid_lnm_name(c->args[1])) {
+    if (!st_valid_lnm_name(name)) {
         st_resp_problem(c->resp, 400, "bad-request", "Bad name", "1 to 255 printable characters.", 0, NULL);
-        return;
+        return 1;
     }
-    if (st_plat_whoami(&me, &e)) { st_app_error(c, &e); return; }
-    snprintf(group, sizeof group, "LNM$GROUP_%06o", me.uic >> 16);
-    rc = st_plat_lnm_get(!strcmp(table, "LNM$GROUP") ? group : table, c->args[1], &n, found, &e);
-    if (rc <= 0) { st_app_error(c, &e); return; }
+    return 0;
+}
 
-    st_resp_json(c->resp, 200, &w);
+/* The viewer's group table: LNM$GROUP under a persona would be the service's. */
+static int group_table(st_ctx *c, char group[24])
+{
+    st_whoami me;
+    st_err e;
+    if (st_plat_whoami(&me, &e)) { st_app_error(c, &e); return -1; }
+    snprintf(group, 24, "LNM$GROUP_%06o", me.uic >> 16);
+    return 0;
+}
+
+static void modes_json(st_jw *w, const char *key, int bits, int from)
+{
+    int m;
+    st_jw_key(w, key);
+    st_jw_arr(w);
+    for (m = 3; m >= from; m--)
+        if (bits & (1 << m)) st_jw_str(w, st_lnm_mode_name(m));
+    st_jw_arr_end(w);
+}
+
+/* One name, its modes and its translation chain, answered with status. The table has
+   passed st_valid_lnm_table, the name st_valid_lnm_name. */
+static void one_name(st_ctx *c, const char *table, const char *name, int status)
+{
+    static st_lnm n, step;
+    char found[ST_LNM_TABLE_MAX + 1], group[24];
+    st_err e;
+    st_jw w;
+    int rc, i, modes;
+
+    if (group_table(c, group)) return;
+    rc = st_plat_lnm_get(!strcmp(table, "LNM$GROUP") ? group : table, name, &n, found, &e);
+    if (rc <= 0) { st_app_error(c, &e); return; }
+    /* SHOW LOGICAL shows the outermost mode only; a name may be at others too. */
+    if ((modes = st_plat_lnm_modes(found, name, &e)) < 0) modes = 0;
+
+    st_resp_json(c->resp, status, &w);
     st_jw_obj(&w);
     st_jw_kstr(&w, "table", found);
     st_jw_key(&w, "logical");
     name_json(&w, &n);
-    /* Each equivalence, translated in turn while it names another logical, up to the
-       nine levels OpenVMS itself follows, stopping at a terminal one. */
+    modes_json(&w, "modes", modes, 0);
     st_jw_key(&w, "translations");
     st_jw_arr(&w);
     for (i = 0; i < n.neq; i++) {
@@ -281,5 +308,112 @@ void svc_logical_get(st_ctx *c)
         st_jw_arr_end(&w);
     }
     st_jw_arr_end(&w);
+    st_jw_obj_end(&w);
+}
+
+void svc_logical_get(st_ctx *c)
+{
+    char table[ST_LNM_TABLE_MAX + 1];
+    if (bad_table_name(c, c->args[0], c->args[1], table)) return;
+    one_name(c, table, c->args[1], 200);
+}
+
+/* GET api/v1/logical?table=&name=: as logicals/{table}/{name}, for any name, "/" too. */
+void svc_logical_one(st_ctx *c)
+{
+    char raw[40], table[ST_LNM_TABLE_MAX + 1], name[ST_LNM_NAME_MAX + 1];
+    int gt, gn;
+    if ((gt = svc_query(c, "table", raw, sizeof raw)) < 0 || (gn = svc_query(c, "name", name, sizeof name)) < 0)
+        return;
+    if (!gt || !gn) {
+        st_resp_problem(c->resp, 400, "bad-request", "table and name are required", NULL, 0, NULL);
+        return;
+    }
+    if (bad_table_name(c, raw, name, table)) return;
+    one_name(c, table, name, 200);
+}
+
+/* ---- changes (Phase 7b, D15) ---- */
+
+/* PUT api/v1/logical {"table", "name", "mode", "attributes", "equivalences",
+   "replace"}: define, or replace with "replace": true. 201 defined, 200 replaced. */
+void svc_logical_define(st_ctx *c)
+{
+    static st_lnm_def d;
+    st_jdoc doc;
+    const char *why;
+    char group[24], target[ST_LNM_TABLE_MAX + ST_LNM_NAME_MAX + 16];
+    int rc, modes;
+    st_err e;
+
+    if (st_app_body(c, &doc)) return;
+    if (!doc.root || doc.root->type != ST_JOBJ) {
+        st_json_free(&doc);
+        st_resp_problem(c->resp, 400, "bad-request", "The body must be a JSON object", NULL, 0, NULL);
+        return;
+    }
+    rc = st_lnm_def_parse(doc.root, &d, &why);
+    st_json_free(&doc);
+    if (rc) { st_resp_problem(c->resp, 422, "invalid-value", "Invalid value", why, 0, NULL); return; }
+    if (!strcmp(d.table, "LNM$GROUP")) {
+        if (group_table(c, group)) return;
+        st_copy(d.table, sizeof d.table, group);
+    }
+    snprintf(target, sizeof target, "%s %s %s", d.table, d.name, st_lnm_mode_name(d.mode));
+    if ((modes = st_plat_lnm_modes(d.table, d.name, &e)) < 0) { st_app_error(c, &e); return; }
+    if ((modes & (1 << d.mode)) && !d.replace) {
+        st_resp_problem(c->resp, 409, "exists", "The name exists at that mode",
+                        "Send \"replace\": true to replace it.", 0, NULL);
+        return;
+    }
+    /* Never the equivalences in the audit log: names sometimes carry secrets. */
+    if ((rc = st_plat_lnm_define(&d, &e)) < 0) {
+        st_app_audit(c, c->session.username, "logical-define", target, "failed", e.text);
+        st_app_error(c, &e);
+        return;
+    }
+    st_app_audit(c, c->session.username, "logical-define", target, "ok", rc == 2 ? "replaced" : NULL);
+    one_name(c, d.table, d.name, rc == 2 ? 200 : 201);
+}
+
+/* DELETE api/v1/logical?table=&name=&mode=: the name at that mode and every outer
+   one, as DEASSIGN. The answer names the modes removed. */
+void svc_logical_deassign(st_ctx *c)
+{
+    char raw[40], table[ST_LNM_TABLE_MAX + 1], name[ST_LNM_NAME_MAX + 1], mraw[16], group[24];
+    char target[ST_LNM_TABLE_MAX + ST_LNM_NAME_MAX + 16];
+    int mode, modes, gt, gn, gm;
+    st_err e;
+    st_jw w;
+
+    if ((gt = svc_query(c, "table", raw, sizeof raw)) < 0 || (gn = svc_query(c, "name", name, sizeof name)) < 0 ||
+        (gm = svc_query(c, "mode", mraw, sizeof mraw)) < 0)
+        return;
+    if (!gt || !gn || !gm) {
+        st_resp_problem(c->resp, 400, "bad-request", "table, name and mode are required", NULL, 0, NULL);
+        return;
+    }
+    if (bad_table_name(c, raw, name, table)) return;
+    if ((mode = st_lnm_mode(mraw)) < 0) {
+        st_resp_problem(c->resp, 400, "bad-request", "Bad mode", "user, super or exec.", 0, NULL);
+        return;
+    }
+    if (!strcmp(table, "LNM$GROUP")) {
+        if (group_table(c, group)) return;
+        st_copy(table, sizeof table, group);
+    }
+    snprintf(target, sizeof target, "%s %s %s", table, name, st_lnm_mode_name(mode));
+    if ((modes = st_plat_lnm_modes(table, name, &e)) < 0) { st_app_error(c, &e); return; }
+    if (st_plat_lnm_deassign(table, name, mode, &e)) {
+        st_app_audit(c, c->session.username, "logical-deassign", target, "failed", e.text);
+        st_app_error(c, &e);
+        return;
+    }
+    st_app_audit(c, c->session.username, "logical-deassign", target, "ok", NULL);
+    st_resp_json(c->resp, 200, &w);
+    st_jw_obj(&w);
+    st_jw_kstr(&w, "table", table);
+    st_jw_kstr(&w, "name", name);
+    modes_json(&w, "removed", modes, mode);
     st_jw_obj_end(&w);
 }

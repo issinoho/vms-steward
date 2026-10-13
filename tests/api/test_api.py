@@ -191,6 +191,13 @@ def main(binary):
         st, _, _ = p.call("POST", "/api/v1/users/EXPIRED/password",   # the fixture back, for later checks
                           {"password": "expired-pass", "pre_expired": True})
         check(st == 204, "fixture restored")
+        # Phase 7b: define and deassign; the equivalence must not reach the log (D15).
+        p.call("PUT", "/api/v1/session/privileges", {"enabled": ["SYSPRV", "SYSNAM"]})
+        st, _, doc = p.call("PUT", "/api/v1/logical", {"table": "LNM$SYSTEM_TABLE", "name": "API_7B", "mode": "exec",
+                                                       "equivalences": [{"value": "Phase7b-equivalence"}]})
+        check(st == 201 and doc["modes"] == ["exec"], "define a logical name through FastCGI")
+        st, _, doc = p.call("DELETE", "/api/v1/logical?table=LNM$SYSTEM_TABLE&name=API_7B&mode=exec")
+        check(st == 200 and doc["removed"] == ["exec"], "and deassign it")
         p.call("PUT", "/api/v1/session/privileges", {"enabled": []})
 
         # The same headers from a peer we do not trust are ignored: the https Origin
@@ -226,6 +233,9 @@ def main(binary):
               "audit records why a login failed (the client is not told)")
         check('user="STEWARD_ADMINISTRATOR"' in log,
               "an over-long username is refused before $ACM and still audited")
+        check('action="logical-define" target="LNM$SYSTEM_TABLE API_7B exec" outcome="ok"' in log and
+              'action="logical-deassign" target="LNM$SYSTEM_TABLE API_7B exec" outcome="ok"' in log and
+              "Phase7b-" not in log, "a define and a deassign are audited, without the equivalence")
         check("test-pass" not in log and "admin-pass" not in log and "Phase3-" not in log and "Phase4-" not in log and "expired-pass" not in log,
               "no password reaches the audit log (sign-in, set, change)")
         check('action="password-set" target="EXPIRED" outcome="ok" detail="pre-expired"' in log and

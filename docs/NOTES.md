@@ -192,3 +192,11 @@ removed the supervisor and user names and left the executive one. And `SHOW
 LOGICAL/FULL` showed only the user-mode one of the three: it lists a name's outermost
 mode only. Observed with `tools/vms.sh x86 dcl`, defining `STEWARD_PROBE_7B` at each
 mode and deassigning (the user agreed to the name; nothing was left).
+
+**Defining a name NO_ALIAS deletes it at every outer mode** (Phase 7b, 2026-10-13).
+With `STEWARD_PROBE_7B` at user and executive mode in the system table, replacing the
+executive-mode one with `LNM$M_NO_ALIAS` left only the executive-mode name:
+`$CRELNM` removed the user-mode one without a word (`SS$_SUPERSEDE`, as for any
+replace). `SHOW LOGICAL/FULL` then shows `[exec,no_alias]`. Steward's answer to the
+define lists the modes left, and the browser warns before sending `no_alias`. Observed
+with `tests/vms/phase7b_live.py`, which first expected the user-mode name to survive.

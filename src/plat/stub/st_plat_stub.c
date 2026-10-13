@@ -46,6 +46,7 @@
 #define C_NOLOGNAM  0x01BCu   /* SS$_NOLOGNAM 444 */
 #define C_NOLOGTAB  0x2294u   /* SS$_NOLOGTAB 8852 */
 #define C_IVLOGTAB  0x015Cu   /* SS$_IVLOGTAB 348 (SHOW LOGICAL returns it as a warning, %X158) */
+#define C_NOSYSNAM  0x2814u   /* SS$_NOSYSNAM 10260 */
 
 typedef struct {
     st_user u;
@@ -150,7 +151,7 @@ static void seed(void)
     add_user("DEFAULT", NULL, "", "", 0x00800080u,
              BIT(15) | BIT(20), 0, BIT(15) | BIT(20), 0, 1u << ST_UF_DISUSER, -1);
     add_user("STEWARD_ADM", "admin-pass", "Steward administrator", "STEWARD", 0x00F20002u,
-             BIT(15) | BIT(20) | BIT(28) | BIT(18), BIT(2), BIT(15) | BIT(20) | BIT(18), 0,
+             BIT(15) | BIT(20) | BIT(28) | BIT(18) | BIT(2), BIT(2), BIT(15) | BIT(20) | BIT(18), 0,
              1u << ST_UF_DISCTLY, 1791000000LL);
     add_user("STEWARD_TEST", "test-pass", "Test account", "STEWARD", 0x00F20001u,
              BIT(15) | BIT(20), 0, BIT(15) | BIT(20), 0, 0, 1791000000LL);
@@ -305,6 +306,8 @@ int st_plat_whoami(st_whoami *w, st_err *e)
 /* ================================================================ users, identifiers */
 
 static int cur_has(int bit) { return persona && (persona_cur[bit / 32] & (1u << (bit % 32))); }
+#define P_SYSNAM  2
+#define P_GRPNAM  8
 #define P_SYSPRV  28
 #define P_GRPPRV  34
 #define P_READALL 35
@@ -845,6 +848,64 @@ static const stub_table *stub_find_table(const char *name)
     return NULL;
 }
 
+/* The names, changeable (Phase 7b): loaded from the tables above on first use. Each
+   is one name at one mode, as SHOW LOGICAL/FULL would print it. */
+#define STUB_LNM_MAX 64
+typedef struct { int used; const stub_table *table; char name[ST_LNM_NAME_MAX + 1]; int mode; char *text; } stub_lnm;
+static stub_lnm stub_lnms[STUB_LNM_MAX];
+
+static int stub_mode_of(const char *line)
+{
+    static const char *const names[] = { "kernel", "exec", "super", "user" };
+    const char *b = strstr(line, "\" [");
+    int m;
+    if (!b) return 3;
+    for (m = 0; m < 4; m++)
+        if (!strncmp(b + 3, names[m], strlen(names[m]))) return m;
+    return 3;
+}
+
+static void stub_lnm_load(void)
+{
+    static int loaded;
+    size_t t;
+    int i, k = 0;
+    if (loaded) return;
+    loaded = 1;
+    for (t = 0; t < sizeof stub_tables / sizeof stub_tables[0]; t++)
+        for (i = 0; stub_tables[t].names[i] && k < STUB_LNM_MAX; i++, k++) {
+            const char *line = stub_tables[t].names[i], *q = strchr(line, '"'), *r = q ? strchr(q + 1, '"') : NULL;
+            size_t n = (q && r) ? (size_t) (r - q - 1) : 0;
+            if (n > ST_LNM_NAME_MAX) n = ST_LNM_NAME_MAX;
+            stub_lnms[k].used = 1;
+            stub_lnms[k].table = &stub_tables[t];
+            memcpy(stub_lnms[k].name, q ? q + 1 : "", n);
+            stub_lnms[k].name[n] = '\0';
+            stub_lnms[k].mode = stub_mode_of(line);
+            stub_lnms[k].text = (char *) line;   /* never freed: k < the static count */
+        }
+}
+
+static int stub_lnm_static(int i)
+{
+    size_t t;
+    int j;
+    for (t = 0; t < sizeof stub_tables / sizeof stub_tables[0]; t++)
+        for (j = 0; stub_tables[t].names[j]; j++)
+            if (stub_lnms[i].text == stub_tables[t].names[j]) return 1;
+    return 0;
+}
+
+static int stub_lnm_outermost(int i)
+{
+    int j;
+    for (j = 0; j < STUB_LNM_MAX; j++)
+        if (j != i && stub_lnms[j].used && stub_lnms[j].table == stub_lnms[i].table &&
+            !strcmp(stub_lnms[j].name, stub_lnms[i].name) && stub_lnms[j].mode > stub_lnms[i].mode)
+            return 0;
+    return 1;
+}
+
 static void stub_lines(st_lnm_parser *p, const char *text)
 {
     while (*text) {
@@ -872,15 +933,12 @@ int st_plat_lnm_list(const char *table, const char *pattern, const char *privs,
     st_lnm_parse_line(&p, line, strlen(line));
     snprintf(line, sizeof line, "\t\t\t[Protection=%s]", t->protection);
     st_lnm_parse_line(&p, line, strlen(line));
-    for (i = 0; t->names[i]; i++) {
-        char name[ST_LNM_NAME_MAX + 1];
-        const char *q = strchr(t->names[i], '"'), *r = q ? strchr(q + 1, '"') : NULL;
-        size_t n = (q && r) ? (size_t) (r - q - 1) : 0;
-        if (n >= sizeof name) n = sizeof name - 1;
-        memcpy(name, q ? q + 1 : "", n);
-        name[n] = '\0';
-        if (st_wild_match(pattern, name)) stub_lines(&p, t->names[i]);
-    }
+    stub_lnm_load();
+    /* SHOW LOGICAL shows a name once, at its outermost mode. */
+    for (i = 0; i < STUB_LNM_MAX; i++)
+        if (stub_lnms[i].used && stub_lnms[i].table == t && st_wild_match(pattern, stub_lnms[i].name) &&
+            stub_lnm_outermost(i))
+            stub_lines(&p, stub_lnms[i].text);
     st_lnm_parse_end(&p);
     return 0;
 }
@@ -912,6 +970,136 @@ int st_plat_lnm_get(const char *table, const char *name, st_lnm *out,
     if (!g.found) { fail(e, ST_E_NOTFOUND, C_NOLOGNAM, "%SYSTEM-F-NOLOGNAM, no logical name match"); return 0; }
     st_copy(table_out, ST_LNM_TABLE_MAX + 1, t->table);
     return 1;
+}
+
+/* ---- changes (Phase 7b, D15) ---- */
+
+/* As OpenVMS decides, per probe_crelnm (NOTES.md): the system-wide tables with SYSPRV
+   (their protection) or SYSNAM; a group table with GRPPRV for one's own group, GRPNAM,
+   or SYSPRV. SYSNAM does not open a group table. */
+static int stub_may_write(const stub_table *t)
+{
+    if (!strncmp(t->table, "LNM$GROUP_", 10)) {
+        unsigned int group = (unsigned int) strtoul(t->table + 10, NULL, 8);
+        return system_access() ||
+               (persona && (persona->u.uic >> 16) == group && (cur_has(P_GRPPRV) || cur_has(P_GRPNAM)));
+    }
+    return system_access() || cur_has(P_SYSNAM);
+}
+
+static const stub_table *stub_real_table(const char *table, st_err *e)
+{
+    const stub_table *t = stub_find_table(table);
+    if (!t || strcmp(t->table, table) || !strcmp(t->table, "LNM$SYSTEM_DIRECTORY")) {
+        fail(e, ST_E_NOTFOUND, C_NOLOGTAB, "%SYSTEM-F-NOLOGTAB, no logical name table matches the specified name");
+        return NULL;
+    }
+    return t;
+}
+
+static int stub_nosysnam(int mode, st_err *e)
+{
+    if (mode < ST_LNM_USER && !cur_has(P_SYSNAM))
+        return fail(e, ST_E_NOPRIV, C_NOSYSNAM, "%SYSTEM-F-NOSYSNAM, operation requires SYSNAM privilege");
+    return 0;
+}
+
+static int stub_noprive(st_err *e)
+{
+    return fail(e, ST_E_NOPRIV, C_NOPRIV, "%SYSTEM-F-NOPRIV, insufficient privilege or object protection violation");
+}
+
+int st_plat_lnm_modes(const char *table, const char *name, st_err *e)
+{
+    const stub_table *t = stub_real_table(table, e);
+    int i, bits = 0;
+    if (!t) return -1;
+    if (!stub_may_read(t)) return stub_noprive(e);
+    stub_lnm_load();
+    for (i = 0; i < STUB_LNM_MAX; i++)
+        if (stub_lnms[i].used && stub_lnms[i].table == t && !strcmp(stub_lnms[i].name, name))
+            bits |= 1 << stub_lnms[i].mode;
+    return bits;
+}
+
+/* "x" with quotes doubled, as SHOW LOGICAL prints a string. */
+static void stub_quoted(st_buf *b, const char *s)
+{
+    st_buf_putc(b, '"');
+    for (; *s; s++) {
+        if (*s == '"') st_buf_putc(b, '"');
+        st_buf_putc(b, *s);
+    }
+    st_buf_putc(b, '"');
+}
+
+int st_plat_lnm_define(const st_lnm_def *d, st_err *e)
+{
+    const stub_table *t = stub_real_table(d->table, e);
+    st_buf b;
+    char *text;
+    int i, slot = -1, replaced = 0;
+    if (!t) return -1;
+    if (stub_nosysnam(d->mode, e)) return -1;
+    if (!stub_may_write(t)) return stub_noprive(e);
+    stub_lnm_load();
+    st_buf_init(&b, 0);
+    st_buf_puts(&b, "  ");
+    stub_quoted(&b, d->name);
+    st_buf_printf(&b, " [%s%s%s]", st_lnm_mode_name(d->mode), (d->attrs & ST_LNM_NO_ALIAS) ? ",no_alias" : "",
+                (d->attrs & ST_LNM_CONFINE) ? ",confine" : "");
+    for (i = 0; i < d->neq; i++) {
+        unsigned a = d->eq[i].attrs;
+        st_buf_puts(&b, i ? "\n\t= " : " = ");
+        stub_quoted(&b, d->eq[i].value);
+        if (a) st_buf_printf(&b, " [%s%s%s]", (a & ST_LNM_CONCEALED) ? "concealed" : "",
+                           (a & ST_LNM_CONCEALED) && (a & ST_LNM_TERMINAL) ? "," : "",
+                           (a & ST_LNM_TERMINAL) ? "terminal" : "");
+    }
+    text = st_buf_ok(&b) ? malloc(b.len + 1) : NULL;
+    if (!text) { st_buf_free(&b); set_err(e, ST_E_INTERNAL, "out of memory"); return -1; }
+    memcpy(text, st_buf_cstr(&b), b.len + 1);
+    st_buf_free(&b);
+    for (i = 0; i < STUB_LNM_MAX; i++)
+        if (stub_lnms[i].used && stub_lnms[i].table == t && stub_lnms[i].mode == d->mode &&
+            !strcmp(stub_lnms[i].name, d->name)) { slot = i; replaced = 1; break; }
+    for (i = 0; slot < 0 && i < STUB_LNM_MAX; i++)
+        if (!stub_lnms[i].used) slot = i;
+    if (slot < 0) { free(text); set_err(e, ST_E_INTERNAL, "stub: too many logical names"); return -1; }
+    if (replaced && !stub_lnm_static(slot)) free(stub_lnms[slot].text);
+    /* NO_ALIAS: OpenVMS deletes the name at every outer mode (NOTES.md). */
+    if (d->attrs & ST_LNM_NO_ALIAS)
+        for (i = 0; i < STUB_LNM_MAX; i++)
+            if (i != slot && stub_lnms[i].used && stub_lnms[i].table == t && stub_lnms[i].mode > d->mode &&
+                !strcmp(stub_lnms[i].name, d->name)) {
+                if (!stub_lnm_static(i)) free(stub_lnms[i].text);
+                stub_lnms[i].used = 0;
+            }
+    stub_lnms[slot].used = 1;
+    stub_lnms[slot].table = t;
+    st_copy(stub_lnms[slot].name, sizeof stub_lnms[slot].name, d->name);
+    stub_lnms[slot].mode = d->mode;
+    stub_lnms[slot].text = text;
+    return replaced ? 2 : 1;
+}
+
+int st_plat_lnm_deassign(const char *table, const char *name, int mode, st_err *e)
+{
+    const stub_table *t = stub_real_table(table, e);
+    int i, n = 0;
+    if (!t) return -1;
+    if (stub_nosysnam(mode, e)) return -1;
+    if (!stub_may_write(t)) return stub_noprive(e);
+    stub_lnm_load();
+    for (i = 0; i < STUB_LNM_MAX; i++)
+        if (stub_lnms[i].used && stub_lnms[i].table == t && stub_lnms[i].mode >= mode &&
+            !strcmp(stub_lnms[i].name, name)) {
+            if (!stub_lnm_static(i)) free(stub_lnms[i].text);
+            stub_lnms[i].used = 0;
+            n++;
+        }
+    if (!n) { fail(e, ST_E_NOTFOUND, C_NOLOGNAM, "%SYSTEM-F-NOLOGNAM, no logical name match"); return -1; }
+    return 0;
 }
 
 /* ================================================================ misc */

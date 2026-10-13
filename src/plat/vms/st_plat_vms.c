@@ -99,6 +99,7 @@ static void set_cond(st_err *e, unsigned int cond)
     msgtext(cond, e->text, sizeof e->text);
     switch (cond) {
     case SS$_NOPRIV: case SS$_NOSYSPRV: case SS$_NOGRPPRV: case RMS$_PRV:
+    case SS$_NOSYSNAM: case SS$_NOGRPNAM:
         e->kind = ST_E_NOPRIV; break;
     case SS$_NOSUCHID: case RMS$_RNF: case SS$_NOLOGNAM: case SS$_NOLOGTAB: case SS$_IVLOGTAB:
         e->kind = ST_E_NOTFOUND; break;
@@ -2758,30 +2759,46 @@ static void lnm_attrs(unsigned int a, int name, char *out, size_t outlen)
     if (*out) out[strlen(out) - 1] = '\0';
 }
 
+/* Only a real shareable table: one listed with the table attribute in
+   LNM$SYSTEM_DIRECTORY. Not a search list of tables (which could name the process
+   table, the service's own), not a process or job table of this process. Not the
+   directory itself either: it has the table attribute, but its names are tables,
+   listed by GET logicals/tables. And not a name this process's directory also has:
+   $TRNLNM, $CRELNM and $DELLNM look there first, so it would send the call
+   elsewhere. The table is uppercase (st_valid_lnm_table). */
+static int lnm_real_table(const char *table, st_err *e)
+{
+    struct dsc$descriptor_s tab, dir, pdir;
+    unsigned int attrs = 0, st;
+    st_ile3 it[2];
+    if (!strcmp(table, "LNM$SYSTEM_DIRECTORY")) { set_cond(e, SS$_NOLOGTAB); return -1; }
+    desc(&tab, table, (unsigned short) strlen(table));
+    desc(&pdir, "LNM$PROCESS_DIRECTORY", 21);
+    item(&it[0], LNM$_ATTRIBUTES, &attrs, 4, 0);
+    item_end(&it[1]);
+    st = sys$trnlnm(0, &pdir, &tab, 0, it);
+    if (st != SS$_NOLOGNAM) { set_cond(e, (st & 1) ? SS$_NOLOGTAB : st); return -1; }
+    desc(&dir, "LNM$SYSTEM_DIRECTORY", 20);
+    attrs = 0;
+    st = sys$trnlnm(0, &dir, &tab, 0, it);
+    if (st == SS$_NOLOGNAM || ((st & 1) && !(attrs & LNM$M_TABLE))) { set_cond(e, SS$_NOLOGTAB); return -1; }
+    if (!(st & 1)) { set_cond(e, st); return -1; }
+    return 0;
+}
+
 int st_plat_lnm_get(const char *table, const char *name, st_lnm *out,
                     char table_out[ST_LNM_TABLE_MAX + 1], st_err *e)
 {
     static const char *const modes[] = { "kernel", "exec", "super", "user" };
-    struct dsc$descriptor_s tab, dir, nam;
+    struct dsc$descriptor_s tab, nam;
     unsigned int attrs = 0, index = 0, maxidx = 0, st;
     unsigned char acmode = 0;
     unsigned short slen = 0, tlen = 0;
     char string[ST_LNM_NAME_MAX + 1], tname[ST_LNM_TABLE_MAX + 1];
     st_ile3 it[7];
 
-    /* Only a real shareable table: one listed with the table attribute in
-       LNM$SYSTEM_DIRECTORY. Not a search list of tables (which could name the
-       process table, the service's own), not a process or job table of this process.
-       Not the directory itself either: it has the table attribute, but its names are
-       tables, listed by GET logicals/tables. The table is uppercase (st_valid_lnm_table). */
-    if (!strcmp(table, "LNM$SYSTEM_DIRECTORY")) { set_cond(e, SS$_NOLOGTAB); return -1; }
-    desc(&dir, "LNM$SYSTEM_DIRECTORY", 20);
+    if (lnm_real_table(table, e)) return -1;
     desc(&tab, table, (unsigned short) strlen(table));
-    item(&it[0], LNM$_ATTRIBUTES, &attrs, 4, 0);
-    item_end(&it[1]);
-    st = sys$trnlnm(0, &dir, &tab, 0, it);
-    if (st == SS$_NOLOGNAM || ((st & 1) && !(attrs & LNM$M_TABLE))) { set_cond(e, SS$_NOLOGTAB); return -1; }
-    if (!(st & 1)) { set_cond(e, st); return -1; }
 
     memset(out, 0, sizeof *out);
     st_copy(out->name, sizeof out->name, name);
@@ -2820,6 +2837,99 @@ int st_plat_lnm_get(const char *table, const char *name, st_lnm *out,
         } else out->more++;
     }
     return 1;
+}
+
+/* ---- changes (Phase 7b, D15) ---- */
+
+/* An inner mode needs SYSNAM switched on in the persona: without it OpenVMS quietly
+   uses user mode instead, for $CRELNM and $DELLNM alike (probe_crelnm, NOTES.md). */
+static int lnm_mode_allowed(int mode, st_err *e)
+{
+    unsigned int priv[2] = { 0, 0 }, iosb[2], st;
+    st_ile3 it[2];
+    if (mode == ST_LNM_USER) return 0;
+    if (mode != ST_LNM_SUPER && mode != ST_LNM_EXEC) { set_cond(e, SS$_BADPARAM); return -1; }
+    item(&it[0], JPI$_CURPRIV, priv, 8, 0);
+    item_end(&it[1]);
+    st = sys$getjpiw(0, 0, 0, it, iosb, 0, 0);
+    if (st & 1) st = iosb[0];
+    if (!(st & 1)) { set_cond(e, st); return -1; }
+    if (!(priv[0] & PRV$M_SYSNAM)) { set_cond(e, SS$_NOSYSNAM); return -1; }
+    return 0;
+}
+
+int st_plat_lnm_modes(const char *table, const char *name, st_err *e)
+{
+    struct dsc$descriptor_s tab, nam;
+    unsigned int st;
+    unsigned char m, got;
+    unsigned short tlen;
+    char tname[ST_LNM_TABLE_MAX + 1];
+    st_ile3 it[3];
+    int bits = 0;
+
+    if (lnm_real_table(table, e)) return -1;
+    desc(&tab, table, (unsigned short) strlen(table));
+    desc(&nam, name, (unsigned short) strlen(name));
+    /* $TRNLNM at a mode ignores names at outer modes and gives the outermost of the
+       rest: it is at that mode exactly if it says so. */
+    for (m = 0; m <= 3; m++) {
+        got = 9;
+        tlen = 0;
+        item(&it[0], LNM$_ACMODE, &got, 1, 0);
+        item(&it[1], LNM$_TABLE, tname, ST_LNM_TABLE_MAX, &tlen);
+        item_end(&it[2]);
+        st = sys$trnlnm(0, &tab, &nam, &m, it);
+        if (st == SS$_NOLOGNAM) continue;
+        if (!(st & 1)) { set_cond(e, st); return -1; }
+        tname[tlen] = '\0';
+        if (strcmp(tname, table)) { set_cond(e, SS$_NOLOGTAB); return -1; }
+        if (got == m) bits |= 1 << m;
+    }
+    return bits;
+}
+
+int st_plat_lnm_define(const st_lnm_def *d, st_err *e)
+{
+    struct dsc$descriptor_s tab, nam;
+    unsigned int attr = 0, st, eqattr[ST_LNM_MAXEQ];
+    unsigned char mode = (unsigned char) d->mode;
+    st_ile3 it[2 * ST_LNM_MAXEQ + 1];
+    int i, n = 0;
+
+    if (lnm_real_table(d->table, e)) return -1;
+    if (lnm_mode_allowed(d->mode, e)) return -1;
+    if (d->neq < 1 || d->neq > ST_LNM_MAXEQ) { set_cond(e, SS$_BADPARAM); return -1; }
+    if (d->attrs & ST_LNM_CONFINE) attr |= LNM$M_CONFINE;
+    if (d->attrs & ST_LNM_NO_ALIAS) attr |= LNM$M_NO_ALIAS;
+    /* Each equivalence's attributes item applies to the string items after it. */
+    for (i = 0; i < d->neq; i++) {
+        eqattr[i] = ((d->eq[i].attrs & ST_LNM_CONCEALED) ? LNM$M_CONCEALED : 0) |
+                    ((d->eq[i].attrs & ST_LNM_TERMINAL) ? LNM$M_TERMINAL : 0);
+        item(&it[n++], LNM$_ATTRIBUTES, &eqattr[i], 4, 0);
+        item(&it[n++], LNM$_STRING, (void *) d->eq[i].value, (unsigned short) strlen(d->eq[i].value), 0);
+    }
+    item_end(&it[n]);
+    desc(&tab, d->table, (unsigned short) strlen(d->table));
+    desc(&nam, d->name, (unsigned short) strlen(d->name));
+    st = sys$crelnm(&attr, &tab, &nam, &mode, it);
+    if (!(st & 1)) { set_cond(e, st); return -1; }
+    return st == SS$_SUPERSEDE ? 2 : 1;
+}
+
+int st_plat_lnm_deassign(const char *table, const char *name, int mode, st_err *e)
+{
+    struct dsc$descriptor_s tab, nam;
+    unsigned char m = (unsigned char) mode;
+    unsigned int st;
+
+    if (lnm_real_table(table, e)) return -1;
+    if (lnm_mode_allowed(mode, e)) return -1;
+    desc(&tab, table, (unsigned short) strlen(table));
+    desc(&nam, name, (unsigned short) strlen(name));
+    st = sys$dellnm(&tab, &nam, &m);
+    if (!(st & 1)) { set_cond(e, st); return -1; }
+    return 0;
 }
 
 /* ================================================================ misc */

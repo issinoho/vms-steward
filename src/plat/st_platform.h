@@ -375,6 +375,26 @@ int st_plat_lnm_list(const char *table, const char *pattern, const char *privs,
 int st_plat_lnm_get(const char *table, const char *name, st_lnm *out,
                     char table_out[ST_LNM_TABLE_MAX + 1], st_err *e);
 
+/* ---- logical names: changes (Phase 7b, D15), in-process as the current persona ----
+   The table, for all three, is a real shareable table as for st_plat_lnm_get, named
+   in full (the caller turns LNM$GROUP into the viewer's group table: under a persona
+   OpenVMS would take the service's). */
+
+/* The modes <name> has in <table>: bit (1 << mode) for each of kernel (0) to user
+   (3), 0 for none. SHOW LOGICAL lists only the outermost. -1 on error. */
+int st_plat_lnm_modes(const char *table, const char *name, st_err *e);
+
+/* Define d ($CRELNM): a new name, or the one at d->mode replaced (the caller has
+   checked d->replace). Supervisor and executive mode need SYSNAM switched on:
+   without it this fails with ST_E_NOPRIV (NOSYSNAM) and asks OpenVMS nothing, since
+   OpenVMS would quietly define the name at user mode instead (NOTES.md). Returns 1
+   defined, 2 replaced, -1 on error. */
+int st_plat_lnm_define(const st_lnm_def *d, st_err *e);
+
+/* Deassign <name> at <mode> and every outer mode, as DEASSIGN does ($DELLNM). The same
+   SYSNAM rule. Returns 0, or -1 (NOLOGNAM: ST_E_NOTFOUND). */
+int st_plat_lnm_deassign(const char *table, const char *name, int mode, st_err *e);
+
 /* ---- audit and diagnostics ---- */
 void st_plat_audit(const char *line);    /* one record; the platform adds a timestamp */
 void st_plat_log(const char *line);      /* operational log (SYS$ERROR / stderr) */

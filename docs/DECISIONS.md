@@ -409,6 +409,9 @@ probe: my all-privileged process, STEWARD_TEST's persona, NOPRIV). On top of tha
 - **Deassigning at a mode removes the name at that mode and every outer one**, as
   `$DELLNM` and DCL's DEASSIGN do. The answer lists the modes removed, and the browser
   names them before asking.
+- **NO_ALIAS removes outer modes.** OpenVMS deletes the name at every outer mode when
+  it defines it NO_ALIAS (NOTES.md). Steward lets it, as DEFINE does: the answer lists
+  the modes left, and the browser names the ones that will go before it asks.
 - **The audit log** records the table, the name, the mode and OpenVMS's answer, never
   the equivalences: logical names sometimes carry passwords or connection strings.
 - **One name by query** (from the 7a review): `api/v1/logical?table=&name=` for GET,
