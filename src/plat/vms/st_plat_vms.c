@@ -240,10 +240,66 @@ static char steward_log[256];       /* Steward's audit log, read back for access
 /* The D14 helper procedure, fixed: never taken from a logical name the service would
    translate through its group or system tables, which others could define. */
 static char lnm_helper[256] = "STEWARD$ROOT:[COM]STEWARD_LNM.COM";
+/* ... and resolved once, before any persona, to a physical device ("_DEV:", which
+   is never translated) and a full directory: lnm_resolve_helper. The helper process
+   translates whatever it is given in its own context, where a user- or
+   supervisor-mode STEWARD$ROOT in the *viewer's* group table, or in the system
+   table, comes first (probes/lnm_shadow.py, NOTES.md). Empty until resolved. */
+static char lnm_helper_path[256];
+
+/* $PARSE and $SEARCH with NOCONCEAL, as the service, then the device's full name. */
+static void lnm_resolve_helper(void)
+{
+    struct FAB fab = cc$rms_fab;
+    struct NAM nam = cc$rms_nam;
+    char esa[NAM$C_MAXRSS + 1], rsa[NAM$C_MAXRSS + 1], dev[64], devname[65];
+    struct dsc$descriptor_s dd;
+    unsigned short devlen = 0;
+    unsigned int st, iosb[2];
+    st_ile3 it[2];
+
+    lnm_helper_path[0] = '\0';
+    fab.fab$l_fna = lnm_helper;
+    fab.fab$b_fns = (unsigned char) strlen(lnm_helper);
+    fab.fab$l_nam = &nam;
+    nam.nam$l_esa = esa;
+    nam.nam$b_ess = NAM$C_MAXRSS;
+    nam.nam$l_rsa = rsa;
+    nam.nam$b_rss = NAM$C_MAXRSS;
+    nam.nam$b_nop = NAM$M_NOCONCEAL;
+    st = sys$parse(&fab);
+    if (st & 1) st = sys$search(&fab);
+    if (!(st & 1) || nam.nam$b_dev == 0 || nam.nam$b_dev >= sizeof dev) {
+        st_plat_log("the logical-name helper procedure was not found: listing is off");
+        return;
+    }
+    memcpy(dev, nam.nam$l_dev, nam.nam$b_dev);
+    dev[nam.nam$b_dev] = '\0';
+    desc(&dd, dev, (unsigned short) strlen(dev));
+    item(&it[0], DVI$_FULLDEVNAM, devname, sizeof devname - 1, &devlen);
+    item_end(&it[1]);
+    st = sys$getdviw(0, 0, &dd, it, (void *) iosb, 0, 0, 0);
+    if (st & 1) st = iosb[0] & 0xFFFF;
+    if (!(st & 1) || devlen == 0 || devname[0] != '_') {
+        st_plat_log("the logical-name helper's device has no physical name: listing is off");
+        return;
+    }
+    devname[devlen] = '\0';
+    /* The directory, name and type, without the version: a kit installed later puts
+       a new version there, and the pool is restarted with it anyway. */
+    if (snprintf(lnm_helper_path, sizeof lnm_helper_path, "%s%.*s%.*s%.*s", devname,
+                 (int) nam.nam$b_dir, nam.nam$l_dir, (int) nam.nam$b_name, nam.nam$l_name,
+                 (int) nam.nam$b_type, nam.nam$l_type) >= (int) sizeof lnm_helper_path)
+        lnm_helper_path[0] = '\0';
+}
 
 /* For tests/vms/api_probe.c only, to run an edited procedure before it is installed.
    STEWARD.EXE never calls it. */
-void st_plat_vms_test_helper(const char *path) { st_copy(lnm_helper, sizeof lnm_helper, path); }
+void st_plat_vms_test_helper(const char *path)
+{
+    st_copy(lnm_helper, sizeof lnm_helper, path);
+    lnm_resolve_helper();
+}
 
 const char *st_plat_service_account(void) { return service_account; }
 
@@ -301,6 +357,7 @@ int st_plat_init(const st_plat_config *cfg, st_err *e)
         if (!(st & 1)) { set_cond(e, st); return -1; }
         audit_open = 1;
     }
+    lnm_resolve_helper();   /* as the service, before any persona */
     set_text(e, ST_OK, "");
     return 0;
 }
@@ -2632,6 +2689,10 @@ int st_plat_lnm_list(const char *table, const char *pattern, const char *privs,
     st_lnm_parser p;
     int done = 0, timed_out = 0, ended = 0, reading = 0, waiting = 0;
 
+    if (!lnm_helper_path[0]) {   /* not found at start-up (the log says so) */
+        set_text(e, ST_E_INTERNAL, "the logical-name helper procedure was not found when Steward started");
+        return -1;
+    }
     if (!efr && (!(lib$get_ef(&efr) & 1) || !(lib$get_ef(&eft) & 1) || !(lib$get_ef(&efm) & 1) ||
                  efr / 32 != eft / 32 || efr / 32 != efm / 32)) {
         efr = 0;
@@ -2663,7 +2724,7 @@ int st_plat_lnm_list(const char *table, const char *pattern, const char *privs,
     waiting = 1;
 
     desc(&img, "SYS$SYSTEM:LOGINOUT.EXE", 23);
-    desc(&in, lnm_helper, (unsigned short) strlen(lnm_helper));
+    desc(&in, lnm_helper_path, (unsigned short) strlen(lnm_helper_path));
     desc(&nl, "NLA0:", 5);
     desc(&pn, prc, (unsigned short) strlen(prc));
     st = sys$creprc(&pid, &img, &in, &nl, &nl, 0, 0, &pn, 4, 0, (unsigned short) utrm, PRC$M_DETACH, 0, 0);

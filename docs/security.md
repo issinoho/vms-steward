@@ -274,13 +274,13 @@ browser ─(1)─ nginx proxy manager ─(2)─ lighttpd ─(3)─ STEWARD.EXE �
 - **The audit log** records the table, the name, the mode and OpenVMS's answer, never
   the equivalences: logical names sometimes hold passwords or connection strings.
 - **A change to the system, made as the user.** A viewer with SYSNAM, GRPNAM or SYSPRV
-  can now define names from the browser that they could define at a terminal. That
-  includes names the service itself translates (`STEWARD$ROOT`, the OpenSSL images,
-  names in the service account's group table). No new privilege is needed, but the
-  route is new. **Open, to probe:** which of the service's own translations a
-  user-mode or group-table name can shadow. LOGINOUT opens the helper procedure in
-  executive mode, which would ignore outer-mode names. Until that is shown, keep the
-  service account in a UIC group of its own.
+  can now define names from the browser that they could define at a terminal,
+  including names other processes translate. Probing which of Steward's own
+  translations such a name could take over found one: the D14 helper's path (audit
+  record, 2026-10-13), now resolved to a physical device at start-up. What remains is
+  the service's own context when it starts (outer-mode system names, which need
+  SYSPRV, and names in the service account's group table): keep that account in a
+  UIC group of its own.
 
 ## Phase 5: load run and review (2026-10-11)
 
@@ -386,3 +386,4 @@ instance behind nginx proxy manager.
 | 2026-10-13 | 7 | Phase 7 review: a helper that died without answering (a refused login, a LOGIN.COM that logs out) cost the full 30 s | Low (availability) | this commit: a termination mailbox; the error carries the helper's final status | `probes/lnm_dead.com`: an error in 3 s on the node |
 | 2026-10-13 | 7 | Phase 7 review: the viewer's global symbols reached `STEWARD_LNM.COM` (a global `DIRECTORY ==` replaced the verb, probe), and a READ error left the checks spinning until the deadline | Low (the viewer's own listing only) | this commit: `SET SYMBOL/SCOPE=(NOLOCAL,NOGLOBAL)`, `/ERROR=` on the OPEN and READs. A global symbol named `SET` would still act before the scope line | `probes/lnm_scope.com` |
 | 2026-10-13 | 7 | Phase 7 review: `st_plat_lnm_get` checked the table in LNM$SYSTEM_DIRECTORY but `$TRNLNM` resolves the table name through LNM$PROCESS_DIRECTORY first | Informational (only the service's own login could define such a name) | this commit: refused unless `$TRNLNM` reports the checked table | `phase7_live.py` (every lookup) |
+| 2026-10-13 | 7 | Phase 7b probe (`probes/lnm_shadow.py`): the helper process translates `STEWARD$ROOT:[COM]STEWARD_LNM.COM` itself, as the viewer, and a user- or supervisor-mode `STEWARD$ROOT` in the viewer's group table took over. Anyone able to write a group table (GRPNAM, or GRPPRV in that group) could make another member's listing run their procedure as that member, with the privileges the member switched on. Present since 7a (0.5.0) | Medium (code execution as another group member; needs GRPNAM or GRPPRV) | this commit: the path is resolved at start-up, as the service, to `_DEV:[dir]` (NOCONCEAL, FULLDEVNAM); without it, listing is refused | `lnm_shadow.py` after: the viewer-group decoys ignored; `phase7_live.py` 20 ok |

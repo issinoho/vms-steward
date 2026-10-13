@@ -384,6 +384,11 @@ Found by probe (`probes/probe_lnm.c`, PHASE7.md), each of these refused:
   reply, the deadline and a termination mailbox together, and checks the deadline
   after every wake, so neither a helper that floods the reply nor one that dies holds
   a pool process. A listing over 100,000 messages is refused.
+- **And resolved before it is handed over (2026-10-13, Phase 7b probe).** The helper
+  translates the path it is given in its own context, where the viewer's group table
+  and outer-mode system names come first (NOTES.md). So the pool resolves it once at
+  start-up, as the service, to a physical device and a full directory, and passes
+  that.
 
 ## D15. Logical names: define and deassign in-process, refusing what OpenVMS would quietly change
 

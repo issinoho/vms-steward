@@ -202,3 +202,16 @@ the Phase 7b review, confirmed by `phase7b_live.py`), so Steward decides "replac
 from the modes it read before, not from that status. `SHOW LOGICAL/FULL` then shows `[exec,no_alias]`. Steward's answer to the
 define lists the modes left, and the browser warns before sending `no_alias`. Observed
 with `tests/vms/phase7b_live.py`, which first expected the user-mode name to survive.
+
+**The helper process translates its procedure's path in its own context, outer modes
+included** (Phase 7b, 2026-10-13). `$CREPRC` hands LOGINOUT the input file as a
+string, and the new process (the viewer) translates it. A user- or supervisor-mode
+name in the *viewer's* group table, or in the system table, took over from the
+executive-mode system name: the helper ran the decoy procedure. A name in the
+*service's* group table did not. So whoever could write a viewer's group table
+(GRPNAM, or GRPPRV in that group) could have had that viewer's listings run their
+procedure, as the viewer. Steward now resolves the path once at start-up, as the
+service, with `NAM$M_NOCONCEAL` and the device's `DVI$_FULLDEVNAM` (`_DEV:`, never
+translated), and gives the helper that. Afterwards the viewer-group decoys had no
+effect. Observed with `probes/lnm_shadow.py` (STW_PROBE_ROOT, under
+`[STEWARD_TEST.SHADOW]`), before and after the change.

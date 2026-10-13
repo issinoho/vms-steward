@@ -114,11 +114,13 @@ removed by `no_alias` or a deassign, a name already there) before anything is se
 
 **Open before the 7b exit:**
 - Browser checks (the user's).
-- `LNM$SYSCLUSTER_TABLE` was not written on the node (only the system and group tables
-  were agreed). A define there is untested.
-- Which of the service's own translations a user-mode or group-table name can shadow
-  (security.md, Phase 7b). To probe, with the user's agreement.
-- The security gate's review of the changed files.
+- ~~The cluster table~~: probed and in the live test, 2026-10-13 (as the system table on
+  this standalone node).
+- ~~Shadowing~~: probed 2026-10-13. The helper's path could be taken over from the
+  viewer's group table (security.md audit record); fixed, and shown fixed.
+- ~~The gate's review~~: an independent review of the 7b changes, 2026-10-13. No high
+  findings; "replaced" now comes from Steward's own read; the table race is accepted
+  (security.md).
 
 **Exit (7b):**
 - Defines and deassigns match DEFINE and DEASSIGN (`SHOW LOGICAL` after each), for
