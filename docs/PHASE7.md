@@ -123,8 +123,11 @@ removed by `no_alias` or a deassign, a name already there) before anything is se
   (security.md).
 
 **Kit T0.6-0** (2026-10-13), built by `tools/kit.sh x86`, SHA-256
-`6f68160c8e8f811172b85f7372d29352c76e6bffa4313ee74c03dfff433c83fd`. To be installed by
-the user; then the browser checks.
+`6f68160c8e8f811172b85f7372d29352c76e6bffa4313ee74c03dfff433c83fd`. Installed by the
+user over T0.5-1 on 2026-10-14; the pool restarted on the kit's `STEWARD.EXE;1` with
+DETACH, TMPMBX, NETMBX. Against the installed `STEWARD_LNM.COM;1`: `phase7_live.py`
+20 ok, `phase7b_live.py` 23 ok, 0 failed. `x86.issinoho.com`: health 200. Next: the
+user's browser checks.
 
 **Exit (7b):**
 - Defines and deassigns match DEFINE and DEASSIGN (`SHOW LOGICAL` after each), for
