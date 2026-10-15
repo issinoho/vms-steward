@@ -445,6 +445,11 @@ int st_plat_proc_enum(st_proc_cb fn, void *ctx, st_err *e);
 /* One process: ST_E_NOPRIV if the persona may not see it, ST_E_NOTFOUND if there is
    none (or it is the one serving the request). */
 int st_plat_proc_get(unsigned int pid, st_proc_detail *d, st_err *e);
+/* Stop it, as STOP/ID ($DELPRC, Phase 8b): OpenVMS checks the persona (its own UIC,
+   GROUP, WORLD). Asynchronous: the process may still be there when this returns. The
+   process serving the request is ST_E_NOTFOUND, as for st_plat_proc_get. The caller
+   refuses the service account's processes. */
+int st_plat_proc_stop(unsigned int pid, st_err *e);
 
 /* ---- audit and diagnostics ---- */
 void st_plat_audit(const char *line);    /* one record; the platform adds a timestamp */

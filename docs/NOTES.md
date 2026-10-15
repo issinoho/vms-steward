@@ -245,3 +245,18 @@ stopped with nothing switched on; a PID that does not exist gave NONEXPR. Straig
 after an accepted `$DELPRC` the process still answered `$GETJPI`; a moment later it
 was gone. Observed with `probes/probe_delprc.c`; the third job was deleted by hand.
 
+**The test tool's "service account" is the work account: a live test stopped the real
+pool** (Phase 8b, 2026-10-15). `tests/vms/api_probe` runs in my work account, and
+`st_plat_init` takes the running process's username as the service account. So in the
+probe, "Steward's own processes" meant the work account's, and the first
+`phase8b_live.py` asked it to stop `STEWARD_19300` expecting a 409: it got 202, and the
+real pool process was stopped. `STEWARD_19301` kept the site up; the pool was restarted
+at once (`STEWARD$CONTROL RESTART`). The guard in the real pool, which runs as STEWARD,
+was not at fault. Now `api_probe` can name the account (`API_PROBE_SERVICE_ACCOUNT`,
+test-only, audit rule `service-account-test-only`), and the live test checks the
+refusal on one of its own STEWARD_TEST jobs; it never names a pool process.
+Also seen: `@BUILD_VMS TEST` did not relink `API_PROBE.EXE` after `st_plat_vms.c`
+changed, so a run used the old probe; build from CLEAN before a live test that needs
+a changed probe. And VSI C truncates external names over 31 characters
+(`%CC-W-LONGEXTERN`): the setter's name was shortened.
+

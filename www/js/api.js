@@ -77,6 +77,8 @@ export const api = {
   // Phase 8: processes (D16). q: { filter }.
   processes: (q) => call('GET', `processes${query(q)}`),
   process: (pid) => call('GET', `processes/${encodeURIComponent(pid)}`),
+  // Phase 8b: STOP/ID. 202 { pid, name, username, stopping }; 409 for Steward's own.
+  stopProcess: (pid) => call('DELETE', `processes/${encodeURIComponent(pid)}`),
   // Phase 2: users and rights identifiers, read-only. Lists take
   // { filter, after, limit } (and type for identifiers) and return { ..., next }.
   users: (q) => call('GET', `users${query(q)}`),

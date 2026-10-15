@@ -304,6 +304,16 @@ void st_plat_vms_test_helper(const char *path)
 
 const char *st_plat_service_account(void) { return service_account; }
 
+/* For tests/vms/api_probe.c only. The probe runs in the work account, so it would
+   take that for the service account, and "Steward's own processes" would mean the
+   work account's (the real pool's STEWARD_19300 was stopped that way by
+   phase8b_live.py, 2026-10-15). The live test names a test account instead.
+   STEWARD.EXE never calls it. */
+void st_plat_vms_test_svc_acct(const char *name)
+{
+    st_copy(service_account, sizeof service_account, name);
+}
+
 int st_plat_init(const st_plat_config *cfg, st_err *e)
 {
     unsigned int imp[2] = { PRV$M_DETACH, 0 }, st;   /* IMPERSONATE is the DETACH bit */
@@ -3136,6 +3146,15 @@ int st_plat_proc_get(unsigned int pid, st_proc_detail *d, st_err *e)
         }
         sys$finish_rdb(&ctx);
     }
+    return 0;
+}
+
+int st_plat_proc_stop(unsigned int pid, st_err *e)
+{
+    unsigned int target = pid, st;
+    if (pid == proc_self()) { set_cond(e, SS$_NONEXPR); return -1; }
+    st = sys$delprc(&target, 0, 0);
+    if (!(st & 1)) { set_cond(e, st); return -1; }
     return 0;
 }
 

@@ -2,6 +2,7 @@
 
    GET api/v1/processes?filter=     the processes the viewer may see, as SHOW SYSTEM
    GET api/v1/processes/{pid}       one, as SHOW PROCESS/ALL
+   DELETE api/v1/processes/{pid}    stop it, as STOP/ID (Phase 8b)
 
    $GETJPI runs under the persona, so OpenVMS decides which processes are shown: the
    viewer's own, their group's with GROUP, everyone's with WORLD (probe_jpi). The
@@ -130,3 +131,49 @@ void svc_process_get(st_ctx *c)
     st_jw_obj_end(&w);
     st_jw_obj_end(&w);
 }
+
+/* DELETE api/v1/processes/{pid}: stop it, as STOP/ID. OpenVMS decides who may; Steward
+   refuses its own pool (the service account's processes), whoever asks: stopping it
+   from the browser would cut the browser off. 202: $DELPRC is asynchronous. */
+void svc_process_stop(st_ctx *c)
+{
+    static st_proc_detail d;
+    unsigned int pid;
+    char text[9], target[64];
+    st_err e;
+    st_jw w;
+
+    if (!st_parse_pid(c->args[0], &pid)) {
+        st_resp_problem(c->resp, 400, "bad-request", "Bad PID",
+                        "8 hexadecimal digits, as SHOW SYSTEM lists it.", 0, NULL);
+        return;
+    }
+    pid_text(pid, text);
+    /* What it is, as the viewer sees it: NOPRIV or NONEXPR end it here. */
+    if (st_plat_proc_get(pid, &d, &e)) {
+        st_app_audit(c, c->session.username, "process-stop", text, "failed", e.text);
+        st_app_error(c, &e);
+        return;
+    }
+    snprintf(target, sizeof target, "%s %s %s", text, d.p.name, d.p.username);
+    if (!strcmp(d.p.username, st_plat_service_account())) {
+        st_app_audit(c, c->session.username, "process-stop", target, "refused", "Steward's own process");
+        st_resp_problem(c->resp, 409, "steward-process", "Steward's own process",
+                        "Steward does not stop its own processes: that would cut off this page. Use STEWARD$CONTROL at a terminal.", 0, NULL);
+        return;
+    }
+    if (st_plat_proc_stop(pid, &e)) {
+        st_app_audit(c, c->session.username, "process-stop", target, "failed", e.text);
+        st_app_error(c, &e);
+        return;
+    }
+    st_app_audit(c, c->session.username, "process-stop", target, "ok", NULL);
+    st_resp_json(c->resp, 202, &w);
+    st_jw_obj(&w);
+    st_jw_kstr(&w, "pid", text);
+    st_jw_kstr(&w, "name", d.p.name);
+    st_jw_kstr(&w, "username", d.p.username);
+    st_jw_kbool(&w, "stopping", 1);
+    st_jw_obj_end(&w);
+}
+

@@ -1141,10 +1141,13 @@ static const stub_proc stub_procs[] = {
     { 0x00007530, "WEBMASTER", "WEBMASTER", 0x00C80021u, 5, 4, 4, 3, 0, "FTA14:", "", 70, 60, 500, 900, 2400 },
 };
 
-/* As OpenVMS decides (probe_jpi): one's own UIC, one's group with GROUP, any with WORLD. */
+static int stub_stopped[sizeof stub_procs / sizeof stub_procs[0]];
+
+/* As OpenVMS decides (probe_jpi, probe_delprc): one's own UIC, one's group with GROUP,
+   any with WORLD; the same for seeing and for stopping. */
 static int stub_may_see(const stub_proc *p)
 {
-    if (!persona) return 0;
+    if (!persona || stub_stopped[p - stub_procs]) return 0;
     if (p->uic == persona->u.uic || cur_has(P_WORLD)) return 1;
     return cur_has(P_GROUP) && (p->uic >> 16) == (persona->u.uic >> 16);
 }
@@ -1189,7 +1192,7 @@ int st_plat_proc_get(unsigned int pid, st_proc_detail *d, st_err *e)
     memset(d, 0, sizeof *d);
     for (i = 0; i < sizeof stub_procs / sizeof stub_procs[0]; i++) {
         const stub_proc *s = &stub_procs[i];
-        if (s->pid != pid) continue;
+        if (s->pid != pid || stub_stopped[i]) continue;
         if (!stub_may_see(s)) return stub_noprive(e);
         stub_proc_fill(s, &d->p);
         if (s->sub) d->owner = s->pid - 1;
@@ -1205,6 +1208,18 @@ int st_plat_proc_get(unsigned int pid, st_proc_detail *d, st_err *e)
             int k;
             for (k = 0; k < ST_PQ_COUNT; k++) { d->quota[k] = q[k]; d->left[k] = q[k] - q[k] / 10; }
         }
+        return 0;
+    }
+    return fail(e, ST_E_NOTFOUND, C_NONEXPR, "%SYSTEM-W-NONEXPR, nonexistent process");
+}
+
+int st_plat_proc_stop(unsigned int pid, st_err *e)
+{
+    size_t i;
+    for (i = 0; i < sizeof stub_procs / sizeof stub_procs[0]; i++) {
+        if (stub_procs[i].pid != pid || stub_stopped[i]) continue;
+        if (!stub_may_see(&stub_procs[i])) return stub_noprive(e);
+        stub_stopped[i] = 1;
         return 0;
     }
     return fail(e, ST_E_NOTFOUND, C_NONEXPR, "%SYSTEM-W-NONEXPR, nonexistent process");

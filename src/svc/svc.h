@@ -43,6 +43,7 @@ void svc_logical_define(struct st_ctx *c);
 void svc_logical_deassign(struct st_ctx *c);
 void svc_processes(struct st_ctx *c);
 void svc_process_get(struct st_ctx *c);
+void svc_process_stop(struct st_ctx *c);
 void svc_idents_list(struct st_ctx *c);
 void svc_ident_get(struct st_ctx *c);
 void svc_ident_holders(struct st_ctx *c);

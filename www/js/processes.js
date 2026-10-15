@@ -1,13 +1,17 @@
-// processes.js - processes, read-only (Phase 8, D16).
+// processes.js - processes (Phase 8, D16).
 //
 // The list as SHOW SYSTEM shows it to you, and one process as SHOW PROCESS/ALL. It
 // runs as you, so OpenVMS decides what you see: your own processes, your group's
 // with GROUP switched on, everyone's with WORLD. The process serving your request is
 // never listed: under your identity it would show as one of yours.
+//
+// Stopping (8b) is STOP/ID, as you: OpenVMS decides, and Steward refuses only its own
+// pool. The process name must be typed to confirm, as for deleting a user.
 
 import { api, ApiError } from './api.js';
-import { h, mount } from './dom.js';
-import { vmsDate, keycaps, refusal } from './fmt.js';
+import { h, mount, toast } from './dom.js';
+import { vmsDate, keycaps, refusal, vmsMessage } from './fmt.js';
+import { dialog, field } from './edit.js';
 
 const remembered = { filter: '' };   // for the way back
 const procHref = (pid) => `#/processes/${pid}`;
@@ -53,7 +57,7 @@ export async function processesView(ctx) {
         h('div', { class: 'tablewrap' }, h('table', { class: 'grid processes' },
           h('thead', {}, h('tr', {}, ['PID', 'Process name', 'Username', 'State', 'Pri', 'Kind', 'CPU', 'Image'].map((x) => h('th', {}, x)))),
           h('tbody', {}, rows.length ? rows : h('tr', {}, h('td', { colspan: 8, class: 'muted' }, 'No process you may see matches'))))),
-        h('p', { class: 'muted small' }, `${r.processes.length} ${r.processes.length === 1 ? 'process' : 'processes'}${r.truncated ? ' (cut short: narrow the filter)' : ''}. ${HINT}`));
+        h('p', { class: 'muted small' }, `${r.processes.length} ${r.processes.length === 1 ? 'process' : 'processes'}${r.truncated ? ' (cut short: narrow the filter)' : ''}. ${HINT} The Steward process serving this page is not listed.`));
     } catch (err) {
       if (err instanceof ApiError && err.status === 401) {
         if (first) throw err;
@@ -79,6 +83,27 @@ export async function processesView(ctx) {
   ];
 }
 
+// A system process: UIC group 1 to 7 (octal), as SYSGEN's MAXSYSGROUP has it by default.
+const systemProcess = (p) => /^\[[1-7],/.test(p.uic);
+
+// Stop p, as STOP/ID; done() follows a stop OpenVMS accepted.
+function stopDialog(p, done) {
+  const confirm = h('input', { required: true, spellcheck: 'false', placeholder: p.name, class: 'mono' });
+  dialog(`Stop ${p.name}`, h('div', {},
+    h('p', {}, `Process ${p.pid}, ${p.username}${p.image ? `, running ${imageName(p.image)}` : ''}, will be stopped as STOP/ID does: its image ends and the process is deleted.`),
+    systemProcess(p) ? h('p', { class: 'warn-text' }, `${p.name} is a system process (UIC ${p.uic}). Stopping it can stop a service the whole system relies on.`) : null,
+    field(`Type ${p.name} to confirm`, confirm)),
+  [{ label: 'Stop', primary: true, danger: true, run: async () => {
+    if (confirm.value.trim() !== p.name) {
+      throw new ApiError(400, { type: '/x/confirm', title: 'Type the process name to confirm' });
+    }
+    const r = await api.stopProcess(p.pid);
+    toast(vmsMessage('I', 'STOPPING', `process ${r.name} (${r.pid}) is being stopped`));
+    done();
+    return true;
+  } }]);
+}
+
 const QUOTAS = [['astlm', 'ASTlm'], ['biolm', 'BIOlm'], ['diolm', 'DIOlm'], ['fillm', 'FILlm'], ['prclm', 'PRClm'],
   ['tqelm', 'TQElm'], ['enqlm', 'ENQlm'], ['bytlm', 'BYTlm'], ['pgflquota', 'Pgflquota']];
 
@@ -97,7 +122,9 @@ export async function processView(ctx, pid) {
   return [
     h('p', {}, h('a', { href: '#/processes' }, '← Processes')),
     h('div', { class: 'titlebar' }, h('h2', { class: 'mono' }, `${p.name}`),
-      h('button', { type: 'button', onclick: () => ctx.refresh() }, 'Refresh')),
+      h('div', { class: 'actions' },
+        h('button', { type: 'button', onclick: () => ctx.refresh() }, 'Refresh'),
+        h('button', { type: 'button', class: 'danger', onclick: () => stopDialog(p, () => { location.hash = '#/processes'; }) }, 'Stop…'))),
     h('div', { class: 'card' }, h('dl', { class: 'facts' },
       h('dt', {}, 'PID'), h('dd', { class: 'mono' }, p.pid),
       h('dt', {}, 'Username'), h('dd', { class: 'mono' }, p.username),

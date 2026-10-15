@@ -10,6 +10,10 @@
    A body, if any, is sent as JSON with the session's CSRF token. The ETag is printed
    after the status when the response has one.
 
+   API_PROBE_SERVICE_ACCOUNT=<username> makes that account's processes count as
+   Steward's own (refused by a stop, D16), so a test can check the refusal on a
+   process of its own rather than on the real pool.
+
    With API_PROBE_SOAK=<n> defined, <path> is ignored and every read-only endpoint is
    requested n times over (Phase 5 load run on the node, without lighttpd): it prints
    the statuses, the process's page-file use and open-file quota after the first
@@ -29,6 +33,7 @@
 #include <jpidef.h>
 
 void st_plat_vms_test_helper(const char *path);   /* st_plat_vms.c, tests only */
+void st_plat_vms_test_svc_acct(const char *name);
 
 static void nv(st_buf *b, const char *n, const char *v)
 {
@@ -177,6 +182,9 @@ int main(int argc, char **argv)
     if (st_plat_init(&pc, &e)) { fprintf(stderr, "init: %s\n", e.text); return 1; }
     /* A D14 helper procedure to test in place of the installed one. */
     if (getenv("API_PROBE_LNM_HELPER")) st_plat_vms_test_helper(getenv("API_PROBE_LNM_HELPER"));
+    /* The account whose processes count as Steward's own (D16): by default this
+       process's, the work account's, never the real pool's. */
+    if (getenv("API_PROBE_SERVICE_ACCOUNT")) st_plat_vms_test_svc_acct(getenv("API_PROBE_SERVICE_ACCOUNT"));
     memset(&cfg, 0, sizeof cfg);
     cfg.idle_secs = 900;
     cfg.absolute_secs = 3600;

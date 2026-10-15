@@ -198,6 +198,12 @@ def main(binary):
         check(st == 201 and doc["modes"] == ["exec"], "define a logical name through FastCGI")
         st, _, doc = p.call("DELETE", "/api/v1/logical?table=LNM$SYSTEM_TABLE&name=API_7B&mode=exec")
         check(st == 200 and doc["removed"] == ["exec"], "and deassign it")
+        # Phase 8b: a stop is audited; Steward's own pool is refused and audited too.
+        p.call("PUT", "/api/v1/session/privileges", {"enabled": ["WORLD"]})
+        st, _, _ = p.call("DELETE", "/api/v1/processes/00007500")
+        check(st == 409, "Steward's own pool process cannot be stopped through Steward")
+        st, _, doc = p.call("DELETE", "/api/v1/processes/00007530")
+        check(st == 202 and doc["stopping"], "stop a process through FastCGI")
         p.call("PUT", "/api/v1/session/privileges", {"enabled": []})
 
         # The same headers from a peer we do not trust are ignored: the https Origin
@@ -236,6 +242,9 @@ def main(binary):
         check('action="logical-define" target="LNM$SYSTEM_TABLE API_7B exec" outcome="ok"' in log and
               'action="logical-deassign" target="LNM$SYSTEM_TABLE API_7B exec" outcome="ok"' in log and
               "Phase7b-" not in log, "a define and a deassign are audited, without the equivalence")
+        check('action="process-stop" target="00007530 WEBMASTER WEBMASTER" outcome="ok"' in log and
+              'action="process-stop" target="00007500 STEWARD_19300 STEWARD" outcome="refused"' in log,
+              "stops and refused stops are audited")
         check("test-pass" not in log and "admin-pass" not in log and "Phase3-" not in log and "Phase4-" not in log and "expired-pass" not in log,
               "no password reaches the audit log (sign-in, set, change)")
         check('action="password-set" target="EXPIRED" outcome="ok" detail="pre-expired"' in log and

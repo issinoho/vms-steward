@@ -1563,6 +1563,58 @@ static void test_processes(void)
     CHECK(!st_plat_persona_active(), "no persona left active");
 }
 
+/* Phase 8b (D16): stopping a process. Runs after test_processes: it changes the stub. */
+static void test_process_stop(void)
+{
+    result b;
+    char tc[140], ac[140], tcsrf[65], acsrf[65];
+    hdr t[3], adm[3], nocsrf[2];
+
+    sign_in("{\"username\":\"steward_test\",\"password\":\"test-pass\"}", tc, sizeof tc, tcsrf);
+    t[0].n = "HTTP_COOKIE"; t[0].v = tc; t[1].n = "HTTP_X_STEWARD_CSRF"; t[1].v = tcsrf; t[2].n = NULL;
+    nocsrf[0].n = "HTTP_COOKIE"; nocsrf[0].v = tc; nocsrf[1].n = NULL;
+    call("DELETE", "/api/v1/processes/00007521", nocsrf, NULL, &b);
+    CHECK(b.resp.status == 403 && strstr(b.resp.body.data, "csrf"), "a stop needs the CSRF header");
+    st_resp_free(&b.resp);
+    call("DELETE", "/api/v1/processes/00007500", t, NULL, &b);
+    CHECK(b.resp.status == 403 && strstr(b.resp.body.data, "NOPRIV"), "another's process: NOPRIV, as STOP/ID");
+    st_resp_free(&b.resp);
+    call("DELETE", "/api/v1/processes/751", t, NULL, &b);
+    CHECK(b.resp.status == 400, "a PID not in OpenVMS's form is refused");
+    st_resp_free(&b.resp);
+    call("DELETE", "/api/v1/processes/00007521", t, NULL, &b);
+    CHECK(b.resp.status == 202 && strstr(b.resp.body.data, "\"name\":\"_FTA12:_S1\"") && strstr(b.resp.body.data, "\"stopping\":true"),
+          "its own process: stopped, 202");
+    st_resp_free(&b.resp);
+    call("GET", "/api/v1/processes/00007521", t, NULL, &b);
+    CHECK(b.resp.status == 404 && strstr(b.resp.body.data, "NONEXPR"), "and gone");
+    st_resp_free(&b.resp);
+
+    sign_in("{\"username\":\"steward_adm\",\"password\":\"admin-pass\"}", ac, sizeof ac, acsrf);
+    adm[0].n = "HTTP_COOKIE"; adm[0].v = ac; adm[1].n = "HTTP_X_STEWARD_CSRF"; adm[1].v = acsrf; adm[2].n = NULL;
+    call("PUT", "/api/v1/session/privileges", adm, "{\"enabled\":[\"group\"]}", &b);
+    st_resp_free(&b.resp);
+    call("DELETE", "/api/v1/processes/00007500", adm, NULL, &b);
+    CHECK(b.resp.status == 409 && strstr(b.resp.body.data, "steward-process"),
+          "Steward's own pool process: refused, though GROUP would allow it");
+    st_resp_free(&b.resp);
+    call("GET", "/api/v1/processes/00007500", adm, NULL, &b);
+    CHECK(b.resp.status == 200, "and still there");
+    st_resp_free(&b.resp);
+    call("DELETE", "/api/v1/processes/00007530", adm, NULL, &b);
+    CHECK(b.resp.status == 403, "another group's process with GROUP only: NOPRIV");
+    st_resp_free(&b.resp);
+    call("PUT", "/api/v1/session/privileges", adm, "{\"enabled\":[\"world\"]}", &b);
+    st_resp_free(&b.resp);
+    call("DELETE", "/api/v1/processes/00007530", adm, NULL, &b);
+    CHECK(b.resp.status == 202, "with WORLD: stopped");
+    st_resp_free(&b.resp);
+    call("DELETE", "/api/v1/processes/00007530", adm, NULL, &b);
+    CHECK(b.resp.status == 404 && strstr(b.resp.body.data, "NONEXPR"), "stopping it again: NONEXPR");
+    st_resp_free(&b.resp);
+    CHECK(!st_plat_persona_active(), "no persona left active");
+}
+
 int main(void)
 {
     st_app_config cfg;
@@ -1594,6 +1646,7 @@ int main(void)
     test_lnm_def();
     test_logical_changes();
     test_processes();
+    test_process_stop();
     test_create();
     test_gateway();
     printf("%d checks, %d failed\n", checks, failures);

@@ -48,6 +48,40 @@ try {
   say(facts.includes('STEWARD') && facts.includes('[362,2]') && facts.includes('detached') &&
       root.querySelectorAll('table.grid tbody tr').length === 9 && root.querySelectorAll('ul.keys li').length >= 2,
       'the process page: facts, nine quotas, privileges and rights', facts.slice(0, 200));
+  // Stop: the pool is refused; another process stops once its name is typed.
+  W.HTMLDialogElement.prototype.showModal = function () { this.open = true; };
+  W.HTMLDialogElement.prototype.close = function () { this.open = false; this.dispatchEvent(new W.Event('close')); };
+  const tick = (ms = 300) => new Promise((r) => setTimeout(r, ms));
+  const stop = async (r, typed) => {
+    [...r.querySelectorAll('.titlebar button')].find((b) => b.textContent === 'Stop…').click();
+    await tick();
+    const dlg = document.querySelector('dialog');
+    dlg.querySelector('input').value = typed;
+    dlg.querySelector('form').dispatchEvent(new W.Event('submit', { cancelable: true }));
+    await tick();
+    return dlg;
+  };
+  root = await render(processView(ctx(me), '00007500'));
+  document.body.append(root);
+  let dlg = await stop(root, 'STEWARD_19300');
+  say(dlg.isConnected && /steward-process|own process/i.test(dlg.querySelector('pre.vmsmsg')?.textContent || ''),
+      "Steward's own pool process: refused in the dialog", dlg.querySelector('pre.vmsmsg')?.textContent);
+  dlg.close();
+  root.remove();
+  root = await render(processView(ctx(me), '0000040B'));
+  document.body.append(root);
+  dlg = await stop(root, 'OPCOMX');
+  say(dlg.isConnected && /system process/.test(dlg.textContent) && /Type the process name/.test(dlg.querySelector('pre.vmsmsg')?.textContent || ''),
+      'a system process: warned, and the wrong name refused before anything is sent', dlg.querySelector('pre.vmsmsg')?.textContent);
+  dlg.close();
+  root.remove();
+  root = await render(processView(ctx(me), '00007530'));
+  document.body.append(root);
+  dlg = await stop(root, 'WEBMASTER');
+  let gone = false;
+  try { await api.process('00007530'); } catch (e) { gone = e.status === 404; }
+  say(!dlg.isConnected && gone && [...document.querySelectorAll('.toast')].some((t) => /being stopped/.test(t.textContent)),
+      'another process: stopped once its name is typed, and gone');
 } catch (e) {
   say(false, 'no exception', e.stack);
 }
