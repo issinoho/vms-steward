@@ -71,6 +71,10 @@ short (`truncated`).
 - From the Phase 7 review: an over-long plain logical-name filter refused, the tables
   list's `truncated`.
 
+Kit T0.7-0 (2026-10-15), built by `tools/kit.sh x86` (308 native checks), SHA-256
+`1478f4a22fd41c3044c70881009058910bd4cf0e2a0eda6b05d7518264ce23c2`, for the browser
+checks.
+
 ## Exit (8a)
 
 - The list and one process match `SHOW SYSTEM` and `SHOW PROCESS/ALL`, for STEWARD_TEST
