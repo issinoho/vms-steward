@@ -2667,7 +2667,8 @@ int st_plat_access(long long since, long long until, st_access_cb fn, void *ctx,
    Listing: a short-lived detached process, created under the persona, runs the fixed
    procedure STEWARD_LNM.COM. It reads a table and a pattern (data, never commands)
    from a request mailbox, and SHOW LOGICAL/FULL writes the listing to a reply
-   mailbox, then "%%END%% <status>". Its process name, STW<request>_<reply>, gives it
+   mailbox, then "%%END%% <status>". Its process name, STW<request><reply><random> in
+   hex, gives it
    the two mailbox units. Both mailboxes are the persona's, system and owner only.
 
    As found by probe (NOTES.md): LIB$SPAWN is refused under a persona; a subprocess
@@ -2733,7 +2734,7 @@ int st_plat_lnm_list(const char *table, const char *pattern, const char *privs,
     char prc[16];
     struct dsc$descriptor_s img, in, nl, pn;
     st_lnm_parser p;
-    int done = 0, timed_out = 0, ended = 0, reading = 0, waiting = 0;
+    int done = 0, timed_out = 0, ended = 0, reading = 0, waiting = 0, tries;
 
     if (!lnm_helper_path[0]) {   /* not found at start-up (the log says so) */
         set_text(e, ST_E_INTERNAL, "the logical-name helper procedure was not found when Steward started");
@@ -2755,7 +2756,7 @@ int st_plat_lnm_list(const char *table, const char *pattern, const char *privs,
     if (st & 1) st = mbx_unit(repchan, &urep);
     if (st & 1) st = mbx_unit(trmchan, &utrm);
     if (!(st & 1)) goto out;
-    snprintf(prc, sizeof prc, "STW%u_%u", ureq, urep);
+    if (ureq > 0xFFFF || urep > 0xFFFF) { st = SS$_BADPARAM; goto out; }   /* 4 hex digits each */
     st = mbx_write(reqchan, table);
     if (st & 1) st = mbx_write(reqchan, pattern);
     if (st & 1) st = mbx_write(reqchan, privs);
@@ -2772,8 +2773,18 @@ int st_plat_lnm_list(const char *table, const char *pattern, const char *privs,
     desc(&img, "SYS$SYSTEM:LOGINOUT.EXE", 23);
     desc(&in, lnm_helper_path, (unsigned short) strlen(lnm_helper_path));
     desc(&nl, "NLA0:", 5);
-    desc(&pn, prc, (unsigned short) strlen(prc));
-    st = sys$creprc(&pid, &img, &in, &nl, &nl, 0, 0, &pn, 4, 0, (unsigned short) utrm, PRC$M_DETACH, 0, 0);
+    /* Its name: STW, the two mailbox units and a random part, all hex, 15 characters.
+       Process names are unique in a UIC group, so a member of the viewer's group could
+       otherwise create STW<req>_<rep> names ahead and make the group's listings fail
+       (the Phase 7 review); a clash is tried again with another random part. */
+    for (tries = 0; tries < 3; tries++) {
+        unsigned short r = 0;
+        if (!st_plat_random(&r, sizeof r)) { st = SS$_BADPARAM; break; }
+        snprintf(prc, sizeof prc, "STW%04X%04X%04X", ureq, urep, (unsigned) r);
+        desc(&pn, prc, (unsigned short) strlen(prc));
+        st = sys$creprc(&pid, &img, &in, &nl, &nl, 0, 0, &pn, 4, 0, (unsigned short) utrm, PRC$M_DETACH, 0, 0);
+        if (st != SS$_DUPLNAM) break;
+    }
     if (!(st & 1)) { pid = 0; goto out; }
 
     /* The listing, line by line, until the procedure's last line or the deadline.

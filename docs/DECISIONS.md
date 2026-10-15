@@ -339,8 +339,10 @@ UIC, same privileges. It runs `SHOW LOGICAL/FULL` and OpenVMS decides what it sh
 (D2).
 - **Data only:** Steward passes the table and the pattern as data, through a request
   mailbox. The procedure reads them, checks every character against
-  `A-Z 0-9 $ _ * %`, and writes the listing to a reply mailbox. Its process name,
-  `STW<request>_<reply>`, gives the two mailbox units. Steward never writes a command.
+  `A-Z 0-9 $ _ * %`, and writes the listing to a reply mailbox. Its process name gives
+  the two mailbox units: `STW<request>_<reply>` until 2026-10-15, now
+  `STW<request><reply><random>`, 4 hex digits each, so a member of the viewer's group
+  cannot create the names ahead. Steward never writes a command.
 - **Owner only:** both mailboxes are created under the persona with protection for
   system and owner only.
 - **Everything else in-process:** translating one name (`$TRNLNM`), and later defining

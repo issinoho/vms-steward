@@ -3,8 +3,8 @@ $!
 $! Steward creates a short-lived detached process, under the viewer's persona, on
 $! this procedure: OpenVMS has no service that lists a table, and SHOW LOGICAL runs
 $! as whoever runs it, so OpenVMS decides what the viewer sees (D2). Steward sends no
-$! commands, only data: its process name is STW<request>_<reply>, the unit numbers of
-$! two mailboxes. It reads the table, the pattern and the privileges switched on in
+$! commands, only data: its process name is STW<request><reply><random>, the unit
+$! numbers of two mailboxes and a random part, 4 hex digits each. It reads the table, the pattern and the privileges switched on in
 $! the session ("-" for none) from the first, checks them again, and writes the listing to the second, then a last line "%%END%% <status>":
 $! SHOW LOGICAL's own exit status, in hexadecimal.
 $!
@@ -14,10 +14,10 @@ $ set symbol/scope=(nolocal,noglobal)
 $ set noon
 $ set message/nofacility/noseverity/noidentification/notext
 $ prc = f$edit(f$getjpi("", "PRCNAM"), "TRIM")
-$ if f$extract(0, 3, prc) .nes. "STW" then exit
-$ units = prc - "STW"
-$ req = "_MBA" + f$element(0, "_", units) + ":"
-$ rep = "_MBA" + f$element(1, "_", units) + ":"
+$! STW, then the request and reply mailbox units and a random part, 4 hex digits each.
+$ if f$extract(0, 3, prc) .nes. "STW" .or. f$length(prc) .ne. 15 then exit
+$ req = "_MBA" + f$string(f$integer("%X" + f$extract(3, 4, prc))) + ":"
+$ rep = "_MBA" + f$string(f$integer("%X" + f$extract(7, 4, prc))) + ":"
 $ open/read/error=done r 'req'
 $ read/end_of_file=done/error=done r table
 $ read/end_of_file=done/error=done r pattern

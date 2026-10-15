@@ -14,6 +14,9 @@
 #include "st_lnm.h"
 
 #define MAX_NAMES 2000
+/* And at most this much JSON: a response over 4 MB is refused whole (st_http.c), so
+   a listing stops here and says it was cut short, whatever the names' sizes. */
+#define MAX_BYTES (3 * 1024 * 1024 + 512 * 1024)
 
 /* The privileges switched on in the session (D9), for the helper to switch on too:
    it is a fresh login, with the account's defaults only. "-" for none. */
@@ -85,6 +88,7 @@ static int table_cb(const st_lnm_table *t, const st_lnm *n, void *ctx)
        tables of this process never appear here: they are in the process directory. */
     if (!strstr(n->attributes, "table")) return 0;
     if (strlen(n->name) > ST_LNM_TABLE_MAX) return 0;
+    if (tc->w->b->len > MAX_BYTES) { tc->truncated = 1; return 1; }
     st_jw_obj(tc->w);
     st_jw_kstr(tc->w, "name", n->name);
     st_jw_kstr(tc->w, "mode", n->mode);
@@ -131,7 +135,7 @@ typedef struct { st_jw *w; char table[ST_LNM_TABLE_MAX + 1]; int tables, n, trun
 static int names_cb(const st_lnm_table *t, const st_lnm *n, void *ctx)
 {
     names_ctx *nc = ctx;
-    if (nc->n >= MAX_NAMES) { nc->truncated = 1; return 1; }
+    if (nc->n >= MAX_NAMES || nc->w->b->len > MAX_BYTES) { nc->truncated = 1; return 1; }
     if (!nc->tables || strcmp(nc->table, t->name)) {   /* a search list: a new table begins */
         if (nc->tables) { st_jw_arr_end(nc->w); st_jw_obj_end(nc->w); }
         st_copy(nc->table, sizeof nc->table, t->name);

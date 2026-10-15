@@ -1100,6 +1100,10 @@ static void test_logicals(void)
           strstr(b.resp.body.data, "\"name\":\"PROJECT_DATA\",\"table\":\"LNM$GROUP_000362\""),
           "a group name, translated through the viewer's group table");
     st_resp_free(&b.resp);
+    call("GET", "/api/v1/logicals/LNM$SYSTEM/MOTD", t, NULL, &b);
+    CHECK(b.resp.status == 404 && strstr(b.resp.body.data, "NOLOGTAB"),
+          "one name by a search-list alias (LNM$SYSTEM): NOLOGTAB, as on OpenVMS");
+    st_resp_free(&b.resp);
     call("GET", "/api/v1/logicals/LNM$SYSTEM_TABLE/NO_SUCH_NAME", t, NULL, &b);
     CHECK(b.resp.status == 404 && strstr(b.resp.body.data, "NOLOGNAM"), "no such name: OpenVMS's NOLOGNAM");
     st_resp_free(&b.resp);

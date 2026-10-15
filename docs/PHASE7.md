@@ -230,10 +230,16 @@ Found on the node and handled:
 
 The Phase 5 review fixes (0.4.1, never released on their own) went out in 0.5.1.
 
-**Left from the Phase 7 review (2026-10-13), for 7b or a 0.5.x:** a listing over
-4 MB answers 500 (cap by bytes as well as names); a plain-text filter over 61
-characters is cut rather than refused; the tables list has no `truncated`; names
-with `/` or bytes above 7E cannot be translated (take the name as a query
-parameter); the stub accepts the aliases LNM$SYSTEM and LNM$CLUSTER, which VMS
-refuses; a member of the viewer's UIC group can squat `STW<a>_<b>` names and make
-that group's listings fail.
+**Left from the Phase 7 review (2026-10-13): all done.**
+- Names with `/`: reached by query (`GET api/v1/logical`, 7b). Bytes above 7E are still
+  refused in names, as for any input.
+- A plain-text filter over 61 characters: refused, not cut (8a).
+- The tables list: carries `truncated` (8a).
+- A listing over 4 MB: stops at 3.5 MB of JSON and says `truncated`, as at 2,000 names
+  (2026-10-15).
+- The stub's aliases: a single-name lookup by `LNM$SYSTEM` or `LNM$CLUSTER` is
+  NOLOGTAB in the stub too, as on OpenVMS (2026-10-15).
+- Squatting the helper's name: it is now `STW<request><reply><random>` (hex, 15
+  characters), retried on a clash, so a group member cannot create the names ahead
+  (2026-10-15). On x86, with the new procedure: `phase7_live.py` 22 ok, 0 failed,
+  the dead and flooding helpers included.

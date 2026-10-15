@@ -966,7 +966,9 @@ int st_plat_lnm_get(const char *table, const char *name, int mode, st_lnm *out,
     const stub_table *t = stub_find_table(table);
     stub_get g;
     char pattern[ST_LNM_PATTERN_MAX + 1];
-    if (!t || !strcmp(t->table, "LNM$SYSTEM_DIRECTORY")) /* only real tables */
+    /* Only real tables, by their own names, as on OpenVMS: not LNM$SYSTEM or
+       LNM$CLUSTER (search lists, NOLOGTAB there), not the directory. */
+    if (!t || strcmp(t->table, table) || !strcmp(t->table, "LNM$SYSTEM_DIRECTORY"))
         return fail(e, ST_E_NOTFOUND, C_NOLOGTAB, "%SYSTEM-F-NOLOGTAB, no logical name table matches the specified name");
     if (!stub_may_read(t)) return fail(e, ST_E_NOPRIV, C_NOPRIV, "%SYSTEM-F-NOPRIV, insufficient privilege or object protection violation");
     g.want = name; g.out = out; g.found = 0;
