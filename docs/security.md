@@ -348,7 +348,8 @@ browser ─(1)─ nginx proxy manager ─(2)─ lighttpd ─(3)─ STEWARD.EXE �
   process; the group may read a job but not change it. Steward refuses (409), before
   the queue manager is asked and whatever the viewer holds, to stop SYS$BATCH, what it
   names in the system table, and the queues it feeds: the pool is started at boot by a
-  job there (the user's choice, after OPCOM). Starting is never refused.
+  job there (the user's choice, after OPCOM). If Steward cannot tell which queues those
+  are, it refuses every stop (503) rather than guess. Starting is never refused.
 - **New data shown:** queue names, descriptions and states (public to every user at a
   terminal), and the names, owners and files of jobs the viewer may read. Job and file
   names are set by their owners and reach the page only through the JSON writer and
@@ -464,3 +465,4 @@ instance behind nginx proxy manager.
 | 2026-10-15 | 8 | Phase 8 review: `st_parse_pid` took `FFFFFFFF`, which `$GETJPI` treats as the wildcard, so a read or stop could describe or audit another process | Low | this commit: FFFFFFFF refused, and both handlers check the process found is the one asked for | unit "FFFFFFFF refused" |
 | 2026-10-15 | 8 | Phase 8b browser check: STEWARD_ADM with WORLD stopped OPCOM through Steward. D16 refused only Steward's own processes; OpenVMS allowed it | Medium (availability of a system service; needs WORLD) | this commit: system processes (UIC group up to MAXSYSGROUP) refused whatever the viewer holds; the page offers no Stop on them. OPCOM restarted by the user | unit "OPCOM refused with WORLD"; `phase8b_live.py` (a test job counted as system via `API_PROBE_MAX_SYS_GROUP`, never a real one) |
 | 2026-10-15 | 7 | Phase 7 review leftovers: the helper's process name `STW<request>_<reply>` could be created ahead by a member of the viewer's group (process names are unique in a group), making the group's listings fail; and a listing over 4 MB answered 500 | Low (availability of listings for one group; a large table) | this commit: the name carries a random part and is retried on a clash; listings stop at 3.5 MB with `truncated` | `phase7_live.py` 22 ok with the new procedure |
+| 2026-10-15 | 9 | Phase 9 review: the start-up-queue guard failed open. If `$GETQUI` could not read SYS$BATCH's generic targets (queue manager busy, an odd status), only SYS$BATCH was guarded and its execution queues could be stopped; more than 6 targets, or a list over 1,023 bytes, also slipped through; and a SYS$BATCH logical naming another was followed one level only | Medium (Steward's pool would not start at the next boot; needs SYSPRV or OPER) | this commit: fails closed (503, every stop refused when the start-up queues cannot be told), up to 32 names or "cannot tell", logical names followed 9 levels; the target list is parsed in core (commas, spaces or NULs), unit tested | unit "start-up queues unknown: every stop refused"; target-list checks; `phase9b_live.py` 14 ok |

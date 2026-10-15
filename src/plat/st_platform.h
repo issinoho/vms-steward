@@ -516,9 +516,11 @@ enum { ST_JOB_HOLD, ST_JOB_RELEASE, ST_JOB_DELETE };
 int st_plat_job_change(unsigned int entry, int op, st_err *e);
 enum { ST_QUEUE_STOP, ST_QUEUE_START };
 int st_plat_queue_change(const char *name, int op, st_err *e);
-/* The queues Steward's start-up depends on: SYS$BATCH (or the queue it names in the
-   system table) and the execution queues it feeds. Up to max names into names;
-   returns how many. Read as the service (no persona needed: queues are public). */
+/* The queues Steward's start-up depends on: SYS$BATCH, what it names in the system
+   table (followed in turn), and the execution queues it feeds. Up to max names into
+   names; returns how many, or -1 if it cannot tell (the queue manager did not answer,
+   or there were more than fit): the caller then refuses every queue stop. Read under
+   the request's persona: harmless, every user may see every queue (probe_qui). */
 int st_plat_startup_queues(char names[][32], int max);
 
 /* ---- audit and diagnostics ---- */

@@ -69,3 +69,23 @@ void st_job_status_names(unsigned int status, char *out, size_t outlen)
     };
     names(t, sizeof t / sizeof t[0], status, out, outlen);
 }
+
+int st_queue_target_list(const char *buf, size_t len, char names[][32], int max)
+{
+    size_t i = 0;
+    int n = 0;
+    while (i < len) {
+        size_t k = 0;
+        while (i < len && (buf[i] == ',' || buf[i] == ' ' || buf[i] == '\0')) i++;
+        if (i >= len) break;
+        if (n >= max) return -1;
+        while (i + k < len && buf[i + k] != ',' && buf[i + k] != ' ' && buf[i + k] != '\0') k++;
+        if (k > 31) return -1;   /* not a queue name: cannot tell */
+        memcpy(names[n], buf + i, k);
+        names[n][k] = '\0';
+        n++;
+        i += k;
+    }
+    return n;
+}
+

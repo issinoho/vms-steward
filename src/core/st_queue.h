@@ -21,6 +21,13 @@ int st_parse_entry(const char *in, unsigned int *entry);
 void st_queue_status_names(unsigned int status, char *out, size_t outlen);
 void st_job_status_names(unsigned int status, char *out, size_t outlen);
 
+/* The queue names in QUI$_GENERIC_TARGET's buffer: one is the bare name (12 bytes for
+   X86VMS_BATCH on x86); several are taken as separated by commas, spaces or NULs,
+   whichever OpenVMS uses. Up to max names of at most 31 characters into names.
+   Returns how many, or -1 if more were there than fit (the caller must then assume
+   it cannot tell). */
+int st_queue_target_list(const char *buf, size_t len, char names[][32], int max);
+
 #define ST_JOB_INACCESSIBLE 0x8u   /* QUI$M_JOB_INACCESSIBLE: not the viewer's to read */
 
 #endif

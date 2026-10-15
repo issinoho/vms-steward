@@ -50,6 +50,7 @@
 #include <acmedef.h>
 #include "st_platform.h"
 #include "st_proc.h"
+#include "st_queue.h"
 #include "st_buf.h"
 
 #ifndef ISS$C_ID_NATURAL
@@ -3262,8 +3263,8 @@ int st_plat_queue_enum(st_queue_cb fn, void *ctx, st_err *e)
     queue_raw r;
     st_queue q;
     st_ile3 it[13];
-    int n;
-    for (;;) {
+    int n, count;
+    for (count = 0; count < 100000; count++) {   /* bounded, as every walk here */
         n = queue_items(it, &r);
         item(&it[n++], QUI$_SEARCH_NAME, search, 1, 0);
         item_end(&it[n]);
@@ -3306,6 +3307,7 @@ static void job_from_raw(const job_raw *r, st_job *j)
         blank_trim(r->name, r->l_name, j->name, sizeof j->name);
         blank_trim(r->user, r->l_user, j->username, sizeof j->username);
         j->submitted = unix_time(r->submitted);
+        if (j->submitted < 0) j->submitted = 0;   /* all ones: none */
     }
     blank_trim(r->queue, r->l_queue, j->queue, sizeof j->queue);
 }
@@ -3382,6 +3384,7 @@ int st_plat_job_get(unsigned int entry, st_job_detail *d, st_err *e)
     }
     job_from_raw(&jr, &d->j);
     d->after = unix_time(after);
+    if (d->after < 0) d->after = 0;
     d->priority = prio;
     blank_trim(acct, l_acct, d->account, sizeof d->account);
     d->uic = uic;
@@ -3441,40 +3444,43 @@ int st_plat_queue_change(const char *name, int op, st_err *e)
 int st_plat_startup_queues(char names[][32], int max)
 {
     struct dsc$descriptor_s tab, nam;
-    char batch[32] = "SYS$BATCH", targets[1024];
+    char batch[32] = "SYS$BATCH", next[32], targets[4096];
     unsigned short blen = 0, tlen = 0;
     unsigned int ctx = 0xFFFFFFFFu, st;
     st_ile3 it[3];
-    int n = 0;
-    const char *p;
+    int n = 0, k, depth;
 
-    if (max < 1) return 0;
-    /* SUBMIT resolves SYS$BATCH through the logical names first: at boot, the system
-       table's. */
+    if (max < 2) return -1;
+    names[n++][0] = '\0';
+    st_copy(names[0], 32, "SYS$BATCH");
+    /* SUBMIT resolves SYS$BATCH through logical names, at boot the system table's, in
+       turn: follow it as far as it goes (9 levels, as OpenVMS does). */
     desc(&tab, "LNM$SYSTEM_TABLE", 16);
-    desc(&nam, "SYS$BATCH", 9);
-    item(&it[0], LNM$_STRING, batch, sizeof batch - 1, &blen);
-    item_end(&it[1]);
-    if (sys$trnlnm(0, &tab, &nam, 0, it) & 1) batch[blen] = '\0';
-    else st_copy(batch, sizeof batch, "SYS$BATCH");
-    st_copy(names[n++], 32, batch);
-    if (n < max && strcmp(batch, "SYS$BATCH")) st_copy(names[n++], 32, "SYS$BATCH");
-    /* And the execution queues it feeds, if it is generic: the bare names, separated by
-       commas if there are several (probe_qui targets). */
+    for (depth = 0; depth < 9; depth++) {
+        desc(&nam, batch, (unsigned short) strlen(batch));
+        blen = 0;
+        item(&it[0], LNM$_STRING, next, sizeof next - 1, &blen);
+        item_end(&it[1]);
+        if (!(sys$trnlnm(0, &tab, &nam, 0, it) & 1)) break;
+        next[blen] = '\0';
+        if (blen && next[blen - 1] == ':') next[--blen] = '\0';
+        if (!blen || !strcmp(next, batch)) break;
+        st_copy(batch, sizeof batch, next);
+        if (n >= max) return -1;
+        st_copy(names[n++], 32, batch);
+    }
+    /* And the execution queues it feeds, if it is generic. If that cannot be read,
+       say so: the caller then refuses every stop rather than guess (fail closed). */
     item(&it[0], QUI$_SEARCH_NAME, batch, (unsigned short) strlen(batch), 0);
-    item(&it[1], QUI$_GENERIC_TARGET, targets, sizeof targets - 1, &tlen);
+    item(&it[1], QUI$_GENERIC_TARGET, targets, sizeof targets, &tlen);
     item_end(&it[2]);
     st = qui(QUI$_DISPLAY_QUEUE, &ctx, it);
     qui(QUI$_CANCEL_OPERATION, &ctx, 0);
-    if (!(st & 1)) return n;
-    targets[tlen] = '\0';
-    for (p = targets; *p && n < max;) {
-        size_t k = strcspn(p, ", ");
-        if (k && k < 32) { memcpy(names[n], p, k); names[n][k] = '\0'; n++; }
-        p += k;
-        while (*p == ',' || *p == ' ') p++;
-    }
-    return n;
+    if (st == JBC$_NOSUCHQUE || st == JBC$_NOMOREQUE) return n;   /* no such queue: nothing feeds */
+    if (!(st & 1) || tlen >= sizeof targets) return -1;
+    k = st_queue_target_list(targets, tlen, names + n, max - n);
+    if (k < 0) return -1;
+    return n + k;
 }
 
 /* ================================================================ misc */

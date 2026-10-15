@@ -1663,6 +1663,21 @@ static void test_queues(void)
     CHECK(!strcmp(names, "stopped,available"), "queue status bits by name");
     st_job_status_names(0x4 | 0x8, names, sizeof names);
     CHECK(!strcmp(names, "holding,inaccessible"), "job status bits by name");
+    {
+        char t[8][32], many[300];
+        int i;
+        CHECK(st_queue_target_list("X86VMS_BATCH", 12, t, 8) == 1 && !strcmp(t[0], "X86VMS_BATCH"),
+              "generic targets: one bare name, as x86 gives it");
+        CHECK(st_queue_target_list("A_BATCH,B_BATCH", 15, t, 8) == 2 && !strcmp(t[1], "B_BATCH") &&
+              st_queue_target_list("A_BATCH B_BATCH", 15, t, 8) == 2 &&
+              st_queue_target_list("A_BATCH\0B_BATCH\0\0", 17, t, 8) == 2 && !strcmp(t[1], "B_BATCH"),
+              "several: commas, spaces or NULs between them");
+        CHECK(st_queue_target_list("", 0, t, 8) == 0, "none: an execution queue feeds nothing");
+        many[0] = '\0';
+        for (i = 0; i < 9; i++) st_append(many, sizeof many, i ? ",Q" : "Q");
+        CHECK(st_queue_target_list(many, strlen(many), t, 8) == -1, "more than fit: cannot tell (-1), never a short list");
+        CHECK(st_queue_target_list("ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456", 33, t, 8) == -1, "a name too long: cannot tell");
+    }
 
     sign_in("{\"username\":\"steward_test\",\"password\":\"test-pass\"}", tc, sizeof tc, tcsrf);
     t[0].n = "HTTP_COOKIE"; t[0].v = tc; t[1].n = "HTTP_X_STEWARD_CSRF"; t[1].v = tcsrf; t[2].n = NULL;
@@ -1709,6 +1724,8 @@ static void test_queues(void)
     st_resp_free(&b.resp);
     CHECK(!st_plat_persona_active(), "no persona left active");
 }
+
+void st_plat_stub_startup_unknown(int on);   /* st_plat_stub.c, tests only */
 
 /* Phase 9b (D17): job and queue changes. Runs after test_queues: it changes the stub. */
 static void test_queue_changes(void)
@@ -1760,6 +1777,19 @@ static void test_queue_changes(void)
     st_resp_free(&b.resp);
     call("POST", "/api/v1/queues/LPA0_PRINT/stop", adm, NULL, &b);
     CHECK(b.resp.status == 200 && strstr(b.resp.body.data, "\"status\":[\"stopped\"]"), "and stopped again");
+    st_resp_free(&b.resp);
+
+    /* If the start-up queues cannot be read, no queue is stopped (fail closed). */
+    st_plat_stub_startup_unknown(1);
+    call("POST", "/api/v1/queues/LPA0_PRINT/stop", adm, NULL, &b);
+    CHECK(b.resp.status == 503 && strstr(b.resp.body.data, "startup-queues-unknown"),
+          "start-up queues unknown: every stop refused (503), even of a print queue");
+    st_resp_free(&b.resp);
+    call("POST", "/api/v1/queues/LPA0_PRINT/start", adm, NULL, &b);
+    CHECK(b.resp.status == 200, "starting is never refused");
+    st_resp_free(&b.resp);
+    st_plat_stub_startup_unknown(0);
+    call("POST", "/api/v1/queues/LPA0_PRINT/stop", adm, NULL, &b);
     st_resp_free(&b.resp);
     call("DELETE", "/api/v1/jobs/141", adm, NULL, &b);
     CHECK(b.resp.status == 200 && strstr(b.resp.body.data, "\"done\":\"deleted\""), "with SYSPRV: another's job deleted");

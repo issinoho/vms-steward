@@ -109,6 +109,13 @@ user's choice, 2026-10-15, after OPCOM). Starting a queue is never refused.
 56 API, 23 UI; on x86 `phase9b_live.py` 14 ok, 0 failed (held jobs and a test queue
 it created and deleted; the start-up queues asked to stop only as STEWARD_TEST).
 
+**Review (2026-10-15):** an independent review of Phase 9 found the start-up-queue
+guard failing open (security.md audit record): fixed, it now fails closed. Also: the
+queue walk bounded, a re-read after a change no longer turns a success into an error,
+times of all ones treated as none. Open: `QUI$_GENERIC_TARGET` has only been seen with
+one target (the bare name); the parser takes commas, spaces or NULs between several,
+but the real form for several is unprobed (it would need test queues).
+
 **Exit (9b):**
 - Each change matches SET ENTRY/HOLD and /RELEASE, DELETE/ENTRY, STOP/QUEUE and
   START/QUEUE: what the queue manager refuses is refused, what it allows happens.

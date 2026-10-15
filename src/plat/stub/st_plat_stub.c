@@ -1261,6 +1261,7 @@ static const stub_job stub_jobs[] = {
 #define N_SQ (sizeof stub_queues / sizeof stub_queues[0])
 #define N_SJ (sizeof stub_jobs / sizeof stub_jobs[0])
 static unsigned int sq_status[N_SQ], sj_status[N_SJ];
+static int stub_startup_unknown;   /* st_plat_stub_startup_unknown */
 static int sj_gone[N_SJ], sqj_loaded;
 static void stub_queues_load(void)
 {
@@ -1402,13 +1403,19 @@ int st_plat_queue_change(const char *name, int op, st_err *e)
     return fail(e, ST_E_NOTFOUND, C_NOSUCHQUE, "%JBC-E-NOSUCHQUE, no such queue");
 }
 
+/* SYS$BATCH and what it feeds, as on x86, through the core's parser; or "cannot
+   tell", when STEWARD_STUB_STARTUP_UNKNOWN is set (the fail-closed test). */
 int st_plat_startup_queues(char names[][32], int max)
 {
-    int n = 0;
-    if (n < max) st_copy(names[n++], 32, "SYS$BATCH");
-    if (n < max) st_copy(names[n++], 32, "X86VMS_BATCH");   /* what it feeds, as on x86 */
-    return n;
+    static const char targets[] = "X86VMS_BATCH";
+    int k;
+    if (stub_startup_unknown || max < 1) return -1;
+    st_copy(names[0], 32, "SYS$BATCH");
+    k = st_queue_target_list(targets, sizeof targets - 1, names + 1, max - 1);
+    return k < 0 ? -1 : 1 + k;
 }
+
+void st_plat_stub_startup_unknown(int on) { stub_startup_unknown = on; }
 
 /* ================================================================ misc */
 

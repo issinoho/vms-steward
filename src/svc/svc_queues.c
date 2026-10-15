@@ -204,7 +204,7 @@ static int no_job(const st_job *j, void *ctx) { (void) j; (void) ctx; return 1; 
 static void queue_change(st_ctx *c, int op, const char *action)
 {
     static st_queue q;
-    char name[ST_QUEUE_NAME_MAX + 1], startup[8][32];
+    char name[ST_QUEUE_NAME_MAX + 1], startup[32][32];
     int i, n;
     st_err e;
     st_jw w;
@@ -217,7 +217,13 @@ static void queue_change(st_ctx *c, int op, const char *action)
     /* Never the queues Steward's start-up uses: the pool is started at boot by a job
        submitted to SYS$BATCH (D17, the user's choice after OPCOM). */
     if (op == ST_QUEUE_STOP) {
-        n = st_plat_startup_queues(startup, 8);
+        n = st_plat_startup_queues(startup, 32);
+        if (n < 0) {   /* fail closed: no stop when the start-up queues are unknown */
+            st_app_audit(c, c->session.username, action, name, "refused", "start-up queues unknown");
+            st_resp_problem(c->resp, 503, "startup-queues-unknown", "Cannot tell Steward's start-up queues",
+                            "The queue manager did not say which queues SYS$BATCH feeds, so no queue is stopped. Try again, or use STOP/QUEUE at a terminal.", 0, NULL);
+            return;
+        }
         for (i = 0; i < n; i++)
             if (!strcmp(startup[i], name)) {
                 st_app_audit(c, c->session.username, action, name, "refused", "Steward's start-up queue");
@@ -232,10 +238,12 @@ static void queue_change(st_ctx *c, int op, const char *action)
         return;
     }
     st_app_audit(c, c->session.username, action, name, "ok", NULL);
-    if (st_plat_queue_get(name, &q, no_job, NULL, &e)) { st_app_error(c, &e); return; }
     st_resp_json(c->resp, 200, &w);
     st_jw_obj(&w);
-    queue_json(&w, &q);
+    if (st_plat_queue_get(name, &q, no_job, NULL, &e)) {   /* done, if not re-read */
+        st_jw_kstr(&w, "name", name);
+        st_jw_kstr(&w, "done", op == ST_QUEUE_STOP ? "stopped" : "started");
+    } else queue_json(&w, &q);
     st_jw_obj_end(&w);
 }
 

@@ -723,7 +723,9 @@ included.
   queue as `GET api/v1/queues` gives it. Here they need SYSPRV (the queues give system
   `M`), or OPER.
 - **`409` for SYS$BATCH and the queues it feeds**, whatever your privileges: Steward's
-  pool is started at boot by a job there. Starting a queue is never refused by Steward.
+  pool is started at boot by a job there. If Steward cannot tell which queues those are
+  (the queue manager did not say), every stop is `503`. Starting a queue is never
+  refused by Steward.
 - `403` with JBC NOPRIV where the queue manager refuses; `404` with NOSUCHENT or
   NOSUCHQUE.
 
