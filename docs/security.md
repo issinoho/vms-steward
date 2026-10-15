@@ -355,6 +355,21 @@ browser ─(1)─ nginx proxy manager ─(2)─ lighttpd ─(3)─ STEWARD.EXE �
   names are set by their owners and reach the page only through the JSON writer and
   `dom.js`.
 
+## Phase 10 additions (system parameters, read-only; D18)
+
+- **New endpoint:** `GET api/v1/sysgen` (api.md). Session, persona, read-only.
+- **The D14 helper, a second fixed procedure.** `STEWARD_SYSGEN.COM` runs SYSGEN
+  `SHOW/ALL` as the viewer, in the same short-lived process with the same guards
+  (`helper_run`, shared with logical names): data-only mailboxes, owner-only
+  protection, the 30-second deadline and termination mailbox, the helper deleted on
+  any failure, its path resolved at start-up to a physical device. It takes only the
+  session's privileges as data, checked against letters, `_` and `,`; SYSGEN's
+  commands are fixed lines in the procedure.
+- **The output is untrusted** (the viewer's login procedures run first) and parsed in
+  core (`st_sysgen.c`) with bounded copies; fuzzed.
+- **New data shown:** the system parameters, which any user may see with SYSGEN SHOW
+  at a terminal.
+
 ## Phase 5: load run and review (2026-10-11)
 
 - **Load run, Linux** (`tests/load/load.py fcgi`). There were 8 concurrent clients, each

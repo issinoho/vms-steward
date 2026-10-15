@@ -48,6 +48,7 @@ static const route routes[] = {
     { "DELETE", "/api/v1/jobs/{j}",                    svc_job_delete,       0 },
     { "POST",   "/api/v1/queues/{q}/stop",             svc_queue_stop,       0 },
     { "POST",   "/api/v1/queues/{q}/start",            svc_queue_start,      0 },
+    { "GET",    "/api/v1/sysgen",                      svc_sysgen,           0 },
     { "GET",    "/api/v1/users",                       svc_users_list,       0 },
     { "GET",    "/api/v1/users/{u}",                   svc_user_get,         0 },
     { "GET",    "/api/v1/users/{u}/identifiers",       svc_user_identifiers, 0 },

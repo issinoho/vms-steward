@@ -308,3 +308,13 @@ queues give S:M). A held job released at once ran. Holding an executing job is
 bytes, no padding. Observed with `probes/probe_sndjbc.c` and `probe_qui targets`, on
 held jobs and a test queue created and deleted for it.
 
+**SYSGEN SHOW runs for any user, writes to a mailbox, and has fixed columns** (Phase 10,
+2026-10-15). A batch job as STEWARD_TEST (TMPMBX, NETMBX) ran `MCR SYSGEN` `SHOW/ALL`.
+SYSGEN's `SET/OUTPUT=` accepts the D14 reply mailbox (by a user-mode logical name: its
+commands are data lines, not substituted by DCL). Its columns, measured on x86's 317
+parameters: the name to its first blank; the current value ends in column 33, or 34
+when it is a quoted string; the default, minimum and maximum end in 44, 54 and 65; the
+unit is 66 to 75; "D" in 77 marks dynamic. Values may hold blanks ("(none set)",
+`"X86VMS  "`, the unit "CPU bitmap"). An " internal value" line, in pages, follows some
+parameters given in pagelets. Observed with `tests/vms/phase10_live.py`.
+

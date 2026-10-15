@@ -729,6 +729,30 @@ included.
 - `403` with JBC NOPRIV where the queue manager refuses; `404` with NOSUCHENT or
   NOSUCHQUE.
 
+## System parameters (Phase 10, D18): read-only
+
+### `GET api/v1/sysgen?filter=`
+
+Every active parameter, as `SYSGEN SHOW/ALL` prints it, read as you: SYSGEN runs in a
+short-lived process that is you (as for logical names), with the privileges you
+switched on. Any user may run SYSGEN SHOW at a terminal.
+
+```json
+{"parameters": [
+   {"name": "GBLPAGES", "current": "11390868", "default": "8388608", "min": "8388608",
+    "max": "-1", "unit": "Pagelets", "dynamic": true, "ascii": false,
+    "internal": {"current": "711930", "default": "524288", "min": "524288", "max": "-1", "unit": "Pages"}},
+   {"name": "SCSNODE", "current": "X86VMS", "default": "", "min": "", "max": "ZZZZ",
+    "unit": "Ascii", "dynamic": false, "ascii": true}],
+ "truncated": false}
+```
+
+- Values are strings, as SYSGEN prints them: `-1` as a maximum means no limit; a string
+  parameter's values (`ascii`) lose their quotes and padding; some read `(none set)`.
+- `internal` is SYSGEN's "internal value" line, in pages, where it gives one.
+- `filter`: up to 31 printable characters, matched against the name; `*` and `%` are
+  wildcards, plain text matches anywhere.
+
 ## Coming
 
-System parameters, then licences (`docs/PLAN.md`).
+Licences, then installed products (`docs/PLAN.md`).

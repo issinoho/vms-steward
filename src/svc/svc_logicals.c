@@ -20,7 +20,7 @@
 
 /* The privileges switched on in the session (D9), for the helper to switch on too:
    it is a fresh login, with the account's defaults only. "-" for none. */
-static void session_privs(const st_ctx *c, char *out, size_t outlen)
+void svc_session_privs(const st_ctx *c, char *out, size_t outlen)
 {
     int bit;
     out[0] = '\0';
@@ -116,7 +116,7 @@ void svc_logical_tables(st_ctx *c)
     st_jw_arr(&w);
     tc.w = &w;
     tc.n = tc.truncated = 0;
-    session_privs(c, privs, sizeof privs);
+    svc_session_privs(c, privs, sizeof privs);
     if (st_plat_lnm_list("LNM$SYSTEM_DIRECTORY", "*", privs, table_cb, &tc, &e)) {
         st_jw_arr_end(&w);
         st_jw_obj_end(&w);
@@ -194,7 +194,7 @@ void svc_logicals(st_ctx *c)
     st_jw_kstr(&w, "filter", pattern);
     st_jw_key(&w, "tables");
     st_jw_arr(&w);
-    session_privs(c, privs, sizeof privs);
+    svc_session_privs(c, privs, sizeof privs);
     if (st_plat_lnm_list(table, pattern, privs, names_cb, &nc, &e)) {
         st_app_error(c, &e);
         return;

@@ -41,8 +41,8 @@ rule env-only-in-main "getenv outside steward_main.c" \
 
 # The D14 helper procedure is fixed in the server. Only the test probe may swap it,
 # to run an edited procedure before it is installed.
-rule lnm-helper-test-only "st_plat_vms_test_helper called outside tests/" \
-    --include='*.c' 'st_plat_vms_test_helper\(' src/ --exclude=st_plat_vms.c
+rule lnm-helper-test-only "st_plat_vms_test_helper or _sysgen called outside tests/" \
+    --include='*.c' 'st_plat_vms_test_(helper|sysgen)\(' src/ --exclude=st_plat_vms.c
 rule service-account-test-only "st_plat_vms_test_svc_* called outside tests/" \
     --include='*.c' 'st_plat_vms_test_svc_[a-z]+\(' src/ --exclude=st_plat_vms.c
 
@@ -59,7 +59,7 @@ rule no-node-details "real node details" \
 # Every file the browser loads, and the procedures the service runs, are in the kit:
 # the PCSI description and MAKE_KIT list them by name (0.4.0 was nearly packaged
 # without access.js).
-for f in www/js/*.js www/css/*.css vms/steward_lnm.com vms/steward_pool.com; do
+for f in www/js/*.js www/css/*.css vms/steward_lnm.com vms/steward_sysgen.com vms/steward_pool.com; do
     n=$(basename "$f" | tr '[:lower:]' '[:upper:]')
     if ! grep -q "\]$n ;" 'kit/steward.pcsi$desc_template' || ! grep -qi "$n" kit/make_kit.com; then
         echo "AUDIT-RULE kit-has-files: $f is not in the kit"

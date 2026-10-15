@@ -11,6 +11,7 @@
 
 #include <stddef.h>
 #include "st_lnm.h"
+#include "st_sysgen.h"
 
 /* What went wrong, in terms the HTTP layer can map to a status. */
 enum {
@@ -522,6 +523,13 @@ int st_plat_queue_change(const char *name, int op, st_err *e);
    or there were more than fit): the caller then refuses every queue stop. Read under
    the request's persona: harmless, every user may see every queue (probe_qui). */
 int st_plat_startup_queues(char names[][32], int max);
+
+/* ---- system parameters (Phase 10, D18), as the current persona ----
+
+   Every parameter as SYSGEN SHOW/ALL prints it, run in the D14 helper process (the
+   viewer) by the fixed procedure STEWARD_SYSGEN.COM, and parsed by st_sysgen.c.
+   privs as for st_plat_lnm_list. */
+int st_plat_sysgen_list(const char *privs, st_param_cb fn, void *ctx, st_err *e);
 
 /* ---- audit and diagnostics ---- */
 void st_plat_audit(const char *line);    /* one record; the platform adds a timestamp */

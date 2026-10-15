@@ -31,6 +31,7 @@
 #include "st_buf.h"
 #include "st_platform.h"
 #include "st_queue.h"
+#include "st_sysgen.h"
 #include "st_route.h"
 
 #define BIT(n) (1u << (n))
@@ -1416,6 +1417,43 @@ int st_plat_startup_queues(char names[][32], int max)
 }
 
 void st_plat_stub_startup_unknown(int on) { stub_startup_unknown = on; }
+
+/* ---------------------------------------------------------------- system parameters (D18) */
+
+/* Lines of SYSGEN SHOW/ALL as x86 printed them (2026-10-15), so the parser in
+   st_sysgen.c is the one that reads them, as on OpenVMS. */
+static const char *const stub_sysgen[] = {
+    "",
+    "Parameters in use: Active",
+    "Parameter Name            Current    Default     Min.       Max.   Unit  Dynamic",
+    "--------------            -------    -------   -------    -------  ----  -------",
+    "GBLSECTIONS                  1440       1024        80      65535 Sections   ",
+    "MAXPROCESSCNT                 916         32        12      32767 Processes  ",
+    "GBLPAGES                 11390868    8388608   8388608         -1 Pagelets   D",
+    " internal value            711930     524288    524288         -1 Pages      D",
+    " internal value             85120       8192      1024    8388608 Pages      ",
+    "SCSNODE                 \"X86VMS  \"    \"    \"    \"    \"     \"ZZZZ\" Ascii       ",
+    "TTY_DMASIZE                    64         64         0      65535 Bytes      D",
+    "QUANTUM                         5          5         1      32767 10Ms       D",
+    "MAXSYSGROUP                     8          8         1      32768 UIC Group  D",
+    "SCH_SOFT_OFFLD         (none set) (none set)         0       1023 CPU bitmap D",
+    "STARTUP_P2                  \"D   \"    \"    \"    \"    \"     \"zzzz\" Ascii       ",
+    "PFCDEFAULT                     64         64         0       2032 Pagelets   D",
+    " internal value                 4          4         0        127 Pages      D",
+    NULL };
+
+int st_plat_sysgen_list(const char *privs, st_param_cb fn, void *ctx, st_err *e)
+{
+    st_sysgen_parser p;
+    int i;
+    (void) privs;
+    (void) e;
+    st_sysgen_init(&p, fn, ctx);
+    for (i = 0; stub_sysgen[i]; i++)
+        if (st_sysgen_line(&p, stub_sysgen[i], strlen(stub_sysgen[i]))) break;
+    st_sysgen_end(&p);
+    return 0;
+}
 
 /* ================================================================ misc */
 

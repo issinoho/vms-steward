@@ -13,6 +13,7 @@
 #include "st_lnm.h"
 #include "st_proc.h"
 #include "st_queue.h"
+#include "st_sysgen.h"
 #include "st_app.h"
 
 static int checks, failures;
@@ -1800,6 +1801,71 @@ static void test_queue_changes(void)
     CHECK(!st_plat_persona_active(), "no persona left active");
 }
 
+/* Phase 10 (D18): the SYSGEN SHOW/ALL parser and the endpoint. */
+typedef struct { st_param p[8]; int n; } sysgen_got;
+static int sysgen_keep(const st_param *p, void *ctx)
+{
+    sysgen_got *g = ctx;
+    if (g->n < 8) g->p[g->n++] = *p;
+    return 0;
+}
+
+static void test_sysgen(void)
+{
+    static const char *const lines[] = {
+        "", "Parameters in use: Active",
+        "Parameter Name            Current    Default     Min.       Max.   Unit  Dynamic\r",
+        "--------------            -------    -------   -------    -------  ----  -------",
+        "GBLPAGES                 11390868    8388608   8388608         -1 Pagelets   D",
+        " internal value            711930     524288    524288         -1 Pages      D",
+        "SCSNODE                 \"X86VMS  \"    \"    \"    \"    \"     \"ZZZZ\" Ascii       ",
+        "DISK_QUORUM     \"                \"    \"    \"    \"    \"     \"ZZZZ\" Ascii       ",
+        "SCH_SOFT_OFFLD         (none set) (none set)         0       1023 CPU bitmap D",
+        "MAXPROCESSCNT                 916         32        12      32767 Processes  ",
+        "%SYSGEN-W-SOMETHING, a message", NULL };
+    sysgen_got g;
+    st_sysgen_parser p;
+    result b;
+    char tc[140], tcsrf[65];
+    const char *body;
+    hdr t[3];
+    int i;
+
+    memset(&g, 0, sizeof g);
+    st_sysgen_init(&p, sysgen_keep, &g);
+    for (i = 0; lines[i]; i++) st_sysgen_line(&p, lines[i], strlen(lines[i]));
+    st_sysgen_end(&p);
+    CHECK(g.n == 5, "five parameters; headings, rules and messages skipped");
+    CHECK(!strcmp(g.p[0].name, "GBLPAGES") && !strcmp(g.p[0].v.current, "11390868") && !strcmp(g.p[0].v.max, "-1") &&
+          !strcmp(g.p[0].v.unit, "Pagelets") && g.p[0].dynamic && g.p[0].has_internal &&
+          !strcmp(g.p[0].internal.current, "711930") && !strcmp(g.p[0].internal.unit, "Pages"),
+          "a number by column, its unit, dynamic, and its internal value");
+    CHECK(!strcmp(g.p[1].name, "SCSNODE") && g.p[1].ascii && !strcmp(g.p[1].v.current, "X86VMS") &&
+          !strcmp(g.p[1].v.dflt, "") && !strcmp(g.p[1].v.max, "ZZZZ") && !g.p[1].dynamic,
+          "a string parameter: without its quotes and padding");
+    CHECK(!strcmp(g.p[2].name, "DISK_QUORUM") && !strcmp(g.p[2].v.current, "") && !strcmp(g.p[2].v.max, "ZZZZ"),
+          "a long blank string where the name column is short");
+    CHECK(!strcmp(g.p[3].v.current, "(none set)") && !strcmp(g.p[3].v.unit, "CPU bitmap") && g.p[3].dynamic,
+          "values and units with blanks in them");
+    CHECK(!strcmp(g.p[4].v.unit, "Processes") && !g.p[4].dynamic, "not dynamic: no D");
+
+    sign_in("{\"username\":\"steward_test\",\"password\":\"test-pass\"}", tc, sizeof tc, tcsrf);
+    t[0].n = "HTTP_COOKIE"; t[0].v = tc; t[1].n = "HTTP_X_STEWARD_CSRF"; t[1].v = tcsrf; t[2].n = NULL;
+    call("GET", "/api/v1/sysgen", t, NULL, &b);
+    body = b.resp.body.data;
+    CHECK(b.resp.status == 200 && strstr(body, "{\"name\":\"MAXPROCESSCNT\",\"current\":\"916\",\"default\":\"32\",\"min\":\"12\",\"max\":\"32767\",\"unit\":\"Processes\",\"dynamic\":false,\"ascii\":false}") &&
+          strstr(body, "\"internal\":{\"current\":") && strstr(body, "\"truncated\":false"), "every parameter, as SYSGEN shows it");
+    st_resp_free(&b.resp);
+    call("GET", "/api/v1/sysgen?filter=scs*", t, NULL, &b);
+    body = b.resp.body.data;
+    CHECK(b.resp.status == 200 && strstr(body, "\"SCSNODE\"") && !strstr(body, "MAXPROCESSCNT"), "filtered by a pattern");
+    st_resp_free(&b.resp);
+    call("GET", "/api/v1/sysgen?filter=a%22b", t, NULL, &b);
+    CHECK(b.resp.status == 400, "a filter with a quote is refused");
+    st_resp_free(&b.resp);
+    CHECK(!st_plat_persona_active(), "no persona left active");
+}
+
 int main(void)
 {
     st_app_config cfg;
@@ -1834,6 +1900,7 @@ int main(void)
     test_process_stop();
     test_queues();
     test_queue_changes();
+    test_sysgen();
     test_create();
     test_gateway();
     printf("%d checks, %d failed\n", checks, failures);

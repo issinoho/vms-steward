@@ -252,21 +252,25 @@ static char lnm_helper[256] = "STEWARD$ROOT:[COM]STEWARD_LNM.COM";
    supervisor-mode STEWARD$ROOT in the *viewer's* group table, or in the system
    table, comes first (probes/lnm_shadow.py, NOTES.md). Empty until resolved. */
 static char lnm_helper_path[256];
+/* The SYSGEN listing's procedure (Phase 10, D18), fixed and resolved the same way. */
+static char sysgen_helper[256] = "STEWARD$ROOT:[COM]STEWARD_SYSGEN.COM";
+static char sysgen_helper_path[256];
 
-/* $PARSE and $SEARCH with NOCONCEAL, as the service, then the device's full name. */
-static void lnm_resolve_helper(void)
+/* spec to a physical path in out ("" if it cannot be): $PARSE and $SEARCH with
+   NOCONCEAL, as the service, then the device's full name. */
+static void resolve_procedure(const char *spec, char *out, size_t outlen, const char *what)
 {
     struct FAB fab = cc$rms_fab;
     struct NAM nam = cc$rms_nam;
-    char esa[NAM$C_MAXRSS + 1], rsa[NAM$C_MAXRSS + 1], dev[64], devname[65];
+    char esa[NAM$C_MAXRSS + 1], rsa[NAM$C_MAXRSS + 1], dev[64], devname[65], msg[120];
     struct dsc$descriptor_s dd;
     unsigned short devlen = 0;
     unsigned int st, iosb[2];
     st_ile3 it[2];
 
-    lnm_helper_path[0] = '\0';
-    fab.fab$l_fna = lnm_helper;
-    fab.fab$b_fns = (unsigned char) strlen(lnm_helper);
+    out[0] = '\0';
+    fab.fab$l_fna = (char *) spec;
+    fab.fab$b_fns = (unsigned char) strlen(spec);
     fab.fab$l_nam = &nam;
     nam.nam$l_esa = esa;
     nam.nam$b_ess = NAM$C_MAXRSS;
@@ -276,7 +280,8 @@ static void lnm_resolve_helper(void)
     st = sys$parse(&fab);
     if (st & 1) st = sys$search(&fab);
     if (!(st & 1) || nam.nam$b_dev == 0 || nam.nam$b_dev >= sizeof dev) {
-        st_plat_log("the logical-name helper procedure was not found: listing is off");
+        snprintf(msg, sizeof msg, "the %s procedure was not found: it is off", what);
+        st_plat_log(msg);
         return;
     }
     memcpy(dev, nam.nam$l_dev, nam.nam$b_dev);
@@ -287,16 +292,31 @@ static void lnm_resolve_helper(void)
     st = sys$getdviw(0, 0, &dd, it, (void *) iosb, 0, 0, 0);
     if (st & 1) st = iosb[0] & 0xFFFF;
     if (!(st & 1) || devlen == 0 || devname[0] != '_') {
-        st_plat_log("the logical-name helper's device has no physical name: listing is off");
+        snprintf(msg, sizeof msg, "the %s procedure's device has no physical name: it is off", what);
+        st_plat_log(msg);
         return;
     }
     devname[devlen] = '\0';
     /* The directory, name and type, without the version: a kit installed later puts
        a new version there, and the pool is restarted with it anyway. */
-    if (snprintf(lnm_helper_path, sizeof lnm_helper_path, "%s%.*s%.*s%.*s", devname,
+    if (snprintf(out, outlen, "%s%.*s%.*s%.*s", devname,
                  (int) nam.nam$b_dir, nam.nam$l_dir, (int) nam.nam$b_name, nam.nam$l_name,
-                 (int) nam.nam$b_type, nam.nam$l_type) >= (int) sizeof lnm_helper_path)
-        lnm_helper_path[0] = '\0';
+                 (int) nam.nam$b_type, nam.nam$l_type) >= (int) outlen)
+        out[0] = '\0';
+}
+
+static void lnm_resolve_helper(void)
+{
+    resolve_procedure(lnm_helper, lnm_helper_path, sizeof lnm_helper_path, "logical-name helper");
+    resolve_procedure(sysgen_helper, sysgen_helper_path, sizeof sysgen_helper_path, "SYSGEN helper");
+}
+
+/* For tests/vms/api_probe.c only, to run an edited SYSGEN procedure before it is
+   installed. STEWARD.EXE never calls it. */
+void st_plat_vms_test_sysgen(const char *path)
+{
+    st_copy(sysgen_helper, sizeof sysgen_helper, path);
+    lnm_resolve_helper();
 }
 
 /* For tests/vms/api_probe.c only, to run an edited procedure before it is installed.
@@ -2722,8 +2742,14 @@ static unsigned int le32(const unsigned char *b)
            ((unsigned int) b[3] << 24);
 }
 
-int st_plat_lnm_list(const char *table, const char *pattern, const char *privs,
-                     st_lnm_cb fn, void *ctx, st_err *e)
+typedef void (*helper_line_fn)(const char *line, size_t len, void *ctx);
+
+/* Run the fixed procedure at path in a short-lived detached process created under the
+   persona, so it is the viewer (D14): send msgs to it as data, pass each line it writes
+   to line_fn, until its last line, "%%END%% <status>". Returns 0 with *status_out (the
+   procedure's own command's status), or -1 with e (no answer, a timeout, a refusal). */
+static int helper_run(const char *path, const char *const *msgs, int nmsgs,
+                      helper_line_fn line_fn, void *ctx, unsigned int *status_out, st_err *e)
 {
     /* Event flags from LIB$GET_EF once, all in one cluster for $WFLOR: the reply
        read, the timer, the termination message. */
@@ -2735,11 +2761,10 @@ int st_plat_lnm_list(const char *table, const char *pattern, const char *privs,
     unsigned long reqidt = (unsigned long) &efr;
     char prc[16];
     struct dsc$descriptor_s img, in, nl, pn;
-    st_lnm_parser p;
-    int done = 0, timed_out = 0, ended = 0, reading = 0, waiting = 0, tries;
+    int done = 0, timed_out = 0, ended = 0, reading = 0, waiting = 0, tries, k;
 
-    if (!lnm_helper_path[0]) {   /* not found at start-up (the log says so) */
-        set_text(e, ST_E_INTERNAL, "the logical-name helper procedure was not found when Steward started");
+    if (!path[0]) {   /* not found at start-up (the log says so) */
+        set_text(e, ST_E_INTERNAL, "the helper procedure was not found when Steward started");
         return -1;
     }
     if (!efr && (!(lib$get_ef(&efr) & 1) || !(lib$get_ef(&eft) & 1) || !(lib$get_ef(&efm) & 1) ||
@@ -2748,8 +2773,6 @@ int st_plat_lnm_list(const char *table, const char *pattern, const char *privs,
         set_text(e, ST_E_INTERNAL, "no event flags");
         return -1;
     }
-    st_lnm_parse_init(&p, fn, ctx);
-
     /* System and owner only (deny group and world). The owner is the persona. */
     st = sys$crembx(0, &reqchan, LNM_REQ_MAXMSG, 3 * LNM_REQ_MAXMSG, 0xFF00, 0, 0, 0, 0);
     if (st & 1) st = sys$crembx(0, &repchan, LNM_REP_MAXMSG, 16 * LNM_REP_MAXMSG, 0xFF00, 0, 0, 0, 0);
@@ -2759,9 +2782,7 @@ int st_plat_lnm_list(const char *table, const char *pattern, const char *privs,
     if (st & 1) st = mbx_unit(trmchan, &utrm);
     if (!(st & 1)) goto out;
     if (ureq > 0xFFFF || urep > 0xFFFF) { st = SS$_BADPARAM; goto out; }   /* 4 hex digits each */
-    st = mbx_write(reqchan, table);
-    if (st & 1) st = mbx_write(reqchan, pattern);
-    if (st & 1) st = mbx_write(reqchan, privs);
+    for (k = 0; k < nmsgs && (st & 1); k++) st = mbx_write(reqchan, msgs[k]);
     if (!(st & 1)) goto out;
 
     /* However the helper ends (its procedure done, LOGINOUT refusing it, its login
@@ -2773,7 +2794,7 @@ int st_plat_lnm_list(const char *table, const char *pattern, const char *privs,
     waiting = 1;
 
     desc(&img, "SYS$SYSTEM:LOGINOUT.EXE", 23);
-    desc(&in, lnm_helper_path, (unsigned short) strlen(lnm_helper_path));
+    desc(&in, path, (unsigned short) strlen(path));
     desc(&nl, "NLA0:", 5);
     /* Its name: STW, the two mailbox units and a random part, all hex, 15 characters.
        Process names are unique in a UIC group, so a member of the viewer's group could
@@ -2816,13 +2837,10 @@ int st_plat_lnm_list(const char *table, const char *pattern, const char *privs,
                 if (!strncmp(line, "%%END%% ", 8)) {
                     status = (unsigned int) strtoul(line + 8, NULL, 16);
                     status &= 0x0FFFFFFFu;   /* without DCL's "message already shown" bit */
-                    /* SHOW LOGICAL returns IVLOGTAB as a warning (%X158), SSDEF has it
-                       fatal (%X15C): the same message. Compare without the severity. */
-                    if ((status & ~7u) == (SS$_IVLOGTAB & ~7u)) status = SS$_IVLOGTAB;
                     done = 1;
                     break;
                 }
-                st_lnm_parse_line(&p, line, iosb[1]);   /* once stopped, it only drains */
+                line_fn(line, iosb[1], ctx);   /* once the caller has enough, it only drains */
             }
         }
         if (waiting && tiosb[0]) {
@@ -2858,8 +2876,49 @@ out:
         else set_text(e, ST_E_INTERNAL, "the listing process ended without an answer");
         return -1;
     }
+    *status_out = status;
+    return 0;
+}
+
+static void lnm_line(const char *line, size_t len, void *ctx)
+{
+    st_lnm_parse_line((st_lnm_parser *) ctx, line, len);
+}
+
+int st_plat_lnm_list(const char *table, const char *pattern, const char *privs,
+                     st_lnm_cb fn, void *ctx, st_err *e)
+{
+    st_lnm_parser p;
+    const char *msgs[3];
+    unsigned int status = 0;
+    msgs[0] = table; msgs[1] = pattern; msgs[2] = privs;
+    st_lnm_parse_init(&p, fn, ctx);
+    if (helper_run(lnm_helper_path, msgs, 3, lnm_line, &p, &status, e)) return -1;
+    /* SHOW LOGICAL returns IVLOGTAB as a warning (%X158), SSDEF has it fatal (%X15C):
+       the same message. Compare without the severity. */
+    if ((status & ~7u) == (SS$_IVLOGTAB & ~7u)) status = SS$_IVLOGTAB;
     st_lnm_parse_end(&p);
     if (!(status & 1)) { set_cond(e, status); return -1; }   /* SHOW LOGICAL's own failure */
+    return 0;
+}
+
+/* ---- system parameters (Phase 10, D18): SYSGEN SHOW/ALL in the same helper ---- */
+
+static void sysgen_line(const char *line, size_t len, void *ctx)
+{
+    st_sysgen_line((st_sysgen_parser *) ctx, line, len);
+}
+
+int st_plat_sysgen_list(const char *privs, st_param_cb fn, void *ctx, st_err *e)
+{
+    st_sysgen_parser p;
+    const char *msgs[1];
+    unsigned int status = 0;
+    msgs[0] = privs;
+    st_sysgen_init(&p, fn, ctx);
+    if (helper_run(sysgen_helper_path, msgs, 1, sysgen_line, &p, &status, e)) return -1;
+    st_sysgen_end(&p);
+    if (!(status & 1)) { set_cond(e, status); return -1; }   /* SYSGEN's own failure */
     return 0;
 }
 

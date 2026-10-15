@@ -32,6 +32,8 @@ cluster), and covers users and rights identifiers, roughly what AUTHORIZE does:
     and one job as SHOW ENTRY/FULL, as the queue manager lets you read them;
     hold, release and delete jobs, stop and start queues (never SYS$BATCH or the
     queues it feeds, where Steward's pool is started at boot)
+  - system parameters: every active parameter as SYSGEN SHOW/ALL prints it
+    (read-only)
 
 Every request runs as you: Steward takes on your OpenVMS identity (a persona) for
 the request, so OpenVMS decides what you may see and change, exactly as at a

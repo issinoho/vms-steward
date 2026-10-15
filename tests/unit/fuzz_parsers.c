@@ -5,7 +5,8 @@
    No libFuzzer: the toolchain here may be GCC only. Seeds are valid inputs; each round
    flips, inserts, deletes or duplicates bytes and feeds the result to the JSON
    parser, the FastCGI record/pair parsers and connection state machine, request
-   building, cookie and query parsing, and route matching. A crash or sanitizer
+   building, cookie and query parsing, route matching, and the SHOW LOGICAL and SYSGEN
+   SHOW parsers. A crash or sanitizer
    report is the failure; there are no assertions on results. */
 #include <stdio.h>
 #include <stdlib.h>
@@ -14,6 +15,7 @@
 #include "st_fcgi.h"
 #include "st_json.h"
 #include "st_lnm.h"
+#include "st_sysgen.h"
 #include "st_http.h"
 #include "st_route.h"
 
@@ -129,6 +131,37 @@ static void run_lnm(const unsigned char *in, size_t len)
     st_lnm_parse_end(&p);
 }
 
+/* SYSGEN SHOW/ALL, as x86 prints it (st_sysgen.h). */
+static const char sysgen_seed[] =
+    "\r\nParameters in use: Active\n"
+    "Parameter Name            Current    Default     Min.       Max.   Unit  Dynamic\r\n"
+    "--------------            -------    -------   -------    -------  ----  -------\n"
+    "GBLSECTIONS                  1440       1024        80      65535 Sections   \n"
+    " internal value             85120       8192      1024    8388608 Pages      D\n"
+    "SCSNODE                 \"X86VMS  \"    \"    \"    \"    \"     \"ZZZZ\" Ascii       \n"
+    "DISK_QUORUM     \"                \"    \"    \"    \"    \"     \"ZZZZ\" Ascii       \n"
+    "SCH_SOFT_OFFLD         (none set) (none set)         0       1023 CPU bitmap D\n"
+    "TTY_DMASIZE                    64         64         0      65535 Bytes      D\n";
+
+static int sysgen_cb(const st_param *p, void *ctx) { (void) p; (void) ctx; return 0; }
+
+static void run_sysgen(const unsigned char *in, size_t len)
+{
+    st_sysgen_parser p;
+    size_t start = 0, i;
+    st_sysgen_init(&p, sysgen_cb, NULL);
+    for (i = 0; i <= len; i++)
+        if (i == len || in[i] == '\n') {
+            char *line = malloc(i - start ? i - start : 1);   /* exactly its length, for ASan */
+            if (!line) return;
+            memcpy(line, in + start, i - start);
+            st_sysgen_line(&p, line, i - start);
+            free(line);
+            start = i + 1;
+        }
+    st_sysgen_end(&p);
+}
+
 int main(int argc, char **argv)
 {
     long i, rounds = argc > 1 ? atol(argv[1]) : 100000;
@@ -139,7 +172,12 @@ int main(int argc, char **argv)
         size_t len;
         st_jdoc d;
         char err[80];
-        if (i % 3 == 2) {
+        if (i % 4 == 3) {
+            len = sizeof sysgen_seed - 1;
+            memcpy(buf, sysgen_seed, len);
+            len = mutate(buf, len, sizeof buf);
+            run_sysgen(buf, len);
+        } else if (i % 3 == 2) {
             len = sizeof lnm_seed - 1;
             memcpy(buf, lnm_seed, len);
             len = mutate(buf, len, sizeof buf);

@@ -493,3 +493,24 @@ Alternatives not taken: driving SHOW QUEUE in a helper process (D14's way; not n
   queues it feeds, whatever the viewer holds (the user's choice after OPCOM): the pool
   is started at boot by a job there. Everything else is as the queue manager allows.
 
+## D18. System parameters: SYSGEN SHOW/ALL in the D14 helper, read-only
+
+**Status:** approved by the user 2026-10-15 (SYSGEN in the D14 helper; read-only for
+now). Phase 10.
+
+OpenVMS has no service that lists the system parameters with their defaults, limits,
+units and dynamic flags; `$GETSYI` gives current values only. SYSGEN SHOW prints all of
+it, and any user may run it (probe: STEWARD_TEST, unprivileged, in batch). So the D14
+helper process, which is the viewer with the privileges switched on in the session,
+runs a second fixed procedure, `STEWARD_SYSGEN.COM`: SYSGEN `SHOW/ALL`, written to the
+reply mailbox, parsed in core (`st_sysgen.c`). The helper's machinery is shared
+(`helper_run`); the procedure takes only the privileges as data.
+
+Read-only: writing parameters needs CMKRNL and can keep a system from booting. Whether
+to offer it (dynamic parameters in memory, or MODPARAMS.DAT for AUTOGEN) is decided
+once this is in use.
+
+Alternatives not taken: `$GETSYI` alone (no defaults, limits, units; Steward would need
+its own list of parameter names); SYSGEN run by the service (it would be the service's
+view, not the viewer's, D2).
+
