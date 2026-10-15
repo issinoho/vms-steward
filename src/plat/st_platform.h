@@ -509,6 +509,18 @@ int st_plat_queue_get(const char *name, st_queue *q, st_job_cb fn, void *ctx, st
    see listed but not to read (inaccessible), ST_E_NOTFOUND if there is none. */
 int st_plat_job_get(unsigned int entry, st_job_detail *d, st_err *e);
 
+/* ---- queue changes (Phase 9b), $SNDJBC as the current persona: the queue manager
+   judges the persona (probe_sndjbc). A refusal is ST_E_NOPRIV (JBC NOPRIV); a job
+   that is executing, for a hold, is ST_E_CONFLICT (JBC EXECUTING). */
+enum { ST_JOB_HOLD, ST_JOB_RELEASE, ST_JOB_DELETE };
+int st_plat_job_change(unsigned int entry, int op, st_err *e);
+enum { ST_QUEUE_STOP, ST_QUEUE_START };
+int st_plat_queue_change(const char *name, int op, st_err *e);
+/* The queues Steward's start-up depends on: SYS$BATCH (or the queue it names in the
+   system table) and the execution queues it feeds. Up to max names into names;
+   returns how many. Read as the service (no persona needed: queues are public). */
+int st_plat_startup_queues(char names[][32], int max);
+
 /* ---- audit and diagnostics ---- */
 void st_plat_audit(const char *line);    /* one record; the platform adds a timestamp */
 void st_plat_log(const char *line);      /* operational log (SYS$ERROR / stderr) */

@@ -3,6 +3,8 @@
    GET api/v1/queues               every queue, as SHOW QUEUE
    GET api/v1/queues/{name}        one queue and its jobs, as SHOW QUEUE/ALL/FULL
    GET api/v1/jobs/{entry}         one job, as SHOW ENTRY/FULL
+   POST api/v1/jobs/{entry}/hold, /release, DELETE api/v1/jobs/{entry}       (9b)
+   POST api/v1/queues/{name}/stop, /start                                   (9b)
 
    $GETQUI runs under the persona and the queue manager judges it: a job the viewer
    may not read is listed with its entry and status only, "inaccessible", as SHOW
@@ -155,3 +157,88 @@ void svc_job_get(st_ctx *c)
     st_jw_arr_end(&w);
     st_jw_obj_end(&w);
 }
+
+/* ---- changes (Phase 9b): $SNDJBC as the viewer; the queue manager decides ---- */
+
+static int entry_arg(st_ctx *c, unsigned int *entry, char text[16])
+{
+    if (!st_parse_entry(c->args[0], entry)) {
+        st_resp_problem(c->resp, 400, "bad-request", "Bad entry number", "1 to 9 digits.", 0, NULL);
+        return -1;
+    }
+    snprintf(text, 16, "%u", *entry);
+    return 0;
+}
+
+static void job_change(st_ctx *c, int op, const char *action, const char *done)
+{
+    static st_job_detail d;
+    unsigned int entry;
+    char text[16], target[96];   /* entry, "name" (39), username (12) */
+    st_err e;
+    st_jw w;
+
+    if (entry_arg(c, &entry, text)) return;
+    /* The job's name for the audit log, if the viewer may read it. */
+    if (!st_plat_job_get(entry, &d, &e)) snprintf(target, sizeof target, "%s \"%s\" %s", text, d.j.name, d.j.username);
+    else st_copy(target, sizeof target, text);
+    if (st_plat_job_change(entry, op, &e)) {
+        st_app_audit(c, c->session.username, action, target, "failed", e.text);
+        st_app_error(c, &e);
+        return;
+    }
+    st_app_audit(c, c->session.username, action, target, "ok", NULL);
+    st_resp_json(c->resp, 200, &w);
+    st_jw_obj(&w);
+    st_jw_kint(&w, "entry", entry);
+    st_jw_kstr(&w, "done", done);
+    st_jw_obj_end(&w);
+}
+
+void svc_job_hold(st_ctx *c) { job_change(c, ST_JOB_HOLD, "job-hold", "held"); }
+void svc_job_release(st_ctx *c) { job_change(c, ST_JOB_RELEASE, "job-release", "released"); }
+void svc_job_delete(st_ctx *c) { job_change(c, ST_JOB_DELETE, "job-delete", "deleted"); }
+
+static int no_job(const st_job *j, void *ctx) { (void) j; (void) ctx; return 1; }
+
+static void queue_change(st_ctx *c, int op, const char *action)
+{
+    static st_queue q;
+    char name[ST_QUEUE_NAME_MAX + 1], startup[8][32];
+    int i, n;
+    st_err e;
+    st_jw w;
+
+    if (!st_valid_queue_name(c->args[0], name)) {
+        st_resp_problem(c->resp, 400, "bad-request", "Bad queue name",
+                        "1 to 31 characters from A-Z, 0-9, $ and _.", 0, NULL);
+        return;
+    }
+    /* Never the queues Steward's start-up uses: the pool is started at boot by a job
+       submitted to SYS$BATCH (D17, the user's choice after OPCOM). */
+    if (op == ST_QUEUE_STOP) {
+        n = st_plat_startup_queues(startup, 8);
+        for (i = 0; i < n; i++)
+            if (!strcmp(startup[i], name)) {
+                st_app_audit(c, c->session.username, action, name, "refused", "Steward's start-up queue");
+                st_resp_problem(c->resp, 409, "startup-queue", "Steward's start-up queue",
+                                "Steward does not stop SYS$BATCH or the queues it feeds: its pool is started there at boot. Use STOP/QUEUE at a terminal if you must.", 0, NULL);
+                return;
+            }
+    }
+    if (st_plat_queue_change(name, op, &e)) {
+        st_app_audit(c, c->session.username, action, name, "failed", e.text);
+        st_app_error(c, &e);
+        return;
+    }
+    st_app_audit(c, c->session.username, action, name, "ok", NULL);
+    if (st_plat_queue_get(name, &q, no_job, NULL, &e)) { st_app_error(c, &e); return; }
+    st_resp_json(c->resp, 200, &w);
+    st_jw_obj(&w);
+    queue_json(&w, &q);
+    st_jw_obj_end(&w);
+}
+
+void svc_queue_stop(st_ctx *c) { queue_change(c, ST_QUEUE_STOP, "queue-stop"); }
+void svc_queue_start(st_ctx *c) { queue_change(c, ST_QUEUE_START, "queue-start"); }
+

@@ -1710,6 +1710,66 @@ static void test_queues(void)
     CHECK(!st_plat_persona_active(), "no persona left active");
 }
 
+/* Phase 9b (D17): job and queue changes. Runs after test_queues: it changes the stub. */
+static void test_queue_changes(void)
+{
+    result b;
+    char tc[140], ac[140], tcsrf[65], acsrf[65];
+    hdr t[3], adm[3], nocsrf[2];
+
+    sign_in("{\"username\":\"steward_test\",\"password\":\"test-pass\"}", tc, sizeof tc, tcsrf);
+    t[0].n = "HTTP_COOKIE"; t[0].v = tc; t[1].n = "HTTP_X_STEWARD_CSRF"; t[1].v = tcsrf; t[2].n = NULL;
+    nocsrf[0].n = "HTTP_COOKIE"; nocsrf[0].v = tc; nocsrf[1].n = NULL;
+    call("POST", "/api/v1/jobs/269/release", nocsrf, NULL, &b);
+    CHECK(b.resp.status == 403 && strstr(b.resp.body.data, "csrf"), "a job change needs the CSRF header");
+    st_resp_free(&b.resp);
+    call("POST", "/api/v1/jobs/269/release", t, NULL, &b);
+    CHECK(b.resp.status == 200 && strstr(b.resp.body.data, "\"done\":\"released\""), "its own held job: released");
+    st_resp_free(&b.resp);
+    call("GET", "/api/v1/jobs/269", t, NULL, &b);
+    CHECK(b.resp.status == 200 && strstr(b.resp.body.data, "\"status\":[\"pending\"]"), "and pending");
+    st_resp_free(&b.resp);
+    call("POST", "/api/v1/jobs/269/hold", t, NULL, &b);
+    CHECK(b.resp.status == 200, "held again");
+    st_resp_free(&b.resp);
+    call("DELETE", "/api/v1/jobs/141", t, NULL, &b);
+    CHECK(b.resp.status == 403 && strstr(b.resp.body.data, "NOPRIV"), "another's job: JBC NOPRIV, as DELETE/ENTRY");
+    st_resp_free(&b.resp);
+    call("POST", "/api/v1/queues/X86VMS_BATCH/stop", t, NULL, &b);
+    CHECK(b.resp.status == 409 && strstr(b.resp.body.data, "startup-queue"), "a queue SYS$BATCH feeds: refused, whoever asks");
+    st_resp_free(&b.resp);
+    call("POST", "/api/v1/queues/LPA0_PRINT/start", t, NULL, &b);
+    CHECK(b.resp.status == 403, "starting a queue without SYSPRV: NOPRIV");
+    st_resp_free(&b.resp);
+
+    sign_in("{\"username\":\"steward_adm\",\"password\":\"admin-pass\"}", ac, sizeof ac, acsrf);
+    adm[0].n = "HTTP_COOKIE"; adm[0].v = ac; adm[1].n = "HTTP_X_STEWARD_CSRF"; adm[1].v = acsrf; adm[2].n = NULL;
+    call("POST", "/api/v1/jobs/269/release", adm, NULL, &b);
+    CHECK(b.resp.status == 403, "its group's job: may read, not change (as the queue manager decides)");
+    st_resp_free(&b.resp);
+    call("PUT", "/api/v1/session/privileges", adm, "{\"enabled\":[\"sysprv\"]}", &b);
+    st_resp_free(&b.resp);
+    call("POST", "/api/v1/jobs/141/hold", adm, NULL, &b);
+    CHECK(b.resp.status == 409 && strstr(b.resp.body.data, "EXECUTING"), "holding an executing job: JBC EXECUTING, 409");
+    st_resp_free(&b.resp);
+    call("POST", "/api/v1/queues/SYS$BATCH/stop", adm, NULL, &b);
+    CHECK(b.resp.status == 409, "SYS$BATCH: refused with SYSPRV too");
+    st_resp_free(&b.resp);
+    call("POST", "/api/v1/queues/LPA0_PRINT/start", adm, NULL, &b);
+    CHECK(b.resp.status == 200 && strstr(b.resp.body.data, "\"status\":[\"available\"]"), "with SYSPRV: a stopped queue started");
+    st_resp_free(&b.resp);
+    call("POST", "/api/v1/queues/LPA0_PRINT/stop", adm, NULL, &b);
+    CHECK(b.resp.status == 200 && strstr(b.resp.body.data, "\"status\":[\"stopped\"]"), "and stopped again");
+    st_resp_free(&b.resp);
+    call("DELETE", "/api/v1/jobs/141", adm, NULL, &b);
+    CHECK(b.resp.status == 200 && strstr(b.resp.body.data, "\"done\":\"deleted\""), "with SYSPRV: another's job deleted");
+    st_resp_free(&b.resp);
+    call("GET", "/api/v1/jobs/141", adm, NULL, &b);
+    CHECK(b.resp.status == 404, "and gone");
+    st_resp_free(&b.resp);
+    CHECK(!st_plat_persona_active(), "no persona left active");
+}
+
 int main(void)
 {
     st_app_config cfg;
@@ -1743,6 +1803,7 @@ int main(void)
     test_processes();
     test_process_stop();
     test_queues();
+    test_queue_changes();
     test_create();
     test_gateway();
     printf("%d checks, %d failed\n", checks, failures);

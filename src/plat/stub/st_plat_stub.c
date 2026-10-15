@@ -1257,6 +1257,20 @@ static const stub_job stub_jobs[] = {
     { 272, "REPORT", "STEWARD_ADM", 0x00F20002u, 0x800, "X86VMS_BATCH", "SYS$SYSDEVICE:[STEWARD_ADM]REPORT.COM;1", 60 },
 };
 
+/* Their states, which 9b's changes alter: loaded from the tables above. */
+#define N_SQ (sizeof stub_queues / sizeof stub_queues[0])
+#define N_SJ (sizeof stub_jobs / sizeof stub_jobs[0])
+static unsigned int sq_status[N_SQ], sj_status[N_SJ];
+static int sj_gone[N_SJ], sqj_loaded;
+static void stub_queues_load(void)
+{
+    size_t i;
+    if (sqj_loaded) return;
+    sqj_loaded = 1;
+    for (i = 0; i < N_SQ; i++) sq_status[i] = stub_queues[i].status;
+    for (i = 0; i < N_SJ; i++) sj_status[i] = stub_jobs[i].status;
+}
+
 /* As the queue manager decides (probe_qui): one's own and one's group's jobs (the
    queues give G:R), anyone's with SYSPRV; the rest inaccessible. */
 static int stub_may_read_job(const stub_job *j)
@@ -1267,11 +1281,14 @@ static int stub_may_read_job(const stub_job *j)
 
 static void stub_job_fill(const stub_job *s, st_job *j)
 {
+    unsigned int status;
+    stub_queues_load();
+    status = sj_status[s - stub_jobs];
     memset(j, 0, sizeof *j);
     j->entry = s->entry;
     st_copy(j->queue, sizeof j->queue, s->queue);
-    if (!stub_may_read_job(s)) { j->status = s->status | ST_JOB_INACCESSIBLE; return; }
-    j->status = s->status;
+    if (!stub_may_read_job(s)) { j->status = status | ST_JOB_INACCESSIBLE; return; }
+    j->status = status;
     st_copy(j->name, sizeof j->name, s->name);
     st_copy(j->username, sizeof j->username, s->user);
     j->submitted = (long long) time(NULL) - s->age;
@@ -1282,15 +1299,16 @@ static void stub_queue_fill(const stub_queue *s, st_queue *q)
     size_t i;
     memset(q, 0, sizeof *q);
     st_copy(q->name, sizeof q->name, s->name);
+    stub_queues_load();
     q->batch = s->batch;
     q->generic = s->generic;
-    q->status = s->status;
+    q->status = sq_status[s - stub_queues];
     st_copy(q->node, sizeof q->node, s->node);
     st_copy(q->description, sizeof q->description, s->desc);
     q->job_limit = s->limit;
     for (i = 0; i < sizeof stub_jobs / sizeof stub_jobs[0]; i++)
-        if (!strcmp(stub_jobs[i].queue, s->name)) {
-            unsigned int st = stub_jobs[i].status;
+        if (!strcmp(stub_jobs[i].queue, s->name) && !sj_gone[i]) {
+            unsigned int st = sj_status[i];
             if (st & 0x2) q->executing++;
             if (st & 0x800) q->pending++;
             if (st & 0x4) q->holding++;
@@ -1320,7 +1338,7 @@ int st_plat_queue_get(const char *name, st_queue *q, st_job_cb fn, void *ctx, st
         return fail(e, ST_E_NOTFOUND, C_NOSUCHQUE, "%JBC-E-NOSUCHQUE, no such queue");
     stub_queue_fill(&stub_queues[i], q);
     for (i = 0; i < sizeof stub_jobs / sizeof stub_jobs[0]; i++) {
-        if (strcmp(stub_jobs[i].queue, name)) continue;
+        if (strcmp(stub_jobs[i].queue, name) || sj_gone[i]) continue;
         stub_job_fill(&stub_jobs[i], &j);
         if (fn(&j, ctx)) break;
     }
@@ -1333,7 +1351,7 @@ int st_plat_job_get(unsigned int entry, st_job_detail *d, st_err *e)
     memset(d, 0, sizeof *d);
     for (i = 0; i < sizeof stub_jobs / sizeof stub_jobs[0]; i++) {
         const stub_job *s = &stub_jobs[i];
-        if (s->entry != entry) continue;
+        if (s->entry != entry || sj_gone[i]) continue;
         if (!stub_may_read_job(s)) return stub_noprive(e);
         stub_job_fill(s, &d->j);
         d->priority = 100;
@@ -1344,6 +1362,52 @@ int st_plat_job_get(unsigned int entry, st_job_detail *d, st_err *e)
         return 0;
     }
     return fail(e, ST_E_NOTFOUND, C_NOSUCHENT, "%JBC-E-NOSUCHENT, no such entry");
+}
+
+/* Changes (9b), as the queue manager decides (probe_sndjbc): a job by its owner or
+   with SYSPRV (the group may read, not change); a queue with SYSPRV (S:M). */
+#define C_JBC_NOPRIV    0x00048022u   /* JBC$_NOPRIV 294946 */
+#define C_JBC_EXECUTING 0x000480FAu   /* JBC$_EXECUTING 295162 */
+
+int st_plat_job_change(unsigned int entry, int op, st_err *e)
+{
+    size_t i;
+    stub_queues_load();
+    for (i = 0; i < N_SJ; i++) {
+        if (stub_jobs[i].entry != entry || sj_gone[i]) continue;
+        if (!(persona && (stub_jobs[i].uic == persona->u.uic || system_access())))
+            return fail(e, ST_E_NOPRIV, C_JBC_NOPRIV, "%JBC-E-NOPRIV, insufficient privilege or queue protection violation");
+        if (op == ST_JOB_DELETE) { sj_gone[i] = 1; return 0; }
+        if (sj_status[i] & 0x2)
+            return fail(e, ST_E_CONFLICT, C_JBC_EXECUTING, "%JBC-E-EXECUTING, job executing on queue prevents requested operation");
+        if (op == ST_JOB_HOLD) sj_status[i] = (sj_status[i] & ~0x800u) | 0x4u;
+        else sj_status[i] = (sj_status[i] & ~0x4u) | 0x800u;
+        return 0;
+    }
+    return fail(e, ST_E_NOTFOUND, C_NOSUCHENT, "%JBC-E-NOSUCHENT, no such entry");
+}
+
+int st_plat_queue_change(const char *name, int op, st_err *e)
+{
+    size_t i;
+    stub_queues_load();
+    for (i = 0; i < N_SQ; i++) {
+        if (strcmp(stub_queues[i].name, name)) continue;
+        if (!system_access())
+            return fail(e, ST_E_NOPRIV, C_JBC_NOPRIV, "%JBC-E-NOPRIV, insufficient privilege or queue protection violation");
+        if (op == ST_QUEUE_STOP) sq_status[i] = (sq_status[i] & ~0x50000u) | 0x1000u;
+        else sq_status[i] = (sq_status[i] & ~0x1000u) | 0x40000u;
+        return 0;
+    }
+    return fail(e, ST_E_NOTFOUND, C_NOSUCHQUE, "%JBC-E-NOSUCHQUE, no such queue");
+}
+
+int st_plat_startup_queues(char names[][32], int max)
+{
+    int n = 0;
+    if (n < max) st_copy(names[n++], 32, "SYS$BATCH");
+    if (n < max) st_copy(names[n++], 32, "X86VMS_BATCH");   /* what it feeds, as on x86 */
+    return n;
 }
 
 /* ================================================================ misc */

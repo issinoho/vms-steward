@@ -27,6 +27,7 @@
 #include <dvsdef.h>
 #include <jbcmsgdef.h>
 #include <quidef.h>
+#include <sjcdef.h>         /* $SNDJBC (Phase 9b) */
 #include <rmidef.h>
 #include <syidef.h>
 #include <kgbdef.h>
@@ -100,7 +101,7 @@ static void set_cond(st_err *e, unsigned int cond)
     msgtext(cond, e->text, sizeof e->text);
     switch (cond) {
     case SS$_NOPRIV: case SS$_NOSYSPRV: case SS$_NOGRPPRV: case RMS$_PRV:
-    case SS$_NOSYSNAM: case SS$_NOGRPNAM:
+    case SS$_NOSYSNAM: case SS$_NOGRPNAM: case JBC$_NOPRIV:
         e->kind = ST_E_NOPRIV; break;
     case SS$_NOSUCHID: case RMS$_RNF: case SS$_NOLOGNAM: case SS$_NOLOGTAB: case SS$_IVLOGTAB:
     case SS$_NONEXPR: case JBC$_NOSUCHQUE: case JBC$_NOSUCHJOB: case JBC$_NOSUCHENT:
@@ -108,7 +109,7 @@ static void set_cond(st_err *e, unsigned int cond)
     case SS$_IVIDENT: case SS$_BADPARAM: case SS$_INVPWDLEN: case SS$_PWDINHIS:
     case SS$_PWDINDIC: case SS$_PWDWEAK: case SS$_PWDSYNTAX:
         e->kind = ST_E_INVALID; break;
-    case SS$_DUPIDENT: case RMS$_DUP:
+    case SS$_DUPIDENT: case RMS$_DUP: case JBC$_EXECUTING:
         e->kind = ST_E_CONFLICT; break;
     default:
         e->kind = (cond == 0 || (cond & 1)) ? ST_OK : ST_E_INTERNAL;
@@ -3396,6 +3397,84 @@ int st_plat_job_get(unsigned int entry, st_job_detail *d, st_err *e)
     }
     qui(QUI$_CANCEL_OPERATION, &qctx, 0);
     return 0;
+}
+
+/* ---- changes (Phase 9b): $SNDJBC, judged by the queue manager as the persona ---- */
+
+static unsigned int sndjbc(unsigned short func, st_ile3 *it)
+{
+    unsigned int iosb[2] = { 0, 0 }, st;
+    st = sys$sndjbcw(0, func, 0, it, (void *) iosb, 0, 0);
+    return (st & 1) ? iosb[0] : st;
+}
+
+int st_plat_job_change(unsigned int entry, int op, st_err *e)
+{
+    unsigned int target = entry, st;
+    st_ile3 it[3];
+    item(&it[0], SJC$_ENTRY_NUMBER, &target, 4, 0);
+    if (op == ST_JOB_DELETE) {
+        item_end(&it[1]);
+        st = sndjbc(SJC$_DELETE_JOB, it);
+    } else {
+        item(&it[1], op == ST_JOB_HOLD ? SJC$_HOLD : SJC$_NO_HOLD, 0, 0, 0);
+        item_end(&it[2]);
+        st = sndjbc(SJC$_ALTER_JOB, it);
+    }
+    if (!(st & 1)) { set_cond(e, st); return -1; }
+    return 0;
+}
+
+int st_plat_queue_change(const char *name, int op, st_err *e)
+{
+    char q[32];
+    unsigned int st;
+    st_ile3 it[2];
+    st_copy(q, sizeof q, name);
+    item(&it[0], SJC$_QUEUE, q, (unsigned short) strlen(q), 0);
+    item_end(&it[1]);
+    st = sndjbc(op == ST_QUEUE_STOP ? SJC$_STOP_QUEUE : SJC$_START_QUEUE, it);
+    if (!(st & 1)) { set_cond(e, st); return -1; }
+    return 0;
+}
+
+int st_plat_startup_queues(char names[][32], int max)
+{
+    struct dsc$descriptor_s tab, nam;
+    char batch[32] = "SYS$BATCH", targets[1024];
+    unsigned short blen = 0, tlen = 0;
+    unsigned int ctx = 0xFFFFFFFFu, st;
+    st_ile3 it[3];
+    int n = 0;
+    const char *p;
+
+    if (max < 1) return 0;
+    /* SUBMIT resolves SYS$BATCH through the logical names first: at boot, the system
+       table's. */
+    desc(&tab, "LNM$SYSTEM_TABLE", 16);
+    desc(&nam, "SYS$BATCH", 9);
+    item(&it[0], LNM$_STRING, batch, sizeof batch - 1, &blen);
+    item_end(&it[1]);
+    if (sys$trnlnm(0, &tab, &nam, 0, it) & 1) batch[blen] = '\0';
+    else st_copy(batch, sizeof batch, "SYS$BATCH");
+    st_copy(names[n++], 32, batch);
+    if (n < max && strcmp(batch, "SYS$BATCH")) st_copy(names[n++], 32, "SYS$BATCH");
+    /* And the execution queues it feeds, if it is generic: the bare names, separated by
+       commas if there are several (probe_qui targets). */
+    item(&it[0], QUI$_SEARCH_NAME, batch, (unsigned short) strlen(batch), 0);
+    item(&it[1], QUI$_GENERIC_TARGET, targets, sizeof targets - 1, &tlen);
+    item_end(&it[2]);
+    st = qui(QUI$_DISPLAY_QUEUE, &ctx, it);
+    qui(QUI$_CANCEL_OPERATION, &ctx, 0);
+    if (!(st & 1)) return n;
+    targets[tlen] = '\0';
+    for (p = targets; *p && n < max;) {
+        size_t k = strcspn(p, ", ");
+        if (k && k < 32) { memcpy(names[n], p, k); names[n][k] = '\0'; n++; }
+        p += k;
+        while (*p == ',' || *p == ' ') p++;
+    }
+    return n;
 }
 
 /* ================================================================ misc */

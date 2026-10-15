@@ -206,6 +206,12 @@ def main(binary):
         check(st == 202 and doc["stopping"], "stop a process through FastCGI")
         p.call("PUT", "/api/v1/session/privileges", {"enabled": []})
 
+        # Phase 9b: queue changes are audited, refusals included.
+        st, _, _ = p.call("POST", "/api/v1/queues/SYS$BATCH/stop")
+        check(st == 409, "Steward's start-up queue cannot be stopped through Steward")
+        st, _, doc = p.call("POST", "/api/v1/jobs/272/hold")
+        check(st == 200 and doc["done"] == "held", "hold one's own job through FastCGI")
+
         # The same headers from a peer we do not trust are ignored: the https Origin
         # no longer matches what lighttpd saw, so the request is refused.
         spoof = Client(addr, remote="198.51.100.1", extra=npm)
@@ -245,6 +251,9 @@ def main(binary):
         check('action="process-stop" target="00007530 \\"WEBMASTER\\" WEBMASTER" outcome="ok"' in log and
               'action="process-stop" target="00007500 \\"STEWARD_19300\\" STEWARD" outcome="refused"' in log,
               "stops and refused stops are audited")
+        check('action="queue-stop" target="SYS$BATCH" outcome="refused"' in log and
+              'action="job-hold" target="272 \\"REPORT\\" STEWARD_ADM" outcome="ok"' in log,
+              "queue and job changes are audited")
         check("test-pass" not in log and "admin-pass" not in log and "Phase3-" not in log and "Phase4-" not in log and "expired-pass" not in log,
               "no password reaches the audit log (sign-in, set, change)")
         check('action="password-set" target="EXPIRED" outcome="ok" detail="pre-expired"' in log and
