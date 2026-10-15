@@ -1,13 +1,30 @@
-// queues.js - batch and print queues, read-only (Phase 9, D17).
+// queues.js - batch and print queues (Phase 9, D17).
 //
 // The queues as SHOW QUEUE lists them, a queue with its jobs as SHOW QUEUE/ALL/FULL,
 // and a job as SHOW ENTRY/FULL. It runs as you, and the queue manager decides: a job
 // you may not read is listed by entry and status only, "inaccessible", as at a
 // terminal.
+//
+// Changes (9b): hold, release and delete a job; stop and start a queue. The queue
+// manager decides who may; Steward refuses only to stop SYS$BATCH and the queues it
+// feeds (its pool starts there at boot). Deleting and stopping are confirmed first.
 
 import { api, ApiError } from './api.js';
-import { h } from './dom.js';
-import { vmsDate, refusal } from './fmt.js';
+import { h, toast } from './dom.js';
+import { vmsDate, refusal, vmsMessage, problemText } from './fmt.js';
+import { dialog } from './edit.js';
+
+// Run a change; on success tell and redraw, on refusal say why in OpenVMS's words.
+async function change(ctx, run, message) {
+  try {
+    await run();
+    toast(message);
+    ctx.refresh();
+  } catch (err) {
+    if (err instanceof ApiError && err.status === 401) { ctx.authLost(); return; }
+    toast(problemText(err), 'error');
+  }
+}
 
 const queueHref = (name) => `#/queues/${encodeURIComponent(name)}`;
 const jobHref = (entry) => `#/queues/entry/${entry}`;
@@ -68,10 +85,23 @@ export async function queueView(ctx, name) {
       h('td', { class: 'mono' }, String(j.entry)),
       h('td', { colspan: 2 }, '(inaccessible)'),
       h('td', {}, tags(j.status)), h('td', {}, '—'))));
+  const stopped = q.status.includes('stopped');
+  const stopQueue = () => dialog(`Stop ${q.name}`, h('div', {},
+    h('p', {}, `${q.name} will be stopped, as STOP/QUEUE does: jobs already running are left to finish, and no new job starts until it is started again.`)),
+  [{ label: 'Stop', primary: true, danger: true, run: async () => {
+    await api.stopQueue(q.name);
+    toast(vmsMessage('I', 'STOPPED', `queue ${q.name} stopped`));
+    ctx.refresh();
+    return true;
+  } }]);
   return [
     back('#/queues', 'Queues'),
     h('div', { class: 'titlebar' }, h('h2', { class: 'mono' }, q.name),
-      h('button', { type: 'button', onclick: () => ctx.refresh() }, 'Refresh')),
+      h('div', { class: 'actions' },
+        h('button', { type: 'button', onclick: () => ctx.refresh() }, 'Refresh'),
+        q.generic ? null : (stopped
+          ? h('button', { type: 'button', onclick: () => change(ctx, () => api.startQueue(q.name), vmsMessage('I', 'STARTED', `queue ${q.name} started`)) }, 'Start')
+          : h('button', { type: 'button', class: 'danger', onclick: stopQueue }, 'Stop…')))),
     q.description ? h('p', { class: 'muted' }, q.description) : null,
     h('div', { class: 'card' }, h('dl', { class: 'facts' },
       h('dt', {}, 'Kind'), h('dd', {}, `${q.generic ? 'generic ' : ''}${q.kind}`),
@@ -97,10 +127,24 @@ async function jobView(ctx, entry) {
     return [back('#/queues', 'Queues'), h('h2', { class: 'mono' }, `Entry ${entry}`),
       refusal(err, err instanceof ApiError && err.status === 403 ? 'The queue manager lets you read your own jobs, your UIC group\'s where the queue allows it, and anyone\'s with SYSPRV.' : null)];
   }
+  const executing = j.status.includes('executing');
+  const holding = j.status.includes('holding');
+  const deleteJob = () => dialog(`Delete ${j.name}`, h('div', {},
+    h('p', {}, `Entry ${j.entry} will be deleted from ${j.queue}, as DELETE/ENTRY does.${executing ? ' It is running: it is stopped.' : ''}`)),
+  [{ label: 'Delete', primary: true, danger: true, run: async () => {
+    await api.deleteJob(j.entry);
+    toast(vmsMessage('I', 'DELETED', `entry ${j.entry} deleted`));
+    location.hash = queueHref(j.queue);
+    return true;
+  } }]);
   return [
     back(queueHref(j.queue), j.queue),
     h('div', { class: 'titlebar' }, h('h2', { class: 'mono' }, `${j.name}  (entry ${j.entry})`),
-      h('button', { type: 'button', onclick: () => ctx.refresh() }, 'Refresh')),
+      h('div', { class: 'actions' },
+        h('button', { type: 'button', onclick: () => ctx.refresh() }, 'Refresh'),
+        holding ? h('button', { type: 'button', onclick: () => change(ctx, () => api.releaseJob(j.entry), vmsMessage('I', 'RELEASED', `entry ${j.entry} released`)) }, 'Release') : null,
+        !holding && !executing ? h('button', { type: 'button', onclick: () => change(ctx, () => api.holdJob(j.entry), vmsMessage('I', 'HELD', `entry ${j.entry} held`)) }, 'Hold') : null,
+        h('button', { type: 'button', class: 'danger', onclick: deleteJob }, 'Delete…'))),
     h('div', { class: 'card' }, h('dl', { class: 'facts' },
       h('dt', {}, 'Username'), h('dd', { class: 'mono' }, j.username),
       h('dt', {}, 'UIC'), h('dd', { class: 'mono' }, j.uic),

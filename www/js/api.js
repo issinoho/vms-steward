@@ -83,6 +83,12 @@ export const api = {
   queues: () => call('GET', 'queues'),
   queue: (name) => call('GET', `queues/${encodeURIComponent(name)}`),
   job: (entry) => call('GET', `jobs/${encodeURIComponent(entry)}`),
+  // Phase 9b: changes, as SET ENTRY/HOLD and /RELEASE, DELETE/ENTRY, STOP and START/QUEUE.
+  holdJob: (entry) => call('POST', `jobs/${encodeURIComponent(entry)}/hold`),
+  releaseJob: (entry) => call('POST', `jobs/${encodeURIComponent(entry)}/release`),
+  deleteJob: (entry) => call('DELETE', `jobs/${encodeURIComponent(entry)}`),
+  stopQueue: (name) => call('POST', `queues/${encodeURIComponent(name)}/stop`),
+  startQueue: (name) => call('POST', `queues/${encodeURIComponent(name)}/start`),
   // Phase 2: users and rights identifiers, read-only. Lists take
   // { filter, after, limit } (and type for identifiers) and return { ..., next }.
   users: (q) => call('GET', `users${query(q)}`),

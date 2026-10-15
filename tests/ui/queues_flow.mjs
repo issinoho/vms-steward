@@ -45,6 +45,33 @@ try {
   root = await render(queueView(ctx(me), 'entry/141'));
   say(/NOPRIV/.test(root.querySelector('pre.vmsmsg')?.textContent || '') && /SYSPRV reads|anyone's with SYSPRV/.test(root.textContent),
       'an inaccessible job: NOPRIV, with the hint');
+  // 9b: release one's own held job; stop X86VMS_BATCH refused as a start-up queue.
+  W.HTMLDialogElement.prototype.showModal = function () { this.open = true; };
+  W.HTMLDialogElement.prototype.close = function () { this.open = false; this.dispatchEvent(new W.Event('close')); };
+  const tick = (ms = 300) => new Promise((r) => setTimeout(r, ms));
+  let refreshed = 0;
+  const c2 = { me, touched() {}, refresh() { refreshed++; }, authLost() {} };
+  root = await render(queueView(c2, 'entry/269'));
+  document.body.append(root);
+  [...root.querySelectorAll('.titlebar button')].find((b) => b.textContent === 'Release').click();
+  await tick();
+  let j = await api.job('269');
+  say(j.status.includes('pending') && refreshed === 1 && [...document.querySelectorAll('.toast')].some((t) => /released/.test(t.textContent)),
+      'Release on its own held job: released, told, redrawn', j.status);
+  root.remove();
+  await api.signOut();
+  await api.signIn('STEWARD_ADM', 'admin-pass');
+  const me2 = await api.setPrivileges(['SYSPRV']);
+  root = await render(queueView({ ...c2, me: me2 }, 'X86VMS_BATCH'));
+  document.body.append(root);
+  [...root.querySelectorAll('.titlebar button')].find((b) => b.textContent === 'Stop…').click();
+  await tick();
+  const dlg = document.querySelector('dialog');
+  dlg.querySelector('form').dispatchEvent(new W.Event('submit', { cancelable: true }));
+  await tick();
+  say(dlg.isConnected && /start-up queue|STARTUPQUEUE/i.test(dlg.querySelector('pre.vmsmsg')?.textContent || ''),
+      "Stop on X86VMS_BATCH with SYSPRV: refused as Steward's start-up queue, in the dialog", dlg.querySelector('pre.vmsmsg')?.textContent);
+  dlg.close();
 } catch (e) {
   say(false, 'no exception', e.stack);
 }
