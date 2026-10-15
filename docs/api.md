@@ -708,6 +708,25 @@ One job, as `SHOW ENTRY/FULL`: the above, plus `after`, `priority`, `account`, `
 `log` and `files`. `403` with NOPRIV for a job you may not read, `404` with NOSUCHENT
 for none, `400` for an entry that is not 1 to 9 digits.
 
+### Changes (Phase 9b)
+
+As you, by `$SNDJBC`; the queue manager decides, as for SET ENTRY, DELETE/ENTRY and
+STOP and START/QUEUE at a terminal. Each needs the CSRF header and is audited, refusals
+included.
+
+- `POST api/v1/jobs/{entry}/hold`, `POST api/v1/jobs/{entry}/release`, `DELETE
+  api/v1/jobs/{entry}`: `200 {"entry": 269, "done": "held"}` (`released`, `deleted`).
+  You may change your own jobs; your group may read them but not change them; SYSPRV
+  may change any here. Holding a running job is `409` with JBC's EXECUTING. Deleting a
+  running job stops it.
+- `POST api/v1/queues/{name}/stop`, `POST api/v1/queues/{name}/start`: `200` with the
+  queue as `GET api/v1/queues` gives it. Here they need SYSPRV (the queues give system
+  `M`), or OPER.
+- **`409` for SYS$BATCH and the queues it feeds**, whatever your privileges: Steward's
+  pool is started at boot by a job there. Starting a queue is never refused by Steward.
+- `403` with JBC NOPRIV where the queue manager refuses; `404` with NOSUCHENT or
+  NOSUCHQUE.
+
 ## Coming
 
-Holding, releasing and deleting a job, and stopping and starting a queue (Phase 9b).
+System parameters, then licences (`docs/PLAN.md`).

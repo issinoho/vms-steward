@@ -105,6 +105,10 @@ viewer holds, to stop SYS$BATCH (or what it translates to in the system table) a
 execution queues it feeds: STEWARD$STARTUP submits the pool's start job there (the
 user's choice, 2026-10-15, after OPCOM). Starting a queue is never refused.
 
+**Built (2026-10-15):** the five endpoints, the buttons and dialogs. Tests: 358 unit,
+56 API, 23 UI; on x86 `phase9b_live.py` 14 ok, 0 failed (held jobs and a test queue
+it created and deleted; the start-up queues asked to stop only as STEWARD_TEST).
+
 **Exit (9b):**
 - Each change matches SET ENTRY/HOLD and /RELEASE, DELETE/ENTRY, STOP/QUEUE and
   START/QUEUE: what the queue manager refuses is refused, what it allows happens.

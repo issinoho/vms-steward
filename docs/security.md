@@ -80,6 +80,7 @@ browser ─(1)─ nginx proxy manager ─(2)─ lighttpd ─(3)─ STEWARD.EXE �
 | Steward's serving process is never shown as the viewer's | `st_plat_proc_enum` and `_get` leave out (404) the calling process | `phase8_live.py` "nothing switched on: none"; unit "only the viewer's own processes" |
 | Steward's pool is never stopped through Steward | `svc_process_stop` refuses the service account's processes; `st_plat_proc_stop` the serving one | unit "Steward's own pool process: refused"; API suite; `phase8b_live.py` (on a test job named as the account) |
 | A job the viewer may not read shows no more than its entry and status | `job_from_raw` (VMS) clears the rest when `QUI$M_JOB_INACCESSIBLE` is set; `st_plat_job_get` refuses it | unit "another group's inaccessible"; `phase9_live.py` "entry and status only" |
+| Steward's start-up queues are never stopped through Steward | `queue_change` refuses `st_plat_startup_queues` before `$SNDJBC` | unit "a queue SYS$BATCH feeds: refused"; `phase9b_live.py` (asked as STEWARD_TEST only) |
 
 ## Phase 2 additions (users and identifiers, read-only)
 
@@ -341,6 +342,13 @@ browser ─(1)─ nginx proxy manager ─(2)─ lighttpd ─(3)─ STEWARD.EXE �
 - **Input:** queue names without wildcards (`$GETQUI` would take them as a search),
   entry numbers of 1 to 9 digits; walks bounded (an empty queue answers NOSUCHJOB, which
   ends the walk: a probe once looped on it).
+- **Changes (9b):** hold, release and delete a job, stop and start a queue, by
+  `$SNDJBC` under the persona, with CSRF, audited. The probe (`probes/probe_sndjbc.c`)
+  showed the queue manager judges the persona: JBC NOPRIV from an all-privileged
+  process; the group may read a job but not change it. Steward refuses (409), before
+  the queue manager is asked and whatever the viewer holds, to stop SYS$BATCH, what it
+  names in the system table, and the queues it feeds: the pool is started at boot by a
+  job there (the user's choice, after OPCOM). Starting is never refused.
 - **New data shown:** queue names, descriptions and states (public to every user at a
   terminal), and the names, owners and files of jobs the viewer may read. Job and file
   names are set by their owners and reach the page only through the JSON writer and
