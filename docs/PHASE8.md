@@ -1,6 +1,6 @@
 # Phase 8: processes
 
-8a (read-only) closed 2026-10-15; 8b (stopping) next.
+8a (read-only) and 8b (stopping) closed 2026-10-15. Phase 8 is closed.
 
 Read-only first (8a), then stopping a process (8b), as for users and logical names.
 Design: DECISIONS D16.
@@ -135,4 +135,25 @@ Kit T0.7-1, built by `tools/kit.sh x86` (326 native checks), SHA-256
 - Steward's pool can never be stopped through Steward.
 - Every stop is audited.
 - Browser checks (the user's); the security gate, with a review of 8a and 8b.
+
+## 8b closed (2026-10-15)
+
+On the installed kit T0.7-2 (SHA-256
+`143a769ce5b0f212306f09311225afc584445f50ca8c64a95c9f802d709405c5`):
+
+| Criterion | Shown by | State |
+|---|---|---|
+| A stop matches STOP/ID | `phase8b_live.py` 11 ok; browser: BATCH_249 stopped by STEWARD_ADM with GROUP | done |
+| What OpenVMS refuses is refused | NOPRIV without GROUP (live) | done |
+| Steward's pool never stopped through Steward | browser: `STEWARD_19301` refused; live: a busy worker (persona held) refused by its image | done |
+| System processes never stopped through Steward (added after OPCOM was stopped in the first check) | browser: OPCOM shows no Stop; live: a job counted as system refused; OPCOM `"system": true` | done |
+| Every stop audited | audit log on x86, the API suite | done |
+| Security gate | security.md Phase 8 sections, invariants and four audit records; an independent review of 8a and 8b | done |
+
+Found along the way: the live test stopped the real `STEWARD_19300` (the test tool's
+service account), a busy pool worker reported under the requester's name, PID
+`FFFFFFFF` as a wildcard, and OPCOM stopped in the browser check (restarted by the user
+with `@SYS$SYSTEM:STARTUP OPCOM`; it now runs as username IAIN in `[1,4]` until the
+next reboot or a restart from SYSTEM). STEWARD_ADM keeps GROUP and WORLD authorized
+for testing.
 
