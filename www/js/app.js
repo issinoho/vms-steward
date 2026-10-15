@@ -12,6 +12,7 @@ import { dashboardView, stopDashboard } from './dashboard.js';
 import { accessView } from './access.js';
 import { logicalsView } from './logicals.js';
 import { processesView, processView } from './processes.js';
+import { queuesView, queueView } from './queues.js';
 
 const app = document.getElementById('app');
 let me = null;           // whoami, while signed in
@@ -26,7 +27,7 @@ const AREAS = [
   { hash: '#/access', label: 'Access history', ready: true },
   { hash: '#/logicals', label: 'Logical names', ready: true },
   { hash: '#/processes', label: 'Processes', ready: true },
-  { hash: '#/queues', label: 'Queues', phase: 'later' },
+  { hash: '#/queues', label: 'Queues', ready: true },
 ];
 
 // The theme switch (theme.js): Auto, Light, Dark in turn.
@@ -203,6 +204,7 @@ const VIEWS = {
   access: (ctx) => accessView(ctx),
   logicals: (ctx) => logicalsView(ctx),
   processes: (ctx, pid) => (pid ? processView(ctx, pid) : processesView(ctx)),
+  queues: (ctx, name) => (name ? queueView(ctx, name) : queuesView(ctx)),
 };
 
 let routeSeq = 0;
