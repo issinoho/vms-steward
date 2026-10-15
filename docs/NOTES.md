@@ -223,4 +223,7 @@ browser could reuse a module it had cached on its own (Last-Modified) heuristic.
 "Modify executive…" then loaded the outermost (user) definition, and the audit log
 shows user-mode defines. The server was serving the new `api.js` (checked with
 curl). The static files now carry `Cache-Control: no-cache`, so the browser asks
-again each time and gets a 304 if nothing changed.
+again each time and gets a 304 if nothing changed. On x86 the user installed the edited
+`STEWARD.CONF;4` (`;3` kept as the way back) and restarted lighttpd; afterwards
+`x86.issinoho.com` sent `Cache-Control: no-cache` on `/js/api.js`, and the page, the
+health check and the board on port 80 answered 200.
