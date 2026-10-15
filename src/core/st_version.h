@@ -6,7 +6,7 @@
 #ifndef ST_VERSION_H
 #define ST_VERSION_H
 
-#define ST_VERSION      "0.7.0"
-#define ST_PCSI_VERSION "T0.7-0"
+#define ST_VERSION      "0.7.1"
+#define ST_PCSI_VERSION "T0.7-1"
 
 #endif
