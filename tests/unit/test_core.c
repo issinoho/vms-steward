@@ -1625,6 +1625,13 @@ static void test_process_stop(void)
     call("DELETE", "/api/v1/processes/00007502", adm, NULL, &b);
     CHECK(b.resp.status == 409, "and with WORLD");
     st_resp_free(&b.resp);
+    call("DELETE", "/api/v1/processes/0000040B", adm, NULL, &b);
+    CHECK(b.resp.status == 409 && strstr(b.resp.body.data, "system-process"),
+          "a system process (OPCOM, [1,4]): refused with WORLD, as the user decided after the 8b check");
+    st_resp_free(&b.resp);
+    call("GET", "/api/v1/processes/0000040B", adm, NULL, &b);
+    CHECK(b.resp.status == 200 && strstr(b.resp.body.data, "\"system\":true"), "still there, and marked a system process");
+    st_resp_free(&b.resp);
     call("DELETE", "/api/v1/processes/00007530", adm, NULL, &b);
     CHECK(b.resp.status == 202, "with WORLD: stopped");
     st_resp_free(&b.resp);

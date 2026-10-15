@@ -271,3 +271,13 @@ and a guard by username alone would let anyone with WORLD (or GROUP in the servi
 account's real group) stop it. Steward now also refuses any process running its own
 image. Observed with `probe_jpi` against the held PID.
 
+**The browser check stopped OPCOM** (Phase 8b, 2026-10-15). STEWARD_ADM, with WORLD
+switched on, opened OPCOM's page, pressed Stop and typed its name; OpenVMS allowed
+`$DELPRC` (audit: `process-stop target="0000040B \"OPCOM\" SYSTEM" outcome="ok"`).
+D16 refused only Steward's own processes then. The user chose to refuse system
+processes (UIC group up to MAXSYSGROUP, read with `$GETSYI` at start-up: 8 on x86)
+whatever the viewer holds. OPCOM is restarted with `@SYS$SYSTEM:STARTUP OPCOM`
+(OPCOM is one of STARTUP.COM's requests), run by the user. Also seen: X86VMS_BATCH
+ran three of four test jobs at once, other jobs taking the fourth slot; the live
+test now waits for the last one.
+

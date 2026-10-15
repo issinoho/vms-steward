@@ -459,9 +459,13 @@ small: 42 processes in 0.01 s on x86).
     request is reported under the requester's name: the Phase 8 review, NOTES.md),
     whatever privileges the viewer has. Stopping the pool from the
     browser would cut off the browser; at a terminal it stays possible.
-  - **No other policy.** A process OpenVMS lets the viewer stop is stoppable, system
-    processes included, as at a terminal. The browser asks for the process name to be
-    typed before it sends the stop, as for deleting a user, and names system processes
-    (UIC group 1 to 7) as such.
+  - **System processes are refused** (409, 2026-10-15, the user's decision): any
+    process in a UIC group up to SYSGEN's MAXSYSGROUP (8 here: OPCOM, JOB_CONTROL,
+    the ACPs, AUDIT_SERVER), whatever the viewer holds. In the 8b browser check
+    STEWARD_ADM with WORLD stopped OPCOM, which D16 then allowed ("no other policy").
+    At a terminal it stays possible. Other users' servers (lighttpd, MariaDB, TCP/IP
+    services outside the system groups) stay stoppable as OpenVMS allows. The browser
+    asks for the process name to be typed, as for deleting a user, and offers no Stop
+    on a system process.
   - **Audited:** PID, process name, username and OpenVMS's answer.
 

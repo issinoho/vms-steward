@@ -658,6 +658,8 @@ own processes, your group's with GROUP and anyone's with WORLD. Needs the CSRF h
 - `409` for a process of Steward's own: its account's, or any running Steward's image
   (a pool worker busy with someone's request is reported under their name), whatever
   your privileges. Use `STEWARD$CONTROL` at a terminal.
+- `409` for a system process (UIC group up to SYSGEN's MAXSYSGROUP), whatever your
+  privileges. A process's `system` field says which these are.
 - `400` for a PID not in OpenVMS's form (`FFFFFFFF` included: OpenVMS's wildcard).
 - `403` with NOPRIV and `404` with NONEXPR, as for reading.
 - Audited with the PID, process name and username, refusals included.

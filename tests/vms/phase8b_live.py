@@ -24,8 +24,9 @@ def vms(*cmds):
     return subprocess.run(["tools/vms.sh", NODE, "dcl"] + list(cmds), capture_output=True,
                           encoding="latin-1").stdout.replace("\r", "")
 
-def api(user, privs, path, method="GET", own=None, image=None):
+def api(user, privs, path, method="GET", own=None, image=None, sysgroup=None):
     pre = ["define/nolog API_PROBE_SERVICE_ACCOUNT " + own] if own else []
+    pre += ["define/nolog API_PROBE_MAX_SYS_GROUP " + sysgroup] if sysgroup else []
     pre += ["define/nolog API_PROBE_SERVICE_IMAGE " + image] if image else []
     out = vms(*([AP, "define/nolog API_PROBE_AUDIT " + AUDIT] + pre +
                 ['ap %s %s "%s" "%s"' % (user, privs, path, method)]))
@@ -61,10 +62,11 @@ def check(cond, what, extra=""):
 try:
     vms("delete/nolog " + AUDIT + ";*", "open/write f " + WAIT, 'write f "$ wait 00:05:00"', "close f",
         "set security/owner=STEWARD_TEST " + WAIT,
-        *["submit/user=steward_test/noprint/nolog_file/name=P8B_%d %s" % (i, WAIT) for i in (1, 2, 3)])
+        *["submit/user=steward_test/noprint/nolog_file/name=P8B_%d %s" % (i, WAIT) for i in (1, 2, 3, 4)])
     time.sleep(3)
     pids = jobs()
-    check(len(pids) == 3, "three batch jobs as STEWARD_TEST to stop", pids)
+    # The queue runs three at once here: the fourth starts once two are stopped.
+    check(len(pids) >= 3, "batch jobs as STEWARD_TEST to stop", pids)
     a, b, c = (pids + ["00000000"] * 3)[:3]
 
     st, doc = api("STEWARD_ADM", "-", "/api/v1/processes/" + a, "DELETE")
@@ -83,6 +85,20 @@ try:
     # "Steward's own" made STEWARD_TEST's for this request: refused, the job untouched.
     st, doc = api("STEWARD_ADM", "GROUP", "/api/v1/processes/" + c, "DELETE", own="STEWARD_TEST")
     check(st == 409 and exists(c), "a process of the service account: refused (409), still running", (st, doc))
+
+    # System processes (UIC group up to MAXSYSGROUP) are refused whatever the viewer
+    # holds (OPCOM was stopped in the browser check). Never tried on a real one: group
+    # 362 is named the system groups' top for this request, so a job of ours counts.
+    time.sleep(3)
+    sysjob = next((p for p in jobs() if p not in (a, b, c)), "00000000")
+    st, doc = api("STEWARD_ADM", "WORLD", "/api/v1/processes/" + sysjob, "DELETE", sysgroup="362")
+    check(st == 409 and "system-process" in json.dumps(doc) and exists(sysjob),
+          "a system process: refused (409) with WORLD, still running", (st, doc))
+    opcom = re.search(r"^O\|(\w+)", vms('ctx = ""', 'loop: pid = f$pid(ctx)', 'if pid .eqs. "" then goto done',
+        'if f$getjpi(pid, "PRCNAM") .eqs. "OPCOM" then write sys$output "O|", pid', 'goto loop', 'done:'), re.M)
+    if opcom:
+        st, doc = api("STEWARD_ADM", "WORLD", "/api/v1/processes/" + opcom.group(1))
+        check(st == 200 and doc["system"] is True, "OPCOM's page says system, from the node's MAXSYSGROUP (read only)", (st, doc and doc.get("system")))
 
     # A pool worker busy with a request holds the requester's persona and is reported
     # under their name (NOTES.md). probe_hold stands in for one: a process of the work

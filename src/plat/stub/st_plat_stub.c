@@ -659,6 +659,7 @@ int st_plat_system(st_system *s, st_err *e)
 
 const char *st_plat_service_account(void) { return "STEWARD"; }
 const char *st_plat_service_image(void) { return "STEWARD.EXE"; }
+unsigned int st_plat_max_sys_group(void) { return 8; }   /* SYSGEN's default, x86's */
 
 static int ident_value_used(unsigned int v)
 {

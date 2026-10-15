@@ -37,6 +37,7 @@ static void proc_json(st_jw *w, const st_proc *p)
     st_jw_kint(w, "buffered_io", p->bufio);
     st_jw_kint(w, "page_faults", p->pageflts);
     st_jw_kint(w, "login", p->login);
+    st_jw_kbool(w, "system", (p->uic >> 16) <= st_plat_max_sys_group());
 }
 
 typedef struct { st_jw *w; const char *filter; int n, truncated; } list_ctx;
@@ -182,6 +183,15 @@ void svc_process_stop(st_ctx *c)
         st_app_audit(c, c->session.username, "process-stop", target, "refused", "Steward's own process");
         st_resp_problem(c->resp, 409, "steward-process", "Steward's own process",
                         "Steward does not stop its own processes: that would cut off this page. Use STEWARD$CONTROL at a terminal.", 0, NULL);
+        return;
+    }
+    /* A system process (UIC group up to MAXSYSGROUP: OPCOM, JOB_CONTROL, the ACPs),
+       whatever OpenVMS would allow: the user's decision after OPCOM was stopped in
+       the 8b browser check. At a terminal it stays possible. */
+    if ((d.p.uic >> 16) <= st_plat_max_sys_group()) {
+        st_app_audit(c, c->session.username, "process-stop", target, "refused", "system process");
+        st_resp_problem(c->resp, 409, "system-process", "System process",
+                        "Steward does not stop system processes (UIC group up to MAXSYSGROUP). Use STOP/ID at a terminal if you must.", 0, NULL);
         return;
     }
     if (st_plat_proc_stop(pid, &e)) {

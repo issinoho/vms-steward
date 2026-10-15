@@ -304,6 +304,10 @@ const char *st_plat_service_account(void);
    worker busy with a request is reported under the requester's username, but its
    image does not change (NOTES.md, Phase 8b), so a stop refuses this image too. */
 const char *st_plat_service_image(void);
+/* SYSGEN's MAXSYSGROUP: UIC groups up to it are system groups (8 by default, so
+   [1,*] to [10,*] octal). Their processes are never stopped through Steward (Phase
+   8b: OPCOM was, in the browser check). */
+unsigned int st_plat_max_sys_group(void);
 
 /* ---- access history (Phase 6, D13), read as the current persona ----
 

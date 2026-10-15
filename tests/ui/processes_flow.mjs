@@ -69,12 +69,9 @@ try {
   dlg.close();
   root.remove();
   root = await render(processView(ctx(me), '0000040B'));
-  document.body.append(root);
-  dlg = await stop(root, 'OPCOMX');
-  say(dlg.isConnected && /system process/.test(dlg.textContent) && /Type the process name/.test(dlg.querySelector('pre.vmsmsg')?.textContent || ''),
-      'a system process: warned, and the wrong name refused before anything is sent', dlg.querySelector('pre.vmsmsg')?.textContent);
-  dlg.close();
-  root.remove();
+  say(![...root.querySelectorAll('.titlebar button')].some((b) => b.textContent === 'Stop…') &&
+      /System process: Steward does not stop it/.test(root.textContent),
+      'a system process (OPCOM): no Stop button, and why');
   root = await render(processView(ctx(me), '00007530'));
   document.body.append(root);
   dlg = await stop(root, 'WEBMASTER');

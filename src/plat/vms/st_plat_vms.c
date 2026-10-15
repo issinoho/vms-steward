@@ -239,6 +239,7 @@ static unsigned int sysprv[2] = { PRV$M_SYSPRV, 0 };
 
 static char service_account[13];
 static char service_image[64];          /* st_plat_service_image */
+static unsigned int max_sys_group = 8;  /* SYSGEN MAXSYSGROUP, read at start-up */
 static char steward_log[256];       /* Steward's audit log, read back for access history */
 /* The D14 helper procedure, fixed: never taken from a logical name the service would
    translate through its group or system tables, which others could define. */
@@ -306,6 +307,7 @@ void st_plat_vms_test_helper(const char *path)
 
 const char *st_plat_service_account(void) { return service_account; }
 const char *st_plat_service_image(void) { return service_image; }
+unsigned int st_plat_max_sys_group(void) { return max_sys_group; }
 
 /* For tests/vms/api_probe.c only. The probe runs in the work account, so it would
    take that for the service account, and "Steward's own processes" would mean the
@@ -323,6 +325,13 @@ void st_plat_vms_test_svc_acct(const char *name)
 void st_plat_vms_test_svc_img(const char *image)
 {
     st_proc_image_name(image, service_image, sizeof service_image);
+}
+
+/* For tests/vms/api_probe.c only, likewise: MAXSYSGROUP, so a test can make one of its
+   own processes count as a system process rather than try a real one. */
+void st_plat_vms_test_svc_grp(unsigned int group)
+{
+    max_sys_group = group;
 }
 
 int st_plat_init(const st_plat_config *cfg, st_err *e)
@@ -349,6 +358,12 @@ int st_plat_init(const st_plat_config *cfg, st_err *e)
             st_proc_image_name(img, service_image, sizeof service_image);
         }
         (void) it;
+        {   /* MAXSYSGROUP: kept at the default 8 if it cannot be read */
+            unsigned int v = 0;
+            item(&it3[0], SYI$_MAXSYSGROUP, &v, 4, 0);
+            item_end(&it3[1]);
+            if ((sys$getsyiw(0, 0, 0, it3, iosb, 0, 0) & 1) && (iosb[0] & 1)) max_sys_group = v;
+        }
     }
     /* And SYSPRV off, whatever the account's defaults say. */
     sys$setprv(0, (void *) sysprv, 0, 0);

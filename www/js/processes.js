@@ -5,8 +5,9 @@
 // with GROUP switched on, everyone's with WORLD. The process serving your request is
 // never listed: under your identity it would show as one of yours.
 //
-// Stopping (8b) is STOP/ID, as you: OpenVMS decides, and Steward refuses only its own
-// pool. The process name must be typed to confirm, as for deleting a user.
+// Stopping (8b) is STOP/ID, as you: OpenVMS decides, and Steward refuses its own pool
+// and system processes (UIC group up to MAXSYSGROUP). The process name must be typed
+// to confirm, as for deleting a user.
 
 import { api, ApiError } from './api.js';
 import { h, mount, toast } from './dom.js';
@@ -83,15 +84,11 @@ export async function processesView(ctx) {
   ];
 }
 
-// A system process: UIC group 1 to 7 (octal), as SYSGEN's MAXSYSGROUP has it by default.
-const systemProcess = (p) => /^\[[1-7],/.test(p.uic);
-
 // Stop p, as STOP/ID; done() follows a stop OpenVMS accepted.
 function stopDialog(p, done) {
   const confirm = h('input', { required: true, spellcheck: 'false', placeholder: p.name, class: 'mono' });
   dialog(`Stop ${p.name}`, h('div', {},
     h('p', {}, `Process ${p.pid}, ${p.username}${p.image ? `, running ${imageName(p.image)}` : ''}, will be stopped as STOP/ID does: its image ends and the process is deleted.`),
-    systemProcess(p) ? h('p', { class: 'warn-text' }, `${p.name} is a system process (UIC ${p.uic}). Stopping it can stop a service the whole system relies on.`) : null,
     field(`Type ${p.name} to confirm`, confirm)),
   [{ label: 'Stop', primary: true, danger: true, run: async () => {
     if (confirm.value.trim() !== p.name) {
@@ -124,7 +121,9 @@ export async function processView(ctx, pid) {
     h('div', { class: 'titlebar' }, h('h2', { class: 'mono' }, `${p.name}`),
       h('div', { class: 'actions' },
         h('button', { type: 'button', onclick: () => ctx.refresh() }, 'Refresh'),
-        h('button', { type: 'button', class: 'danger', onclick: () => stopDialog(p, () => { location.hash = '#/processes'; }) }, 'Stop…'))),
+        p.system
+          ? h('span', { class: 'muted small' }, 'System process: Steward does not stop it')
+          : h('button', { type: 'button', class: 'danger', onclick: () => stopDialog(p, () => { location.hash = '#/processes'; }) }, 'Stop…'))),
     h('div', { class: 'card' }, h('dl', { class: 'facts' },
       h('dt', {}, 'PID'), h('dd', { class: 'mono' }, p.pid),
       h('dt', {}, 'Username'), h('dd', { class: 'mono' }, p.username),
