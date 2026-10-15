@@ -120,6 +120,15 @@ the service account's processes refused (409); audited; the browser asks for the
 process name to be typed first. Also from 8a's check: a line under the list saying
 the serving process is not listed.
 
+**Built (2026-10-15):** `DELETE api/v1/processes/{pid}`, the Stop dialog, and the
+review's fixes (Steward's image refused too; FFFFFFFF refused). Tests: 326 unit, 53
+API, 17 UI; on x86 `phase8b_live.py` 10 ok, 0 failed. Its first run stopped the real
+`STEWARD_19300` (the test tool's service account is the work account; NOTES.md):
+restarted at once, and the test no longer names a pool process.
+
+Kit T0.7-1, built by `tools/kit.sh x86` (326 native checks), SHA-256
+`0dca180314ea5b4137598aad2d233bda249bd83f47af8b17d72ac20e3c8d6214`.
+
 **Exit (8b):**
 - A stop matches STOP/ID: what OpenVMS refuses is refused (NOPRIV), what it allows
   happens, for STEWARD_TEST (its own) and STEWARD_ADM with GROUP.
