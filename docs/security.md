@@ -77,6 +77,7 @@ browser ─(1)─ nginx proxy manager ─(2)─ lighttpd ─(3)─ STEWARD.EXE �
 | No helper process outlives its request | `st_plat_lnm_list` deletes it on timeout or error | `phase7_live.py` "no helper process left behind" |
 | An inner mode is never quietly made user mode | `st_plat_lnm_define` and `_deassign` refuse supervisor and executive without SYSNAM, before OpenVMS is asked | unit "executive mode without SYSNAM"; `phase7b_live.py` "the user-mode name is untouched" |
 | A logical name change never records its equivalences | `svc_logical_define`, `svc_logical_deassign` | API suite "without the equivalence"; `phase7b_live.py` "never an equivalence" |
+| Steward's serving process is never shown as the viewer's | `st_plat_proc_enum` and `_get` leave out (404) the calling process | `phase8_live.py` "nothing switched on: none"; unit "only the viewer's own processes" |
 
 ## Phase 2 additions (users and identifiers, read-only)
 
@@ -281,6 +282,31 @@ browser ─(1)─ nginx proxy manager ─(2)─ lighttpd ─(3)─ STEWARD.EXE �
   the service's own context when it starts (outer-mode system names, which need
   SYSPRV, and names in the service account's group table): keep that account in a
   UIC group of its own.
+
+## Phase 8 additions (processes, read-only; D16)
+
+- **New endpoints:** `GET api/v1/processes` and `GET api/v1/processes/{pid}` (api.md).
+  They need a session, run under the persona, and change nothing.
+- **New system services, under the persona:** `$GETJPI` (wildcard and by PID) and
+  `$IDTOASC` for the rights list. In-process: no helper.
+- **OpenVMS decides who sees what.** The probe (`probes/probe_jpi.c`) showed `$GETJPI`
+  checks the persona, not the process: STEWARD_TEST's persona saw only its own
+  process from a process holding every privilege, STEWARD_ADM's saw group 362 with
+  GROUP and all 42 with WORLD.
+- **The serving process is never shown.** Under the persona `$GETJPI` reports it with
+  the viewer's username and UIC; it is left out of the list and refused by PID (404),
+  so no viewer sees Steward's process presented as theirs.
+- **Refusals as OpenVMS gives them.** NOPRIV (403) for a process the viewer may not see
+  and NONEXPR (404) for none: whether a PID exists is told, as `SHOW PROCESS/ID=` tells
+  it at a terminal.
+- **New data shown:** process names, images, terminals, privileges, rights and quotas
+  of processes the viewer may already see at a terminal. Process names and image
+  names are set by their owners and reach the page only through the JSON writer and
+  `dom.js`.
+- **Steward's own pool is visible** to anyone with GROUP in the service account's
+  group, or WORLD, as at a terminal. On x86 that group is shared with the test
+  accounts; README.VMS advises a group of its own. 8b (stopping) will refuse the
+  service account's processes.
 
 ## Phase 5: load run and review (2026-10-11)
 

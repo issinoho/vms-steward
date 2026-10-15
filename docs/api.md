@@ -597,6 +597,53 @@ required. The answer names the modes removed:
 
 `404` with `NOLOGNAM` if the name is at none of those modes.
 
+## Processes (Phase 8, D16): read-only
+
+Read **as you**, by `$GETJPI` in-process: you see your own processes, your UIC
+group's with GROUP switched on, and everyone's with WORLD, as at a terminal. The
+process serving your request is never listed: under your identity it would show as
+one of yours. A PID is 8 hexadecimal digits as `SHOW SYSTEM` lists it, with or
+without `%X`.
+
+### `GET api/v1/processes?filter=`
+
+```json
+{"processes": [
+   {"pid": "00007500", "name": "STEWARD_19300", "username": "STEWARD", "uic": "[362,2]",
+    "state": "LEF", "priority": 6, "base_priority": 4, "kind": "detached",
+    "terminal": "", "image": "X86VMS$DKA0:[SYS0.SYSCOMMON.STEWARD.][BIN]STEWARD.EXE;1",
+    "cpu_ms": 1230, "direct_io": 213, "buffered_io": 1720, "page_faults": 979,
+    "login": 1792065804}],
+ "truncated": false}
+```
+
+- `filter`: up to 31 printable characters, matched against the process name and the
+  username. With `*` or `%` it is a DCL pattern; without, it matches anywhere.
+- `state` is the scheduling state as `SHOW SYSTEM` names it (`LEF`, `HIB`, `COM`,
+  `CUR`, ...). `kind` is `interactive`, `batch`, `network`, `detached` or
+  `subprocess`.
+- At most 4,000 processes; past that, `truncated` is true.
+
+### `GET api/v1/processes/{pid}`
+
+The above, plus what `SHOW PROCESS/ALL` shows:
+
+```json
+{"pid": "00007500", ..., "master": "00007500", "subprocesses": 0,
+ "working_set_size": 4096, "working_set_pages": 1800,
+ "current_privileges": ["IMPERSONATE", "TMPMBX", "NETMBX"],
+ "authorized_privileges": ["IMPERSONATE", "TMPMBX", "NETMBX", "SYSPRV"],
+ "rights": ["STEWARD_OPS"],
+ "quotas": {"astlm": {"limit": 300, "left": 270}, "biolm": {...}, "diolm": {...},
+            "fillm": {...}, "prclm": {...}, "tqelm": {...}, "enqlm": {...},
+            "bytlm": {...}, "pgflquota": {...}}}
+```
+
+- `owner` is there for a subprocess only.
+- `403` with NOPRIV for a process you may not see, and `404` with NONEXPR for one that
+  does not exist. That is what `SHOW PROCESS/ID=` says, and reveals no more.
+- `400` for a PID not in that form.
+
 ## Coming
 
-Processes and queues (`docs/PLAN.md`).
+Stopping a process (Phase 8b), then queues (`docs/PLAN.md`).

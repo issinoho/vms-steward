@@ -54,6 +54,23 @@ Suspend, resume and priority were not chosen.
 characters is refused rather than cut, and the tables list says when it was cut
 short (`truncated`).
 
+## Built (8a, 2026-10-15)
+
+- **Core:** `src/core/st_proc.{h,c}`: PIDs in OpenVMS's form, state names and kinds from
+  constants taken from the node's STATEDEF and JPIDEF.
+- **Platform:** `st_plat_proc_enum` (wildcard `$GETJPI`, NOPRIV and SUSPENDED skipped,
+  the serving process left out) and `st_plat_proc_get` (one PID, with privileges,
+  rights and quotas). The stub has x86's shape of processes.
+- **API:** the two endpoints (api.md). **View:** `www/js/processes.js`.
+- **Tests:** 308 unit checks (Linux and x86); `make ui-test` 14 ok; on x86
+  `tests/vms/phase8_live.py` 10 ok, 0 failed: with WORLD the same 35 processes as
+  `F$PID`/`F$GETJPI` (ssh and work-account processes left out as transient), each
+  with DCL's name, username, UIC and base priority; GROUP shows only group 362;
+  STEWARD_TEST sees none (its only process is the serving one); NOPRIV and NONEXPR
+  as `SHOW PROCESS/ID`.
+- From the Phase 7 review: an over-long plain logical-name filter refused, the tables
+  list's `truncated`.
+
 ## Exit (8a)
 
 - The list and one process match `SHOW SYSTEM` and `SHOW PROCESS/ALL`, for STEWARD_TEST
