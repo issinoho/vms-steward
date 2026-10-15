@@ -116,6 +116,10 @@ times of all ones treated as none. Open: `QUI$_GENERIC_TARGET` has only been see
 one target (the bare name); the parser takes commas, spaces or NULs between several,
 but the real form for several is unprobed (it would need test queues).
 
+Kit T0.8-1, built by `tools/kit.sh x86` (365 native checks), SHA-256
+`eb286ab0c9f91c0f443175fad39b224d85bcbea68f3033ef849927a42006e972`, for the browser
+checks.
+
 **Exit (9b):**
 - Each change matches SET ENTRY/HOLD and /RELEASE, DELETE/ENTRY, STOP/QUEUE and
   START/QUEUE: what the queue manager refuses is refused, what it allows happens.
