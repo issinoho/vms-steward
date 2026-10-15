@@ -42,7 +42,9 @@ penetration test are still to come ([`docs/REVIEW-BRIEF.md`](docs/REVIEW-BRIEF.m
 | Access history: who connected, when, how (SSH, TELNET, DECnet, LAT, batch, Steward) in one view | done (Phase 6, closed 2026-10-11) |
 | Logical names: tables, names and translations, read-only | done (Phase 7a, closed 2026-10-13, 0.5.1) |
 | Logical names: define, change and deassign | done (Phase 7b, closed 2026-10-15, 0.6.2) |
-| Processes, queues, SYSGEN, licences, products, monitoring, error log, terminal | later |
+| Processes: the list and one process, read-only | done (Phase 8a, closed 2026-10-15, 0.7.0 test kit) |
+| Processes: stop a process | next (Phase 8b) |
+| Queues, SYSGEN, licences, products, monitoring, error log, terminal | later |
 
 ## Installing
 

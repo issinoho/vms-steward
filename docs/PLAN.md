@@ -170,8 +170,8 @@ browser checks and an independent review of the whole phase, released as 0.5.1. 
 define and deassign, closed 2026-10-15 on the user's browser checks, a review and the
 shadowing probe (0.6.2). See `docs/PHASE7.md`.
 
-**Phase 8: processes** (D16), started 2026-10-15: read-only (8a), then stopping a
-process (8b). See `docs/PHASE8.md`.
+**Phase 8: processes** (D16): read-only (8a) closed 2026-10-15 on the user's browser
+checks (0.7.0 test kit); stopping a process (8b) next. See `docs/PHASE8.md`.
 
 **Later areas, one at a time and each with the same read-only → modify split:** batch/print queues, system parameters, licences, installed products,
 CPU/memory monitoring, error log, and a WebSocket terminal (lighttpd `mod_wstunnel`).

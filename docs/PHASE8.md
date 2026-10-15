@@ -1,5 +1,7 @@
 # Phase 8: processes
 
+8a (read-only) closed 2026-10-15; 8b (stopping) next.
+
 Read-only first (8a), then stopping a process (8b), as for users and logical names.
 Design: DECISIONS D16.
 
@@ -82,3 +84,20 @@ checks.
 - A process the viewer may not see is refused as OpenVMS refuses it.
 - Steward's serving process is never shown under the viewer's name.
 - Browser checks (the user's); the security gate (security.md).
+
+## 8a closed (2026-10-15)
+
+On the installed kit T0.7-0, the user's browser checks:
+
+| Criterion | Shown by | State |
+|---|---|---|
+| List and one process match `SHOW SYSTEM` / `SHOW PROCESS/ALL` | `phase8_live.py` 10 ok; the user compared a process page with `SHOW PROCESS/ALL` | done |
+| STEWARD_TEST sees only its own | browser: nothing (its only process was the serving one) | done |
+| STEWARD_ADM with GROUP, with WORLD | browser: GROUP showed `STEWARD_19301` alone (`STEWARD_19300` was serving the request, so not listed); WORLD 38 processes | done |
+| A process the viewer may not see is refused as OpenVMS refuses it | browser: by PID, `%SYSTEM-F-NOPRIV` | done |
+| The serving process never shown under the viewer's name | live test and the GROUP check above | done |
+| Security gate | security.md Phase 8 section and invariant | done; review of the 8a files with 8b's |
+
+Seen in the check: which pool process is missing from a GROUP or WORLD list depends on
+which one answered. Correct, but worth saying on the page: a line under the list, in 8b.
+
