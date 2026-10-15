@@ -427,3 +427,27 @@ Alternatives not taken: letting OpenVMS downgrade the mode and reporting it afte
 (the user-mode name would already be gone); `SET PROCESS/PRIVILEGE=SYSNAM` implied for
 inner modes (D9: the session's privileges are the user's choice); a DEFINE in the D14
 helper (in-process is simpler, and the probe shows OpenVMS checks the persona).
+
+## D16. Processes: $GETJPI in-process, as the viewer; stopping by $DELPRC
+
+**Status:** 8b's scope (stop only) and the probe's account changes approved by the
+user 2026-10-15; the rest follows from the probe (`probes/probe_jpi.c`, PHASE8.md).
+Phase 8.
+
+Reading processes runs in-process under the persona, as every other request does:
+wildcard `$GETJPI` for the list, `$GETJPI` by PID for one. OpenVMS skips (NOPRIV) each
+process the persona may not see, so the list is the viewer's terminal view: their own
+processes, their group's with GROUP, everyone's with WORLD. Steward adds:
+- **Its own serving process is left out.** Under the persona it reports the viewer's
+  username and UIC, so it would show as one of theirs. The pool's other processes are
+  shown as they are (username STEWARD).
+- **Refusals as OpenVMS gives them:** NOPRIV for a process the viewer may not see
+  (403), NONEXPR for none (404), as `SHOW PROCESS/ID=` answers.
+- **Stopping (8b)** is `$DELPRC` under the persona, refused for the service account's
+  processes, confirmed in the browser and audited.
+
+Alternatives not taken: listing as the service and filtering by the viewer's rights
+(Steward would be deciding, not OpenVMS); `$PROCESS_SCAN` (filters by username,
+mode and so on in the service, but adds nothing to who may see what, and the list is
+small: 42 processes in 0.01 s on x86).
+

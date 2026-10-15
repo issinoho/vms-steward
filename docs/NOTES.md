@@ -227,3 +227,13 @@ again each time and gets a 304 if nothing changed. On x86 the user installed the
 `STEWARD.CONF;4` (`;3` kept as the way back) and restarted lighttpd; afterwards
 `x86.issinoho.com` sent `Cache-Control: no-cache` on `/js/api.js`, and the page, the
 health check and the board on port 80 answered 200.
+
+**Under a persona, $GETJPI reports the calling process as the persona** (Phase 8,
+2026-10-15). A wildcard `$GETJPI` walk from my work process (every privilege) under
+STEWARD_TEST's persona returned just one process, its own, with username
+`steward_test` (in lower case, as the persona was created) and UIC `[362,1]`; every
+other process came back NOPRIV, and the walk went on past each. With GROUP switched on
+it showed group 362 (Steward's pool among them), with WORLD all 42 processes. One PID
+the persona may not see is NOPRIV; one that does not exist is NONEXPR. Observed with
+`probes/probe_jpi.c`.
+
