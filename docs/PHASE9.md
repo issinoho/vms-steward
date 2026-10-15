@@ -55,6 +55,10 @@ that `$SNDJBC` judges the persona too. Stopping a queue Steward's own start-up u
   job or file walk after it unless `QUI$M_SEARCH_WILDCARD` is given; a missing entry is
   `JBC$_NOSUCHENT`.
 
+Kit T0.8-0 (2026-10-15), built by `tools/kit.sh x86` (343 native checks), SHA-256
+`e8fea23b2aa2849b0e320b0b82afddf004234c313912435d54deffaa9982638e`, for the browser
+checks.
+
 ## Exit (9a)
 
 - Queues, a queue's jobs and one job match `SHOW QUEUE/ALL/FULL` and `SHOW
