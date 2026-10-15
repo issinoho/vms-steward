@@ -29,6 +29,11 @@ viewer, and Steward parses its fixed columns (NOTES.md).
   account, no current value differing; SCSNODE as a string; GBLPAGES dynamic with its
   internal value; the filter; no helper left.
 
+**Shared helper rechecked (2026-10-15):** `tests/vms/phase7_live.py` with
+`PHASE7_FAILDIR`, through `helper_run`: 22 ok, 0 failed (the dead and flooding
+helpers included). A first attempt failed for want of the node: x86 dropped off the
+network for some minutes ("No route to host"; no reboot).
+
 ## Exit
 
 - The parameters match SYSGEN SHOW/ALL, for STEWARD_TEST.
