@@ -4,7 +4,7 @@ $!   @RUN_PROBES [BUILD|ALL]
 $!     BUILD  compile and link only
 $!     ALL    (default) also run probe_crypto, probe_rights and probe_uaf
 $!
-$! probe_persona, probe_setprv, probe_crelnm, probe_jpi, probe_acm and probe_acm_host need a username (and the
+$! probe_persona, probe_setprv, probe_crelnm, probe_jpi, probe_delprc, probe_acm and probe_acm_host need a username (and the
 $! acm ones a password), so
 $! they are run by hand; see the comment at the top of each source file.
 $!
@@ -32,7 +32,7 @@ $!
 $ define/process/nolog OPENSSL SSL3$INCLUDE:
 $ ccq = "/STANDARD=C99/POINTER_SIZE=32/NAMES=AS_IS/WARNINGS=ENABLE=QUESTCODE"
 $ failed = 0
-$ probes = "probe_crypto,probe_rights,probe_uaf,probe_persona,probe_acm,probe_acm_host,probe_setprv,probe_selfuai,probe_crelnm,probe_jpi"
+$ probes = "probe_crypto,probe_rights,probe_uaf,probe_persona,probe_acm,probe_acm_host,probe_setprv,probe_selfuai,probe_crelnm,probe_jpi,probe_delprc"
 $ i = 0
 $build_loop:
 $ p = f$element(i, ",", probes)

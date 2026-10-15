@@ -450,4 +450,16 @@ Alternatives not taken: listing as the service and filtering by the viewer's rig
 (Steward would be deciding, not OpenVMS); `$PROCESS_SCAN` (filters by username,
 mode and so on in the service, but adds nothing to who may see what, and the list is
 small: 42 processes in 0.01 s on x86).
+- **Stopping (8b, 2026-10-15, from `probes/probe_delprc.c`).** `DELETE
+  api/v1/processes/{pid}` calls `$DELPRC` under the persona; OpenVMS checks the
+  persona's UIC and GROUP/WORLD (the probe: NOPRIV from an all-privileged process
+  without GROUP). It answers 202: the stop is asynchronous, as STOP/ID's is.
+  - **Steward's own processes are refused** (409): any process of the service
+    account, its pool, whatever privileges the viewer has. Stopping the pool from the
+    browser would cut off the browser; at a terminal it stays possible.
+  - **No other policy.** A process OpenVMS lets the viewer stop is stoppable, system
+    processes included, as at a terminal. The browser asks for the process name to be
+    typed before it sends the stop, as for deleting a user, and names system processes
+    (UIC group 1 to 7) as such.
+  - **Audited:** PID, process name, username and OpenVMS's answer.
 

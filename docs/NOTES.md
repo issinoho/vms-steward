@@ -237,3 +237,11 @@ it showed group 362 (Steward's pool among them), with WORLD all 42 processes. On
 the persona may not see is NOPRIV; one that does not exist is NONEXPR. Observed with
 `probes/probe_jpi.c`.
 
+**$DELPRC under a persona checks the persona, and returns before the process is gone**
+(Phase 8b, 2026-10-15). Against batch jobs submitted as STEWARD_TEST (`[362,1]`) for the
+purpose, from my all-privileged process: STEWARD_ADM's persona (`[362,3]`) got NOPRIV
+with nothing switched on, and SS$_NORMAL with GROUP; STEWARD_TEST's own job could be
+stopped with nothing switched on; a PID that does not exist gave NONEXPR. Straight
+after an accepted `$DELPRC` the process still answered `$GETJPI`; a moment later it
+was gone. Observed with `probes/probe_delprc.c`; the third job was deleted by hand.
+

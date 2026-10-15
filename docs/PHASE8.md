@@ -101,3 +101,29 @@ On the installed kit T0.7-0, the user's browser checks:
 Seen in the check: which pool process is missing from a GROUP or WORLD list depends on
 which one answered. Correct, but worth saying on the page: a line under the list, in 8b.
 
+## 8b: stopping a process (started 2026-10-15)
+
+**Probe** (`probes/probe_delprc.c`), against three batch jobs submitted as STEWARD_TEST
+for the purpose (each waiting five minutes):
+
+| Persona, switched on | Target | `$DELPRC` |
+|---|---|---|
+| STEWARD_ADM `[362,3]`, none | STEWARD_TEST's job | NOPRIV (my process holds every privilege) |
+| STEWARD_ADM, GROUP | the same job | NORMAL; the job gone a moment later |
+| STEWARD_TEST, none | its own job | NORMAL; gone |
+| STEWARD_ADM, GROUP | a PID that does not exist | NONEXPR |
+
+The third job was deleted by hand (`DELETE/ENTRY`), and the procedure removed.
+
+**Design** (D16): `DELETE api/v1/processes/{pid}`, `$DELPRC` under the persona, 202;
+the service account's processes refused (409); audited; the browser asks for the
+process name to be typed first. Also from 8a's check: a line under the list saying
+the serving process is not listed.
+
+**Exit (8b):**
+- A stop matches STOP/ID: what OpenVMS refuses is refused (NOPRIV), what it allows
+  happens, for STEWARD_TEST (its own) and STEWARD_ADM with GROUP.
+- Steward's pool can never be stopped through Steward.
+- Every stop is audited.
+- Browser checks (the user's); the security gate, with a review of 8a and 8b.
+
