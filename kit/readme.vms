@@ -24,6 +24,9 @@ cluster), and covers users and rights identifiers, roughly what AUTHORIZE does:
     deassign names (as DEFINE and DEASSIGN), with the privileges you switched
     on: SYSNAM for supervisor and executive mode, GRPNAM or GRPPRV for your
     group table
+  - processes: the ones OpenVMS lets you see (your own; your group's with GROUP
+    switched on; everyone's with WORLD), as SHOW SYSTEM lists them, and one as
+    SHOW PROCESS/ALL shows it
 
 Every request runs as you: Steward takes on your OpenVMS identity (a persona) for
 the request, so OpenVMS decides what you may see and change, exactly as at a
