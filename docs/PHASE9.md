@@ -1,6 +1,6 @@
 # Phase 9: batch and print queues
 
-9a (read-only) closed 2026-10-15; 9b (changes) next.
+9a (read-only) and 9b (changes) closed 2026-10-15. Phase 9 is closed.
 
 Read-only first (9a), then changes (9b), as for the earlier areas. Design: DECISIONS D17.
 
@@ -125,4 +125,21 @@ checks.
   START/QUEUE: what the queue manager refuses is refused, what it allows happens.
 - Steward's start-up queues are never stopped through Steward.
 - Every change audited; browser checks; the security gate with a review of Phase 9.
+
+## 9b closed (2026-10-15)
+
+On the installed kit T0.8-1, the user's browser checks, as the audit log records them:
+STEWARD_TEST released its own held job (entry 312, `job-release ... outcome="ok"`), and
+STEWARD_ADM with SYSPRV pressed Stop on X86VMS_BATCH (`queue-stop target="X86VMS_BATCH"
+outcome="refused" detail="Steward's start-up queue"`); the queue stayed available.
+
+| Criterion | Shown by | State |
+|---|---|---|
+| Each change matches SET ENTRY, DELETE/ENTRY, STOP and START/QUEUE | `phase9b_live.py` 14 ok; the browser check | done |
+| Steward's start-up queues never stopped through Steward | live (asked as STEWARD_TEST only), browser (as STEWARD_ADM with SYSPRV), unit (fail closed) | done |
+| Every change audited | the audit log on x86; the API suite | done |
+| Security gate | security.md Phase 9 sections, two invariants, the audit record; an independent review of Phase 9 (fail-closed fix) | done |
+
+Open: the form of `QUI$_GENERIC_TARGET` with several targets is unprobed (the parser
+takes commas, spaces or NULs).
 

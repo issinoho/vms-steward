@@ -16,7 +16,7 @@ see and change.
 
 ## Status
 
-**0.7.2, an early test release** for OpenVMS x86-64: a PCSI kit is on the
+**0.8.1, an early test release** for OpenVMS x86-64: a PCSI kit is on the
 [releases page](https://github.com/issinoho/vms-steward/releases). It opens on a dashboard
 of the system, covers users and rights identifiers (what AUTHORIZE does, from
 creating and copying accounts to deleting them), shows the system's access
@@ -24,9 +24,9 @@ history (who signed in, when, from where and by which route), and lets you brows
 logical names as `SHOW LOGICAL` shows them to you, and define and deassign them as
 DEFINE and DEASSIGN do. Please try it on a test system first and report what you find.
 
-Phases 1 to 8 are closed: sign-in, the read-only views, changes, creating and
+Phases 1 to 9 are closed: sign-in, the read-only views, changes, creating and
 deleting users, hardening (a load run and soak, [`docs/PHASE5.md`](docs/PHASE5.md)),
-access history, logical names and processes. Their exit checks passed on the x86 test system and in a browser
+access history, logical names, processes and queues. Their exit checks passed on the x86 test system and in a browser
 through nginx proxy manager. An independent code review and an external review and
 penetration test are still to come ([`docs/REVIEW-BRIEF.md`](docs/REVIEW-BRIEF.md)). See [`docs/PLAN.md`](docs/PLAN.md),
 [`docs/api.md`](docs/api.md) and [`docs/security.md`](docs/security.md).
@@ -45,8 +45,9 @@ penetration test are still to come ([`docs/REVIEW-BRIEF.md`](docs/REVIEW-BRIEF.m
 | Processes: the list and one process, read-only | done (Phase 8a, closed 2026-10-15, 0.7.0 test kit) |
 | Processes: stop a process (never Steward's own or a system process) | done (Phase 8b, closed 2026-10-15, 0.7.2) |
 | Queues: the queues, their jobs, one job, read-only | done (Phase 9a, closed 2026-10-15, 0.8.0 test kit) |
-| Queues: hold, release, delete a job; stop and start a queue | next (Phase 9b) |
-| SYSGEN, licences, products, monitoring, error log, terminal | later |
+| Queues: hold, release, delete a job; stop and start a queue (never Steward's start-up queues) | done (Phase 9b, closed 2026-10-15, 0.8.1) |
+| System parameters (SYSGEN) | next |
+| Licences, products, monitoring, error log, terminal | later |
 
 ## Installing
 
