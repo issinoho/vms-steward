@@ -79,6 +79,7 @@ browser ─(1)─ nginx proxy manager ─(2)─ lighttpd ─(3)─ STEWARD.EXE �
 | A logical name change never records its equivalences | `svc_logical_define`, `svc_logical_deassign` | API suite "without the equivalence"; `phase7b_live.py` "never an equivalence" |
 | Steward's serving process is never shown as the viewer's | `st_plat_proc_enum` and `_get` leave out (404) the calling process | `phase8_live.py` "nothing switched on: none"; unit "only the viewer's own processes" |
 | Steward's pool is never stopped through Steward | `svc_process_stop` refuses the service account's processes; `st_plat_proc_stop` the serving one | unit "Steward's own pool process: refused"; API suite; `phase8b_live.py` (on a test job named as the account) |
+| A job the viewer may not read shows no more than its entry and status | `job_from_raw` (VMS) clears the rest when `QUI$M_JOB_INACCESSIBLE` is set; `st_plat_job_get` refuses it | unit "another group's inaccessible"; `phase9_live.py` "entry and status only" |
 
 ## Phase 2 additions (users and identifiers, read-only)
 
@@ -325,6 +326,25 @@ browser ─(1)─ nginx proxy manager ─(2)─ lighttpd ─(3)─ STEWARD.EXE �
     OpenVMS lets stop them can, as at a terminal.
   - **The typed name is the browser's check only.** The request carries the PID; CSRF
     keeps it to pages Steward served.
+
+## Phase 9 additions (queues, read-only; D17)
+
+- **New endpoints:** `GET api/v1/queues`, `GET api/v1/queues/{name}`, `GET
+  api/v1/jobs/{entry}` (api.md). Session, persona, read-only.
+- **New system service, under the persona:** `$GETQUI`. It asks the queue manager,
+  another process; the probe (`probes/probe_qui.c`) showed it judges the persona, not
+  the asking process: from an all-privileged process, STEWARD_TEST's persona got other
+  users' jobs as inaccessible.
+- **Shown as OpenVMS shows it.** An inaccessible job is listed by entry and status only
+  (name, username and times withheld by the platform even if the queue manager
+  returned them), and refused by entry (403), as `SHOW QUEUE/ALL` and `SHOW ENTRY` do.
+- **Input:** queue names without wildcards (`$GETQUI` would take them as a search),
+  entry numbers of 1 to 9 digits; walks bounded (an empty queue answers NOSUCHJOB, which
+  ends the walk: a probe once looped on it).
+- **New data shown:** queue names, descriptions and states (public to every user at a
+  terminal), and the names, owners and files of jobs the viewer may read. Job and file
+  names are set by their owners and reach the page only through the JSON writer and
+  `dom.js`.
 
 ## Phase 5: load run and review (2026-10-11)
 

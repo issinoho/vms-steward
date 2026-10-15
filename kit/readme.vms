@@ -26,7 +26,10 @@ cluster), and covers users and rights identifiers, roughly what AUTHORIZE does:
     group table
   - processes: the ones OpenVMS lets you see (your own; your group's with GROUP
     switched on; everyone's with WORLD), as SHOW SYSTEM lists them, and one as
-    SHOW PROCESS/ALL shows it; stop one, as STOP/ID (never Steward's own)
+    SHOW PROCESS/ALL shows it; stop one, as STOP/ID (never Steward's own or a
+    system process)
+  - queues: every batch and print queue as SHOW QUEUE lists them, a queue's jobs
+    and one job as SHOW ENTRY/FULL, as the queue manager lets you read them
 
 Every request runs as you: Steward takes on your OpenVMS identity (a persona) for
 the request, so OpenVMS decides what you may see and change, exactly as at a

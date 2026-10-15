@@ -44,6 +44,17 @@ owner, the queue's protection, OPER). Requeuing was not chosen. To be probed fir
 that `$SNDJBC` judges the persona too. Stopping a queue Steward's own start-up uses
 (SYS$BATCH and what it feeds) gets care, after OPCOM (PHASE8.md).
 
+## Built (9a, 2026-10-15)
+
+- **Core:** `src/core/st_queue.{h,c}`: queue names, entry numbers, status names from
+  QUIDEF. **Platform:** `st_plat_queue_enum`, `_queue_get` (with its jobs), `_job_get`
+  (with its files). **API:** three endpoints (api.md). **View:** `www/js/queues.js`.
+- **Tests:** 343 unit; `make ui-test` 21 ok; on x86 `tests/vms/phase9_live.py` 9 ok, 0
+  failed (held jobs of STEWARD_TEST's and the work account's, deleted after).
+- **Found by the live test** (NOTES.md): an exact-name search keeps no context for the
+  job or file walk after it unless `QUI$M_SEARCH_WILDCARD` is given; a missing entry is
+  `JBC$_NOSUCHENT`.
+
 ## Exit (9a)
 
 - Queues, a queue's jobs and one job match `SHOW QUEUE/ALL/FULL` and `SHOW

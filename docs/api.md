@@ -664,6 +664,50 @@ own processes, your group's with GROUP and anyone's with WORLD. Needs the CSRF h
 - `403` with NOPRIV and `404` with NONEXPR, as for reading.
 - Audited with the PID, process name and username, refusals included.
 
+## Queues (Phase 9, D17): read-only
+
+Read **as you**, by `$GETQUI`: the queue manager judges each request by your
+identity. Every queue is listed. A job you may not read is listed by entry number and
+status only (`"accessible": false`), as `SHOW QUEUE/ALL` shows it at a terminal.
+Whether you may read a job is the queue's protection (the queues here give your UIC
+group read access) and your privileges (SYSPRV reads all).
+
+### `GET api/v1/queues`
+
+```json
+{"queues": [
+   {"name": "X86VMS_BATCH", "kind": "batch", "generic": false, "status": ["busy", "available"],
+    "node": "X86VMS", "description": "", "job_limit": 4,
+    "executing": 1, "pending": 0, "holding": 0, "timed": 0}]}
+```
+
+- `kind` is `batch` or `output` (print, server and terminal queues).
+- `status` lists the queue's status as `SHOW QUEUE` words it: `stopped`, `paused`,
+  `idle`, `busy`, `available`, `stalled`, ...
+
+### `GET api/v1/queues/{name}`
+
+The queue, as above, and its jobs:
+
+```json
+{"name": "SYS$BATCH", ..., "truncated": false,
+ "jobs": [
+   {"entry": 269, "accessible": true, "name": "NIGHTLY", "username": "STEWARD_TEST",
+    "status": ["holding"], "queue": "SYS$BATCH", "submitted": 1792082129},
+   {"entry": 270, "accessible": false, "name": "", "username": "", "status": ["holding"],
+    "queue": "SYS$BATCH"}]}
+```
+
+- `{name}` is 1 to 31 characters from `A-Z 0-9 $ _`; no wildcards. `404` with
+  NOSUCHQUE if there is no such queue.
+- At most 10,000 jobs; past that, `truncated` is true.
+
+### `GET api/v1/jobs/{entry}`
+
+One job, as `SHOW ENTRY/FULL`: the above, plus `after`, `priority`, `account`, `uic`,
+`log` and `files`. `403` with NOPRIV for a job you may not read, `404` with NOSUCHENT
+for none, `400` for an entry that is not 1 to 9 digits.
+
 ## Coming
 
-Batch and print queues (`docs/PLAN.md`).
+Holding, releasing and deleting a job, and stopping and starting a queue (Phase 9b).
