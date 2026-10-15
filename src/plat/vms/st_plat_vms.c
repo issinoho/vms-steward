@@ -48,6 +48,7 @@
 #include <utcblkdef.h>   /* acmedef.h uses utcblk without including it (PHASE0) */
 #include <acmedef.h>
 #include "st_platform.h"
+#include "st_proc.h"
 #include "st_buf.h"
 
 #ifndef ISS$C_ID_NATURAL
@@ -237,6 +238,7 @@ static unsigned int open_sessions(const char *path)
 static unsigned int sysprv[2] = { PRV$M_SYSPRV, 0 };
 
 static char service_account[13];
+static char service_image[64];          /* st_plat_service_image */
 static char steward_log[256];       /* Steward's audit log, read back for access history */
 /* The D14 helper procedure, fixed: never taken from a logical name the service would
    translate through its group or system tables, which others could define. */
@@ -303,6 +305,7 @@ void st_plat_vms_test_helper(const char *path)
 }
 
 const char *st_plat_service_account(void) { return service_account; }
+const char *st_plat_service_image(void) { return service_image; }
 
 /* For tests/vms/api_probe.c only. The probe runs in the work account, so it would
    take that for the service account, and "Steward's own processes" would mean the
@@ -312,6 +315,14 @@ const char *st_plat_service_account(void) { return service_account; }
 void st_plat_vms_test_svc_acct(const char *name)
 {
     st_copy(service_account, sizeof service_account, name);
+}
+
+/* For tests/vms/api_probe.c only, likewise: the image whose processes count as
+   Steward's own (st_plat_service_image), so a test can stand a process of its own in
+   for a pool worker busy with a request. */
+void st_plat_vms_test_svc_img(const char *image)
+{
+    st_proc_image_name(image, service_image, sizeof service_image);
 }
 
 int st_plat_init(const st_plat_config *cfg, st_err *e)
@@ -326,9 +337,18 @@ int st_plat_init(const st_plat_config *cfg, st_err *e)
         unsigned short ul = 0;
         unsigned int iosb[2];
         st_ile3 it[2];
-        item(&it[0], JPI$_USERNAME, u, 12, &ul);
-        item_end(&it[1]);
-        if (sys$getjpiw(0, 0, 0, it, iosb, 0, 0) & 1) blank_trim(u, ul, service_account, sizeof service_account);
+        char img[256] = { 0 };
+        unsigned short il = 0;
+        st_ile3 it3[3];
+        item(&it3[0], JPI$_USERNAME, u, 12, &ul);
+        item(&it3[1], JPI$_IMAGNAME, img, sizeof img - 1, &il);
+        item_end(&it3[2]);
+        if (sys$getjpiw(0, 0, 0, it3, iosb, 0, 0) & 1) {
+            blank_trim(u, ul, service_account, sizeof service_account);
+            img[il] = '\0';
+            st_proc_image_name(img, service_image, sizeof service_image);
+        }
+        (void) it;
     }
     /* And SYSPRV off, whatever the account's defaults say. */
     sys$setprv(0, (void *) sysprv, 0, 0);

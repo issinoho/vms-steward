@@ -658,6 +658,7 @@ int st_plat_system(st_system *s, st_err *e)
 /* ---------------------------------------------------------------- create and delete (D6) */
 
 const char *st_plat_service_account(void) { return "STEWARD"; }
+const char *st_plat_service_image(void) { return "STEWARD.EXE"; }
 
 static int ident_value_used(unsigned int v)
 {
@@ -1123,22 +1124,26 @@ int st_plat_lnm_deassign(const char *table, const char *name, int mode, st_err *
 /* ---------------------------------------------------------------- processes (D16) */
 
 /* A few processes as x86 has them (PHASE8.md): system ones, Steward's pool in
-   [362,2] (the service account shares group 362 with the test accounts there),
-   STEWARD_TEST's session, and another group's. The process serving the request is
-   not among them, as on OpenVMS it is never given. */
+   [362,10] (the service account shares group 362 with the test accounts there), a
+   pool worker busy with STEWARD_TEST's request (reported as STEWARD_TEST [362,1],
+   but seen and stopped as its real owner, the pool: NOTES.md), STEWARD_TEST's
+   session, and another group's. The process serving the request is not among them,
+   as on OpenVMS it is never given. */
 typedef struct {
     unsigned int pid; const char *name, *user; unsigned int uic; int state, pri, prib, mode, sub;
     const char *term, *image; unsigned int cpu, dirio, bufio, pf; int age;
+    unsigned int owner_uic;   /* who may see and stop it, if not uic (a persona held) */
 } stub_proc;
 
 static const stub_proc stub_procs[] = {
-    { 0x00000401, "SWAPPER", "SYSTEM", 0x00010004u, 7, 16, 0, 0, 0, "", "", 12, 0, 0, 0, 86400 },
-    { 0x0000040B, "OPCOM", "SYSTEM", 0x00010004u, 7, 8, 6, 0, 0, "", "X86VMS$DKA0:[SYS0.SYSCOMMON.][SYSEXE]OPCOM.EXE", 140, 30, 900, 410, 86400 },
-    { 0x00007500, "STEWARD_19300", "STEWARD", 0x00F20002u, 5, 4, 4, 0, 0, "", "X86VMS$DKA0:[SYS0.SYSCOMMON.STEWARD.][BIN]STEWARD.EXE;1", 1600, 220, 5100, 3100, 3600 },
-    { 0x00007501, "STEWARD_19301", "STEWARD", 0x00F20002u, 5, 4, 4, 0, 0, "", "X86VMS$DKA0:[SYS0.SYSCOMMON.STEWARD.][BIN]STEWARD.EXE;1", 1200, 180, 4300, 2900, 3600 },
-    { 0x00007520, "STEWARD_TEST", "STEWARD_TEST", 0x00F20001u, 5, 4, 4, 3, 0, "FTA12:", "", 35, 120, 300, 800, 1200 },
-    { 0x00007521, "_FTA12:_S1", "STEWARD_TEST", 0x00F20001u, 7, 4, 4, 3, 1, "", "X86VMS$DKA0:[SYS0.SYSCOMMON.][SYSEXE]MONITOR.EXE;1", 9, 4, 40, 200, 600 },
-    { 0x00007530, "WEBMASTER", "WEBMASTER", 0x00C80021u, 5, 4, 4, 3, 0, "FTA14:", "", 70, 60, 500, 900, 2400 },
+    { 0x00000401, "SWAPPER", "SYSTEM", 0x00010004u, 7, 16, 0, 0, 0, "", "", 12, 0, 0, 0, 86400, 0 },
+    { 0x0000040B, "OPCOM", "SYSTEM", 0x00010004u, 7, 8, 6, 0, 0, "", "X86VMS$DKA0:[SYS0.SYSCOMMON.][SYSEXE]OPCOM.EXE", 140, 30, 900, 410, 86400, 0 },
+    { 0x00007500, "STEWARD_19300", "STEWARD", 0x00F20008u, 5, 4, 4, 0, 0, "", "X86VMS$DKA0:[SYS0.SYSCOMMON.STEWARD.][BIN]STEWARD.EXE;1", 1600, 220, 5100, 3100, 3600, 0 },
+    { 0x00007501, "STEWARD_19301", "STEWARD", 0x00F20008u, 5, 4, 4, 0, 0, "", "X86VMS$DKA0:[SYS0.SYSCOMMON.STEWARD.][BIN]STEWARD.EXE;1", 1200, 180, 4300, 2900, 3600, 0 },
+    { 0x00007502, "STEWARD_19302", "STEWARD_TEST", 0x00F20001u, 14, 4, 4, 0, 0, "", "X86VMS$DKA0:[SYS0.SYSCOMMON.STEWARD.][BIN]STEWARD.EXE;1", 900, 90, 2100, 1700, 3600, 0x00F20008u },
+    { 0x00007520, "STEWARD_TEST", "STEWARD_TEST", 0x00F20001u, 5, 4, 4, 3, 0, "FTA12:", "", 35, 120, 300, 800, 1200, 0 },
+    { 0x00007521, "_FTA12:_S1", "STEWARD_TEST", 0x00F20001u, 7, 4, 4, 3, 1, "", "X86VMS$DKA0:[SYS0.SYSCOMMON.][SYSEXE]MONITOR.EXE;1", 9, 4, 40, 200, 600, 0 },
+    { 0x00007530, "WEBMASTER", "WEBMASTER", 0x00C80021u, 5, 4, 4, 3, 0, "FTA14:", "", 70, 60, 500, 900, 2400, 0 },
 };
 
 static int stub_stopped[sizeof stub_procs / sizeof stub_procs[0]];
@@ -1147,9 +1152,10 @@ static int stub_stopped[sizeof stub_procs / sizeof stub_procs[0]];
    any with WORLD; the same for seeing and for stopping. */
 static int stub_may_see(const stub_proc *p)
 {
+    unsigned int owner = p->owner_uic ? p->owner_uic : p->uic;
     if (!persona || stub_stopped[p - stub_procs]) return 0;
-    if (p->uic == persona->u.uic || cur_has(P_WORLD)) return 1;
-    return cur_has(P_GROUP) && (p->uic >> 16) == (persona->u.uic >> 16);
+    if (owner == persona->u.uic || cur_has(P_WORLD)) return 1;
+    return cur_has(P_GROUP) && (owner >> 16) == (persona->u.uic >> 16);
 }
 
 static void stub_proc_fill(const stub_proc *s, st_proc *p)

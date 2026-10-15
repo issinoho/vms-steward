@@ -316,6 +316,13 @@ browser ─(1)─ nginx proxy manager ─(2)─ lighttpd ─(3)─ STEWARD.EXE �
   as to the read. Nothing else is refused: system processes are stoppable by whoever
   OpenVMS allows, as at a terminal, and the browser names them as such and asks for
   the process name to be typed.
+  - **Steward's own** means the service account's processes *and* any process running
+    Steward's image: a worker busy with a request is reported under the requester's
+    name (NOTES.md), but its image is Steward's.
+  - **Not refused:** other processes the page depends on, lighttpd among them. Whoever
+    OpenVMS lets stop them can, as at a terminal.
+  - **The typed name is the browser's check only.** The request carries the PID; CSRF
+    keeps it to pages Steward served.
 
 ## Phase 5: load run and review (2026-10-11)
 
@@ -423,3 +430,5 @@ instance behind nginx proxy manager.
 | 2026-10-13 | 7 | Phase 7 review: `st_plat_lnm_get` checked the table in LNM$SYSTEM_DIRECTORY but `$TRNLNM` resolves the table name through LNM$PROCESS_DIRECTORY first | Informational (only the service's own login could define such a name) | this commit: refused unless `$TRNLNM` reports the checked table | `phase7_live.py` (every lookup) |
 | 2026-10-13 | 7 | Phase 7b probe (`probes/lnm_shadow.py`): the helper process translates `STEWARD$ROOT:[COM]STEWARD_LNM.COM` itself, as the viewer, and a user- or supervisor-mode `STEWARD$ROOT` in the viewer's group table took over. Anyone able to write a group table (GRPNAM, or GRPPRV in that group) could make another member's listing run their procedure as that member, with the privileges the member switched on. Present since 7a (0.5.0) | Medium (code execution as another group member; needs GRPNAM or GRPPRV) | this commit: the path is resolved at start-up, as the service, to `_DEV:[dir]` (NOCONCEAL, FULLDEVNAM); without it, listing is refused | `lnm_shadow.py` after: the viewer-group decoys ignored; `phase7_live.py` 20 ok |
 | 2026-10-15 | 8 | Phase 8b live test: `api_probe` takes the work account for the service account, so its "Steward's own processes" guard did not cover the real pool, and the test's deliberate request to stop `STEWARD_19300` stopped it. The production guard (the pool runs as STEWARD) was not affected | Operational (one pool process down a few minutes on x86; caused by the test, not reachable by a user) | this commit: the test names a test account as "own" and never a pool process; the probe's setter is test-only (audit rule) | `phase8b_live.py` 8 ok with the pool's PIDs unchanged |
+| 2026-10-15 | 8 | Phase 8 review: a pool worker busy with a request holds the requester's persona, and `$GETJPI` reports it under their username and UIC (shown by `probes/probe_hold.c`; access still follows its real owner). So the service-account guard did not cover a busy worker: anyone with WORLD, or GROUP in the service account's group, could stop it | Medium (availability: busy pool workers stoppable by users with WORLD or GROUP there) | this commit: a stop also refuses any process running Steward's own image (recorded at start-up), usernames compared without case | `phase8b_live.py`: a process holding STEWARD_TEST's persona, its image named as Steward's, refused with WORLD and still running |
+| 2026-10-15 | 8 | Phase 8 review: `st_parse_pid` took `FFFFFFFF`, which `$GETJPI` treats as the wildcard, so a read or stop could describe or audit another process | Low | this commit: FFFFFFFF refused, and both handlers check the process found is the one asked for | unit "FFFFFFFF refused" |

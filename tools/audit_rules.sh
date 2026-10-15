@@ -43,8 +43,8 @@ rule env-only-in-main "getenv outside steward_main.c" \
 # to run an edited procedure before it is installed.
 rule lnm-helper-test-only "st_plat_vms_test_helper called outside tests/" \
     --include='*.c' 'st_plat_vms_test_helper\(' src/ --exclude=st_plat_vms.c
-rule service-account-test-only "st_plat_vms_test_svc_acct called outside tests/" \
-    --include='*.c' 'st_plat_vms_test_svc_acct\(' src/ --exclude=st_plat_vms.c
+rule service-account-test-only "st_plat_vms_test_svc_* called outside tests/" \
+    --include='*.c' 'st_plat_vms_test_svc_[a-z]+\(' src/ --exclude=st_plat_vms.c
 
 # The core does no I/O (vmsguard's rule), which is what makes it testable and
 # fuzzable on Linux.

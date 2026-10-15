@@ -5,7 +5,8 @@
 #ifndef ST_PROC_H
 #define ST_PROC_H
 
-/* 1 if in is a PID, with it in *pid; 0 otherwise. 0 itself is not a PID. */
+/* 1 if in is a PID, with it in *pid; 0 otherwise. Neither 0 nor FFFFFFFF is a PID:
+   to $GETJPI and $DELPRC, -1 is the wildcard. */
 int st_parse_pid(const char *in, unsigned int *pid);
 
 /* The scheduling state's name as SHOW SYSTEM prints it (LEF, HIB, CUR, ...), from
@@ -16,5 +17,11 @@ const char *st_proc_state_name(int state);
    INTERACTIVE 3) and whether it has an owner: "subprocess", "interactive", "batch",
    "network" or "detached". */
 const char *st_proc_kind(int mode, int subprocess);
+
+#include <stddef.h>
+
+/* An image file's name and type, upper case, without device, directory or version:
+   X86VMS$DKA0:[SYS0.SYSCOMMON.STEWARD.][BIN]STEWARD.EXE;1 is STEWARD.EXE. "" for "". */
+void st_proc_image_name(const char *spec, char *out, size_t outlen);
 
 #endif

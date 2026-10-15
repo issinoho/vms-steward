@@ -455,7 +455,9 @@ small: 42 processes in 0.01 s on x86).
   persona's UIC and GROUP/WORLD (the probe: NOPRIV from an all-privileged process
   without GROUP). It answers 202: the stop is asynchronous, as STOP/ID's is.
   - **Steward's own processes are refused** (409): any process of the service
-    account, its pool, whatever privileges the viewer has. Stopping the pool from the
+    account, its pool, and any process running Steward's image (a worker busy with a
+    request is reported under the requester's name: the Phase 8 review, NOTES.md),
+    whatever privileges the viewer has. Stopping the pool from the
     browser would cut off the browser; at a terminal it stays possible.
   - **No other policy.** A process OpenVMS lets the viewer stop is stoppable, system
     processes included, as at a terminal. The browser asks for the process name to be

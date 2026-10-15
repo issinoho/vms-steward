@@ -24,8 +24,9 @@ def vms(*cmds):
     return subprocess.run(["tools/vms.sh", NODE, "dcl"] + list(cmds), capture_output=True,
                           encoding="latin-1").stdout.replace("\r", "")
 
-def api(user, privs, path, method="GET", own=None):
+def api(user, privs, path, method="GET", own=None, image=None):
     pre = ["define/nolog API_PROBE_SERVICE_ACCOUNT " + own] if own else []
+    pre += ["define/nolog API_PROBE_SERVICE_IMAGE " + image] if image else []
     out = vms(*([AP, "define/nolog API_PROBE_AUDIT " + AUDIT] + pre +
                 ['ap %s %s "%s" "%s"' % (user, privs, path, method)]))
     m = re.search(r"^(\d{3})\s*$", out, re.M)
@@ -83,13 +84,32 @@ try:
     st, doc = api("STEWARD_ADM", "GROUP", "/api/v1/processes/" + c, "DELETE", own="STEWARD_TEST")
     check(st == 409 and exists(c), "a process of the service account: refused (409), still running", (st, doc))
 
+    # A pool worker busy with a request holds the requester's persona and is reported
+    # under their name (NOTES.md). probe_hold stands in for one: a process of the work
+    # account holding STEWARD_TEST's persona, its image named as Steward's.
+    T = WORKDIR[:-1]
+    vms("open/write f %s.PROBES]HOLD.COM" % T,
+        'write f "$ ph = ""$%s.PROBES]PROBE_HOLD.EXE"""' % T, 'write f "$ ph steward_test 60"', "close f",
+        "run/detach/process_name=P8B_HOLD/output=%s.PROBES]HOLD.LOG sys$system:loginout/input=%s.PROBES]HOLD.COM" % (T, T))
+    time.sleep(4)
+    hold = re.search(r"^H\|(\w+)\|(.*)$", vms('ctx = ""', 'loop: pid = f$pid(ctx)', 'if pid .eqs. "" then goto done',
+        'if f$getjpi(pid, "PRCNAM") .eqs. "P8B_HOLD" then write sys$output "H|", pid, "|", f$getjpi(pid, "USERNAME")',
+        'goto loop', 'done:'), re.M)
+    check(hold and hold.group(2).strip().upper() == "STEWARD_TEST",
+          "a process holding STEWARD_TEST's persona is reported under that name", hold and hold.groups())
+    if hold:
+        st, doc = api("STEWARD_ADM", "WORLD", "/api/v1/processes/" + hold.group(1), "DELETE", image="PROBE_HOLD.EXE")
+        check(st == 409 and exists(hold.group(1)),
+              "with WORLD, stopping it is refused by its image (409), still running", (st, doc))
+
     log = vms("type " + AUDIT)
-    check('action="process-stop" target="%s BATCH_' % a in log and 'outcome="ok"' in log and
+    check('action="process-stop" target="%s \\"BATCH_' % a in log and 'outcome="ok"' in log and
           'outcome="refused" detail="Steward\'s own process"' in log and 'outcome="failed" detail="%SYSTEM-F-NOPRIV' in log,
           "audited on the node: stops, the refusal and NOPRIV", log[-500:])
 finally:
     left = re.findall(r"^\s*(\d+)\s+P8B_", vms(QUEUES), re.M)
     vms(*(["delete/entry=" + e for e in left] + ["delete/nolog " + WAIT + ";*", "delete/nolog " + AUDIT + ";*"]))
+    # probe_hold ends on its own after 60 s; its files go then (HOLD.LOG is open till).
     check(not re.findall(r"^\s*\d+\s+P8B_", vms(QUEUES), re.M),
           "no test job left", left)
 

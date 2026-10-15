@@ -12,7 +12,8 @@
 
    API_PROBE_SERVICE_ACCOUNT=<username> makes that account's processes count as
    Steward's own (refused by a stop, D16), so a test can check the refusal on a
-   process of its own rather than on the real pool.
+   process of its own rather than on the real pool. API_PROBE_SERVICE_IMAGE=<image>
+   does the same for Steward's image (a pool worker busy with a request).
 
    With API_PROBE_SOAK=<n> defined, <path> is ignored and every read-only endpoint is
    requested n times over (Phase 5 load run on the node, without lighttpd): it prints
@@ -34,6 +35,7 @@
 
 void st_plat_vms_test_helper(const char *path);   /* st_plat_vms.c, tests only */
 void st_plat_vms_test_svc_acct(const char *name);
+void st_plat_vms_test_svc_img(const char *image);
 
 static void nv(st_buf *b, const char *n, const char *v)
 {
@@ -185,6 +187,7 @@ int main(int argc, char **argv)
     /* The account whose processes count as Steward's own (D16): by default this
        process's, the work account's, never the real pool's. */
     if (getenv("API_PROBE_SERVICE_ACCOUNT")) st_plat_vms_test_svc_acct(getenv("API_PROBE_SERVICE_ACCOUNT"));
+    if (getenv("API_PROBE_SERVICE_IMAGE")) st_plat_vms_test_svc_img(getenv("API_PROBE_SERVICE_IMAGE"));
     memset(&cfg, 0, sizeof cfg);
     cfg.idle_secs = 900;
     cfg.absolute_secs = 3600;

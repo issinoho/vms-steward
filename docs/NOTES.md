@@ -260,3 +260,14 @@ changed, so a run used the old probe; build from CLEAN before a live test that n
 a changed probe. And VSI C truncates external names over 31 characters
 (`%CC-W-LONGEXTERN`): the setter's name was shortened.
 
+**A process holding a persona is reported as the persona, to everyone; access still
+follows its real owner** (Phase 8b, 2026-10-15, from the Phase 8 review). A detached
+process of mine (`[200,101]`) held STEWARD_TEST's persona (`probes/probe_hold.c`).
+From outside, `F$GETJPI` gave username `steward_test` and UIC `[362,1]`; its process
+name and image were unchanged. STEWARD_TEST's own persona could not see it (NOPRIV),
+nor STEWARD_ADM's with GROUP in 362; with WORLD it was listed, as `steward_test
+[362,1]`. So a Steward pool worker busy with a request shows the requester's name,
+and a guard by username alone would let anyone with WORLD (or GROUP in the service
+account's real group) stop it. Steward now also refuses any process running its own
+image. Observed with `probe_jpi` against the held PID.
+

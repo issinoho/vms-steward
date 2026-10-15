@@ -597,7 +597,7 @@ required. The answer names the modes removed:
 
 `404` with `NOLOGNAM` if the name is at none of those modes.
 
-## Processes (Phase 8, D16): read-only
+## Processes (Phase 8, D16)
 
 Read **as you**, by `$GETJPI` in-process: you see your own processes, your UIC
 group's with GROUP switched on, and everyone's with WORLD, as at a terminal. The
@@ -655,8 +655,10 @@ own processes, your group's with GROUP and anyone's with WORLD. Needs the CSRF h
 
 - `202`: OpenVMS accepted the stop. It is asynchronous: for a moment the process may
   still be listed.
-- `409` for a process of Steward's own account (its pool), whatever your privileges.
-  Use `STEWARD$CONTROL` at a terminal.
+- `409` for a process of Steward's own: its account's, or any running Steward's image
+  (a pool worker busy with someone's request is reported under their name), whatever
+  your privileges. Use `STEWARD$CONTROL` at a terminal.
+- `400` for a PID not in OpenVMS's form (`FFFFFFFF` included: OpenVMS's wildcard).
 - `403` with NOPRIV and `404` with NONEXPR, as for reading.
 - Audited with the PID, process name and username, refusals included.
 

@@ -300,6 +300,10 @@ int st_plat_user_delete(const char *username, st_err *e);
 
 /* The service's own account (STEWARD), read at start-up. */
 const char *st_plat_service_account(void);
+/* The image Steward runs as, name and type upper case (st_proc_image_name): a pool
+   worker busy with a request is reported under the requester's username, but its
+   image does not change (NOTES.md, Phase 8b), so a stop refuses this image too. */
+const char *st_plat_service_image(void);
 
 /* ---- access history (Phase 6, D13), read as the current persona ----
 

@@ -1500,6 +1500,16 @@ static void test_processes(void)
           "a PID: 8 hex digits, with or without %X, either case");
     CHECK(!st_parse_pid("751A", &pid) && !st_parse_pid("0000751G", &pid) && !st_parse_pid("00000000", &pid) &&
           !st_parse_pid("0000751A0", &pid) && !st_parse_pid("", &pid), "short, non-hex, zero and long PIDs refused");
+    CHECK(!st_parse_pid("FFFFFFFF", &pid) && !st_parse_pid("%Xffffffff", &pid), "FFFFFFFF refused: to $GETJPI and $DELPRC it is the wildcard");
+    {
+        char img[64];
+        st_proc_image_name("X86VMS$DKA0:[SYS0.SYSCOMMON.STEWARD.][BIN]steward.exe;1", img, sizeof img);
+        CHECK(!strcmp(img, "STEWARD.EXE"), "an image's name and type, upper case, without directory or version");
+        st_proc_image_name("", img, sizeof img);
+        CHECK(!strcmp(img, ""), "no image: empty");
+        st_proc_image_name("DKA0:<A.B>X.EXE", img, 4);
+        CHECK(!strcmp(img, "X.E"), "cut to the buffer");
+    }
     CHECK(!strcmp(st_proc_state_name(5), "LEF") && !strcmp(st_proc_state_name(14), "CUR") &&
           !strcmp(st_proc_state_name(0), "?") && !strcmp(st_proc_state_name(15), "?"), "state names, SCH$C_ 1 to 14");
     CHECK(!strcmp(st_proc_kind(3, 0), "interactive") && !strcmp(st_proc_kind(2, 0), "batch") &&
@@ -1579,6 +1589,9 @@ static void test_process_stop(void)
     call("DELETE", "/api/v1/processes/00007500", t, NULL, &b);
     CHECK(b.resp.status == 403 && strstr(b.resp.body.data, "NOPRIV"), "another's process: NOPRIV, as STOP/ID");
     st_resp_free(&b.resp);
+    call("DELETE", "/api/v1/processes/00007502", t, NULL, &b);
+    CHECK(b.resp.status == 403, "a worker busy with the viewer's own request: not theirs to stop (its real owner is the pool)");
+    st_resp_free(&b.resp);
     call("DELETE", "/api/v1/processes/751", t, NULL, &b);
     CHECK(b.resp.status == 400, "a PID not in OpenVMS's form is refused");
     st_resp_free(&b.resp);
@@ -1601,10 +1614,16 @@ static void test_process_stop(void)
     call("GET", "/api/v1/processes/00007500", adm, NULL, &b);
     CHECK(b.resp.status == 200, "and still there");
     st_resp_free(&b.resp);
+    call("DELETE", "/api/v1/processes/00007502", adm, NULL, &b);
+    CHECK(b.resp.status == 409, "a pool worker busy with STEWARD_TEST's request (reported under that name): refused by its image");
+    st_resp_free(&b.resp);
     call("DELETE", "/api/v1/processes/00007530", adm, NULL, &b);
     CHECK(b.resp.status == 403, "another group's process with GROUP only: NOPRIV");
     st_resp_free(&b.resp);
     call("PUT", "/api/v1/session/privileges", adm, "{\"enabled\":[\"world\"]}", &b);
+    st_resp_free(&b.resp);
+    call("DELETE", "/api/v1/processes/00007502", adm, NULL, &b);
+    CHECK(b.resp.status == 409, "and with WORLD");
     st_resp_free(&b.resp);
     call("DELETE", "/api/v1/processes/00007530", adm, NULL, &b);
     CHECK(b.resp.status == 202, "with WORLD: stopped");

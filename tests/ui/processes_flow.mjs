@@ -41,11 +41,11 @@ try {
   await api.signIn('STEWARD_ADM', 'admin-pass');
   me = await api.setPrivileges(['WORLD']);
   root = await render(processesView(ctx(me)));
-  say(pids(root).length === 7 && root.textContent.includes('STEWARD.EXE') && root.textContent.includes('0 00:00:16.00'),
-      'STEWARD_ADM with WORLD: all seven, image names and CPU as SHOW SYSTEM', pids(root));
+  say(pids(root).length === 8 && root.textContent.includes('STEWARD.EXE') && root.textContent.includes('0 00:00:16.00'),
+      'STEWARD_ADM with WORLD: all eight, image names and CPU as SHOW SYSTEM', pids(root));
   root = await render(processView(ctx(me), '00007500'));
   const facts = root.querySelector('dl.facts')?.textContent || '';
-  say(facts.includes('STEWARD') && facts.includes('[362,2]') && facts.includes('detached') &&
+  say(facts.includes('STEWARD') && facts.includes('[362,10]') && facts.includes('detached') &&
       root.querySelectorAll('table.grid tbody tr').length === 9 && root.querySelectorAll('ul.keys li').length >= 2,
       'the process page: facts, nine quotas, privileges and rights', facts.slice(0, 200));
   // Stop: the pool is refused; another process stops once its name is typed.

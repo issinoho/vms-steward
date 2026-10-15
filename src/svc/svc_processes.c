@@ -104,6 +104,10 @@ void svc_process_get(st_ctx *c)
         return;
     }
     if (st_plat_proc_get(pid, &d, &e)) { st_app_error(c, &e); return; }
+    if (d.p.pid != pid) {   /* never another process than the one asked for */
+        st_resp_problem(c->resp, 404, "not-found", "Not found", NULL, 0, NULL);
+        return;
+    }
     st_resp_json(c->resp, 200, &w);
     st_jw_obj(&w);
     proc_json(&w, &d.p);
@@ -132,6 +136,15 @@ void svc_process_get(st_ctx *c)
     st_jw_obj_end(&w);
 }
 
+static int st_eq_nocase(const char *a, const char *b)
+{
+    for (; *a && *b; a++, b++) {
+        char x = (*a >= 'a' && *a <= 'z') ? (char) (*a - 32) : *a, y = (*b >= 'a' && *b <= 'z') ? (char) (*b - 32) : *b;
+        if (x != y) return 0;
+    }
+    return *a == *b;
+}
+
 /* DELETE api/v1/processes/{pid}: stop it, as STOP/ID. OpenVMS decides who may; Steward
    refuses its own pool (the service account's processes), whoever asks: stopping it
    from the browser would cut the browser off. 202: $DELPRC is asynchronous. */
@@ -139,7 +152,7 @@ void svc_process_stop(st_ctx *c)
 {
     static st_proc_detail d;
     unsigned int pid;
-    char text[9], target[64];
+    char text[9], target[64], image[64];
     st_err e;
     st_jw w;
 
@@ -155,8 +168,17 @@ void svc_process_stop(st_ctx *c)
         st_app_error(c, &e);
         return;
     }
-    snprintf(target, sizeof target, "%s %s %s", text, d.p.name, d.p.username);
-    if (!strcmp(d.p.username, st_plat_service_account())) {
+    if (d.p.pid != pid) {   /* never another process than the one asked for */
+        st_resp_problem(c->resp, 404, "not-found", "Not found", NULL, 0, NULL);
+        return;
+    }
+    /* The name in quotes: its owner chose it, and it may hold spaces. */
+    snprintf(target, sizeof target, "%s \"%s\" %s", text, d.p.name, d.p.username);
+    /* Steward's own: the service account's processes, and any running Steward's image,
+       since a worker busy with a request reports the requester's username. */
+    st_proc_image_name(d.p.image, image, sizeof image);
+    if (st_eq_nocase(d.p.username, st_plat_service_account()) ||
+        (*st_plat_service_image() && !strcmp(image, st_plat_service_image()))) {
         st_app_audit(c, c->session.username, "process-stop", target, "refused", "Steward's own process");
         st_resp_problem(c->resp, 409, "steward-process", "Steward's own process",
                         "Steward does not stop its own processes: that would cut off this page. Use STEWARD$CONTROL at a terminal.", 0, NULL);

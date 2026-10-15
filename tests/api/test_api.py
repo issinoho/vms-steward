@@ -242,8 +242,8 @@ def main(binary):
         check('action="logical-define" target="LNM$SYSTEM_TABLE API_7B exec" outcome="ok"' in log and
               'action="logical-deassign" target="LNM$SYSTEM_TABLE API_7B exec" outcome="ok"' in log and
               "Phase7b-" not in log, "a define and a deassign are audited, without the equivalence")
-        check('action="process-stop" target="00007530 WEBMASTER WEBMASTER" outcome="ok"' in log and
-              'action="process-stop" target="00007500 STEWARD_19300 STEWARD" outcome="refused"' in log,
+        check('action="process-stop" target="00007530 \\"WEBMASTER\\" WEBMASTER" outcome="ok"' in log and
+              'action="process-stop" target="00007500 \\"STEWARD_19300\\" STEWARD" outcome="refused"' in log,
               "stops and refused stops are audited")
         check("test-pass" not in log and "admin-pass" not in log and "Phase3-" not in log and "Phase4-" not in log and "expired-pass" not in log,
               "no password reaches the audit log (sign-in, set, change)")

@@ -15,7 +15,7 @@ int st_parse_pid(const char *in, unsigned int *pid)
         if (d < 0) return 0;
         v = (v << 4) | (unsigned int) d;
     }
-    if (!v) return 0;
+    if (!v || v == 0xFFFFFFFFu) return 0;
     *pid = v;
     return 1;
 }
@@ -38,3 +38,15 @@ const char *st_proc_kind(int mode, int subprocess)
     default: return "detached";
     }
 }
+
+void st_proc_image_name(const char *spec, char *out, size_t outlen)
+{
+    const char *start = spec, *p;
+    size_t n = 0;
+    for (p = spec; *p; p++)
+        if (*p == ']' || *p == '>' || *p == ':') start = p + 1;
+    for (p = start; *p && *p != ';' && n + 1 < outlen; p++)
+        out[n++] = (*p >= 'a' && *p <= 'z') ? (char) (*p - 'a' + 'A') : *p;
+    if (outlen) out[n < outlen ? n : outlen - 1] = '\0';
+}
+
