@@ -74,6 +74,9 @@ export const api = {
   defineLogical: (def) => call('PUT', 'logical', def),
   // At that mode and every outer one, as DEASSIGN; answers { removed: [modes] }.
   deassignLogical: (table, name, mode) => call('DELETE', `logical${query({ table, name, mode })}`),
+  // Phase 8: processes (D16). q: { filter }.
+  processes: (q) => call('GET', `processes${query(q)}`),
+  process: (pid) => call('GET', `processes/${encodeURIComponent(pid)}`),
   // Phase 2: users and rights identifiers, read-only. Lists take
   // { filter, after, limit } (and type for identifiers) and return { ..., next }.
   users: (q) => call('GET', `users${query(q)}`),

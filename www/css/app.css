@@ -447,3 +447,4 @@ tr.detail td { background: var(--panel-2); }
 .eqrow { display: flex; flex-wrap: wrap; align-items: center; gap: .4em .8em; }
 .eqrow input { flex: 1 1 18em; }
 @media (max-width: 720px) { .lnm { grid-template-columns: minmax(0, 1fr); } .lnm .panel.tables { max-height: 40vh; } }
+.grid td.num { text-align: right; font-variant-numeric: tabular-nums; }

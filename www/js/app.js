@@ -11,6 +11,7 @@ import { changeOwnPassword } from './edit.js';
 import { dashboardView, stopDashboard } from './dashboard.js';
 import { accessView } from './access.js';
 import { logicalsView } from './logicals.js';
+import { processesView, processView } from './processes.js';
 
 const app = document.getElementById('app');
 let me = null;           // whoami, while signed in
@@ -24,7 +25,7 @@ const AREAS = [
   { hash: '#/identifiers', label: 'Rights identifiers', ready: true },
   { hash: '#/access', label: 'Access history', ready: true },
   { hash: '#/logicals', label: 'Logical names', ready: true },
-  { hash: '#/processes', label: 'Processes', phase: 'later' },
+  { hash: '#/processes', label: 'Processes', ready: true },
   { hash: '#/queues', label: 'Queues', phase: 'later' },
 ];
 
@@ -201,6 +202,7 @@ const VIEWS = {
   identifiers: (ctx, name) => (name ? identifierView(ctx, name) : identifiersView(ctx)),
   access: (ctx) => accessView(ctx),
   logicals: (ctx) => logicalsView(ctx),
+  processes: (ctx, pid) => (pid ? processView(ctx, pid) : processesView(ctx)),
 };
 
 let routeSeq = 0;

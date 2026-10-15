@@ -15,6 +15,7 @@ import json
 import http.server
 import mimetypes
 import os
+import signal
 import socket
 import subprocess
 import sys
@@ -182,12 +183,19 @@ def main():
     env = dict(os.environ, STEWARD_INSECURE_COOKIE="1", STEWARD_GATEWAY_SECRET=DEV_GATEWAY,
                STEWARD_TRUSTED_PROXIES="127.0.0.1" if PREFIX else "")
     proc = subprocess.Popen([binary, "-b", "%s:%d" % FCGI], env=env)
+    # Stopped with SIGTERM (as tests/ui/run.sh does), stop steward too, as for Ctrl-C.
+    signal.signal(signal.SIGTERM, lambda *_: (_ for _ in ()).throw(KeyboardInterrupt()))
     for _ in range(50):
         try:
             socket.create_connection(FCGI, timeout=1).close()
             break
         except OSError:
             time.sleep(0.1)
+    # If steward could not listen (the port taken, say, by another dev server's), stop:
+    # otherwise requests would go to whatever holds the port.
+    time.sleep(0.2)
+    if proc.poll() is not None:
+        sys.exit("devserver: steward exited (port %d in use? set STEWARD_DEV_FCGI_PORT)" % FCGI[1])
     print("Steward dev server: http://127.0.0.1:%d%s/" % (port, PREFIX))
     try:
         http.server.ThreadingHTTPServer(("127.0.0.1", port), Handler).serve_forever()
