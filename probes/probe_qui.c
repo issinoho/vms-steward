@@ -1,6 +1,7 @@
 /* probe_qui.c - under a persona, which queues and jobs does $GETQUI show? (Phase 9)
 
    Usage: probe_qui <username|-> [priv,...|none]
+          probe_qui targets <generic-queue>      (QUI$_GENERIC_TARGET's buffer, dumped)
 
    Walks every queue (QUI$_DISPLAY_QUEUE, "*") and, in each, every job it is given
    (QUI$_DISPLAY_JOB with QUI$M_SEARCH_ALL_JOBS), printing queue name, kind and status,
@@ -104,6 +105,25 @@ int main(int argc, char **argv)
     if (argc < 2) { printf("usage: probe_qui <username|-> [privs|none]\n"); return 1; }
     printf("probe_qui: %s %s\n", argv[1], argc > 2 ? argv[2] : "");
     if (!strcmp(argv[1], "-")) { walk(); return 1; }
+    if (!strcmp(argv[1], "targets") && argc > 2) {   /* the layout of QUI$_GENERIC_TARGET */
+        unsigned char buf[512];
+        char name[32];
+        unsigned short len = 0;
+        unsigned int ctx = 0xFFFFFFFFu, iosb[2], k;
+        ile3 it[3];
+        for (k = 0; argv[2][k] && k < 31; k++) name[k] = (char) toupper((unsigned char) argv[2][k]);
+        name[k] = '\0';
+        memset(buf, 0xAA, sizeof buf);
+        ile3_set(&it[0], QUI$_SEARCH_NAME, name, (unsigned short) strlen(name), 0);
+        ile3_set(&it[1], QUI$_GENERIC_TARGET, buf, sizeof buf, &len);
+        ile3_end(&it[2]);
+        st = sys$getquiw(0, QUI$_DISPLAY_QUEUE, &ctx, it, iosb, 0, 0);
+        if (st & 1) st = iosb[0];
+        printf("  %s, %u bytes:", msg(st), len);
+        for (k = 0; k < (unsigned) len + 4 && k < sizeof buf; k++) printf("%s%02X", k % 32 ? " " : "\n   ", buf[k]);
+        printf("\n");
+        return 1;
+    }
     report("$SETPRV IMPERSONATE", sys$setprv(1, (void *) imp, 0, 0));
     desc_set(&d, argv[1], (unsigned short) strlen(argv[1]));
     st = sys$persona_create(&persona, &d, 0, 0, 0);

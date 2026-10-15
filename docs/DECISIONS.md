@@ -486,4 +486,10 @@ shows the queue manager judges those by the persona as well.
 Alternatives not taken: driving SHOW QUEUE in a helper process (D14's way; not needed,
 `$GETQUI` gives everything a terminal shows); reading as the service and filtering
 (Steward would decide).
+- **Changes (9b, 2026-10-15, from `probes/probe_sndjbc.c`).** Hold, release and delete a
+  job, stop and start a queue, by `$SNDJBC` under the persona: the queue manager judged
+  every one by the persona (JBC NOPRIV from an all-privileged process; the group may
+  read a job but not change it; SYSPRV may). Steward refuses to stop SYS$BATCH and the
+  queues it feeds, whatever the viewer holds (the user's choice after OPCOM): the pool
+  is started at boot by a job there. Everything else is as the queue manager allows.
 

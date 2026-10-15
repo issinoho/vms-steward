@@ -77,3 +77,37 @@ refused with NOPRIV. `phase9_live.py` 9 ok; `phase7_live.py` 20 ok against the
 installed helper procedure (its new process name). Security gate: security.md Phase 9
 section and invariant; the review runs with 9b's.
 
+## 9b: changes (started 2026-10-15)
+
+**Probe** (`probes/probe_sndjbc.c`), from my all-privileged process, on held jobs
+submitted for the purpose and a test queue the user agreed to (`STEWARD_P9B_TEST`,
+created stopped and empty, deleted after):
+
+| Persona, switched on | Target | Answer |
+|---|---|---|
+| STEWARD_TEST, none | its own held job: release | NORMAL (it then ran: it only exits) |
+| STEWARD_TEST, none | its own held job: delete | NORMAL |
+| STEWARD_TEST, none | my held job: delete | JBC NOPRIV |
+| STEWARD_ADM, none | STEWARD_TEST's held job (its group): hold, delete | JBC NOPRIV (the group may read, G:R, not change) |
+| STEWARD_ADM, none | my held job: delete | JBC NOPRIV |
+| STEWARD_ADM, SYSPRV | my held job: delete | NORMAL |
+| STEWARD_TEST, none; STEWARD_ADM, none | the test queue: start, stop | JBC NOPRIV |
+| STEWARD_ADM, SYSPRV | the test queue: start, then stop | NORMAL (S:M) |
+
+Hold on an executing job: `JBC$_EXECUTING`. `QUI$_GENERIC_TARGET` on SYS$BATCH gave the
+12 bytes `X86VMS_BATCH` (no padding); `F$GETQUI` shows several as a comma-separated
+list.
+
+**Design** (D17): `POST api/v1/jobs/{entry}/hold` and `/release`, `DELETE
+api/v1/jobs/{entry}`, `POST api/v1/queues/{name}/stop` and `/start`, by `$SNDJBC` under
+the persona, audited, the browser asking first. Steward refuses (409), whatever the
+viewer holds, to stop SYS$BATCH (or what it translates to in the system table) and the
+execution queues it feeds: STEWARD$STARTUP submits the pool's start job there (the
+user's choice, 2026-10-15, after OPCOM). Starting a queue is never refused.
+
+**Exit (9b):**
+- Each change matches SET ENTRY/HOLD and /RELEASE, DELETE/ENTRY, STOP/QUEUE and
+  START/QUEUE: what the queue manager refuses is refused, what it allows happens.
+- Steward's start-up queues are never stopped through Steward.
+- Every change audited; browser checks; the security gate with a review of Phase 9.
+

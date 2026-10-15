@@ -32,7 +32,7 @@ $!
 $ define/process/nolog OPENSSL SSL3$INCLUDE:
 $ ccq = "/STANDARD=C99/POINTER_SIZE=32/NAMES=AS_IS/WARNINGS=ENABLE=QUESTCODE"
 $ failed = 0
-$ probes = "probe_crypto,probe_rights,probe_uaf,probe_persona,probe_acm,probe_acm_host,probe_setprv,probe_selfuai,probe_crelnm,probe_jpi,probe_delprc,probe_hold,probe_qui"
+$ probes = "probe_crypto,probe_rights,probe_uaf,probe_persona,probe_acm,probe_acm_host,probe_setprv,probe_selfuai,probe_crelnm,probe_jpi,probe_delprc,probe_hold,probe_qui,probe_sndjbc"
 $ i = 0
 $build_loop:
 $ p = f$element(i, ",", probes)

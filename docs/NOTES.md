@@ -299,3 +299,12 @@ work. The probe had used a wildcard name, so it never met this. And a job asked 
 by an entry number that does not exist is `JBC$_NOSUCHENT` (295386), not NOSUCHJOB.
 Observed with `tests/vms/phase9_live.py` against held jobs.
 
+**$SNDJBC judges the persona too; GENERIC_TARGET is the bare names** (Phase 9b,
+2026-10-15). Under STEWARD_TEST's and STEWARD_ADM's personas, from my all-privileged
+process, deleting or holding another's job, and stopping or starting a queue, gave
+`JBC$_NOPRIV`; the group could read a job (G:R) but not change it; SYSPRV could (the
+queues give S:M). A held job released at once ran. Holding an executing job is
+`JBC$_EXECUTING`. `QUI$_GENERIC_TARGET` for SYS$BATCH returned `X86VMS_BATCH`, 12
+bytes, no padding. Observed with `probes/probe_sndjbc.c` and `probe_qui targets`, on
+held jobs and a test queue created and deleted for it.
+
