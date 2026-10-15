@@ -459,6 +459,56 @@ int st_plat_proc_get(unsigned int pid, st_proc_detail *d, st_err *e);
    refuses the service account's processes. */
 int st_plat_proc_stop(unsigned int pid, st_err *e);
 
+/* ---- queues (Phase 9, D17), as the current persona ----
+
+   $GETQUI asks the queue manager, which judges the persona: every queue is listed,
+   and a job the viewer may not read comes back with only its entry and status, the
+   inaccessible bit set (probe_qui, PHASE9.md). */
+
+typedef struct {
+    char         name[32];
+    int          batch;             /* batch, or output (print, server, terminal) */
+    int          generic;
+    unsigned int status;            /* QUI$_QUEUE_STATUS: st_queue_status_names */
+    char         node[16];          /* /ON=node::, "" for none */
+    char         description[256];
+    unsigned int job_limit;
+    unsigned int executing, pending, holding, timed;
+} st_queue;
+
+typedef struct {
+    unsigned int entry;
+    char         name[40];          /* "" if inaccessible */
+    char         username[13];      /* "" if inaccessible */
+    unsigned int status;            /* QUI$_JOB_STATUS: st_job_status_names */
+    long long    submitted;         /* seconds since 1970, 0 if not given */
+    char         queue[32];
+} st_job;
+
+#define ST_JOB_FILES 16
+typedef struct {
+    st_job       j;
+    long long    after;             /* /AFTER, 0 for none */
+    unsigned int priority;
+    char         account[9];
+    unsigned int uic;
+    char         log[256];          /* the log file, "" for none */
+    int          nfiles;
+    char         files[ST_JOB_FILES][256];
+} st_job_detail;
+
+typedef int (*st_queue_cb)(const st_queue *q, void *ctx);   /* nonzero stops */
+typedef int (*st_job_cb)(const st_job *j, void *ctx);
+
+/* Every queue, as SHOW QUEUE lists them. */
+int st_plat_queue_enum(st_queue_cb fn, void *ctx, st_err *e);
+/* One queue by its name (st_valid_queue_name), then each of its jobs in turn, as SHOW
+   QUEUE/ALL. ST_E_NOTFOUND if there is no such queue. */
+int st_plat_queue_get(const char *name, st_queue *q, st_job_cb fn, void *ctx, st_err *e);
+/* One job by entry number, as SHOW ENTRY/FULL. ST_E_NOPRIV if it is the viewer's to
+   see listed but not to read (inaccessible), ST_E_NOTFOUND if there is none. */
+int st_plat_job_get(unsigned int entry, st_job_detail *d, st_err *e);
+
 /* ---- audit and diagnostics ---- */
 void st_plat_audit(const char *line);    /* one record; the platform adds a timestamp */
 void st_plat_log(const char *line);      /* operational log (SYS$ERROR / stderr) */

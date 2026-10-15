@@ -290,3 +290,12 @@ queue with no jobs answered `JBC$_NOSUCHJOB`, not `JBC$_NOMOREJOB`: a walk that 
 NOSUCHJOB and goes on never ends (the probe's first version, stopped by hand).
 Observed with `probes/probe_qui.c`.
 
+**A $GETQUI search by exact name keeps no context for the walk after it, unless asked**
+(Phase 9, 2026-10-15). `QUI$_DISPLAY_QUEUE` with `QUI$_SEARCH_NAME` = `SYS$BATCH` found
+the queue, but the `QUI$_DISPLAY_JOB` walk that followed gave no jobs; likewise
+`QUI$_DISPLAY_ENTRY` by `QUI$_SEARCH_NUMBER` then `QUI$_DISPLAY_FILE` gave no files.
+With `QUI$M_SEARCH_WILDCARD` in `QUI$_SEARCH_FLAGS` on the first call, both walks
+work. The probe had used a wildcard name, so it never met this. And a job asked for
+by an entry number that does not exist is `JBC$_NOSUCHENT` (295386), not NOSUCHJOB.
+Observed with `tests/vms/phase9_live.py` against held jobs.
+

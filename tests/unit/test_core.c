@@ -12,6 +12,7 @@
 #include "st_route.h"
 #include "st_lnm.h"
 #include "st_proc.h"
+#include "st_queue.h"
 #include "st_app.h"
 
 static int checks, failures;
@@ -1645,6 +1646,70 @@ static void test_process_stop(void)
     CHECK(!st_plat_persona_active(), "no persona left active");
 }
 
+/* Phase 9 (D17): queues, read-only. */
+static void test_queues(void)
+{
+    result b;
+    char tc[140], ac[140], tcsrf[65], acsrf[65], out[64], names[200];
+    const char *body;
+    hdr t[3], adm[3];
+    unsigned int n = 0;
+
+    CHECK(st_valid_queue_name("sys$batch", out) && !strcmp(out, "SYS$BATCH") && !st_valid_queue_name("SYS*", out) &&
+          !st_valid_queue_name("", out) && !st_valid_queue_name("A B", out), "queue names: upper-cased, no wildcards");
+    CHECK(st_parse_entry("269", &n) && n == 269 && !st_parse_entry("0", &n) && !st_parse_entry("1234567890", &n) &&
+          !st_parse_entry("12a", &n), "entry numbers: 1 to 9 digits, not 0");
+    st_queue_status_names(0x1000 | 0x40000, names, sizeof names);
+    CHECK(!strcmp(names, "stopped,available"), "queue status bits by name");
+    st_job_status_names(0x4 | 0x8, names, sizeof names);
+    CHECK(!strcmp(names, "holding,inaccessible"), "job status bits by name");
+
+    sign_in("{\"username\":\"steward_test\",\"password\":\"test-pass\"}", tc, sizeof tc, tcsrf);
+    t[0].n = "HTTP_COOKIE"; t[0].v = tc; t[1].n = "HTTP_X_STEWARD_CSRF"; t[1].v = tcsrf; t[2].n = NULL;
+    call("GET", "/api/v1/queues", t, NULL, &b);
+    body = b.resp.body.data;
+    CHECK(b.resp.status == 200 && strstr(body, "\"name\":\"SYS$BATCH\",\"kind\":\"batch\",\"generic\":true") &&
+          strstr(body, "\"name\":\"LPA0_PRINT\",\"kind\":\"output\",\"generic\":false,\"status\":[\"stopped\"]") &&
+          strstr(body, "\"executing\":1,\"pending\":1"), "every queue, kind, status and counts");
+    st_resp_free(&b.resp);
+    call("GET", "/api/v1/queues/x86vms_batch", t, NULL, &b);
+    body = b.resp.body.data;
+    CHECK(b.resp.status == 200 && strstr(body, "{\"entry\":141,\"accessible\":false,\"name\":\"\",\"username\":\"\",\"status\":[\"executing\"]") &&
+          strstr(body, "{\"entry\":272,\"accessible\":true,\"name\":\"REPORT\",\"username\":\"STEWARD_ADM\"") &&
+          strstr(body, "\"name\":\"X86VMS_BATCH\""), "a queue's jobs: another group's inaccessible, the group's shown (G:R)");
+    st_resp_free(&b.resp);
+    call("GET", "/api/v1/jobs/141", t, NULL, &b);
+    CHECK(b.resp.status == 403 && strstr(b.resp.body.data, "NOPRIV"), "an inaccessible job by entry: NOPRIV");
+    st_resp_free(&b.resp);
+    call("GET", "/api/v1/jobs/269", t, NULL, &b);
+    body = b.resp.body.data;
+    CHECK(b.resp.status == 200 && strstr(body, "\"name\":\"NIGHTLY\"") && strstr(body, "\"status\":[\"holding\"]") &&
+          strstr(body, "\"files\":[\"SYS$SYSDEVICE:[STEWARD_TEST]NIGHTLY.COM;1\"]") && strstr(body, "\"uic\":\"[362,1]\""),
+          "one's own job: name, status, files, UIC");
+    st_resp_free(&b.resp);
+    call("GET", "/api/v1/jobs/999", t, NULL, &b);
+    CHECK(b.resp.status == 404 && strstr(b.resp.body.data, "NOSUCHENT"), "no such entry: NOSUCHENT, as on OpenVMS");
+    st_resp_free(&b.resp);
+    call("GET", "/api/v1/queues/NO_SUCH", t, NULL, &b);
+    CHECK(b.resp.status == 404 && strstr(b.resp.body.data, "NOSUCHQUE"), "no such queue: NOSUCHQUE");
+    st_resp_free(&b.resp);
+    call("GET", "/api/v1/queues/SYS*", t, NULL, &b);
+    CHECK(b.resp.status == 400, "a wildcard queue name is refused");
+    st_resp_free(&b.resp);
+    call("GET", "/api/v1/jobs/0", t, NULL, &b);
+    CHECK(b.resp.status == 400, "entry 0 is refused");
+    st_resp_free(&b.resp);
+
+    sign_in("{\"username\":\"steward_adm\",\"password\":\"admin-pass\"}", ac, sizeof ac, acsrf);
+    adm[0].n = "HTTP_COOKIE"; adm[0].v = ac; adm[1].n = "HTTP_X_STEWARD_CSRF"; adm[1].v = acsrf; adm[2].n = NULL;
+    call("PUT", "/api/v1/session/privileges", adm, "{\"enabled\":[\"sysprv\"]}", &b);
+    st_resp_free(&b.resp);
+    call("GET", "/api/v1/jobs/141", adm, NULL, &b);
+    CHECK(b.resp.status == 200 && strstr(b.resp.body.data, "\"name\":\"BZSOAK\""), "with SYSPRV, anyone's job");
+    st_resp_free(&b.resp);
+    CHECK(!st_plat_persona_active(), "no persona left active");
+}
+
 int main(void)
 {
     st_app_config cfg;
@@ -1677,6 +1742,7 @@ int main(void)
     test_logical_changes();
     test_processes();
     test_process_stop();
+    test_queues();
     test_create();
     test_gateway();
     printf("%d checks, %d failed\n", checks, failures);

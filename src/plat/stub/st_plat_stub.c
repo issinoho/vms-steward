@@ -30,6 +30,7 @@
 #include <time.h>
 #include "st_buf.h"
 #include "st_platform.h"
+#include "st_queue.h"
 #include "st_route.h"
 
 #define BIT(n) (1u << (n))
@@ -48,6 +49,9 @@
 #define C_IVLOGTAB  0x015Cu   /* SS$_IVLOGTAB 348 (SHOW LOGICAL returns it as a warning, %X158) */
 #define C_NOSYSNAM  0x2814u   /* SS$_NOSYSNAM 10260 */
 #define C_NONEXPR   0x08E8u   /* SS$_NONEXPR 2280 */
+#define C_NOSUCHQUE 0x0004803Au   /* JBC$_NOSUCHQUE 294970 (JBCMSGDEF on the node) */
+#define C_NOSUCHJOB 0x00048042u   /* JBC$_NOSUCHJOB 294978 */
+#define C_NOSUCHENT 0x000481DAu   /* JBC$_NOSUCHENT 295386: a job by entry number */
 
 typedef struct {
     st_user u;
@@ -1232,6 +1236,114 @@ int st_plat_proc_stop(unsigned int pid, st_err *e)
         return 0;
     }
     return fail(e, ST_E_NOTFOUND, C_NONEXPR, "%SYSTEM-W-NONEXPR, nonexistent process");
+}
+
+/* ---------------------------------------------------------------- queues (D17) */
+
+/* As x86 has them (PHASE9.md): SYS$BATCH generic, feeding X86VMS_BATCH; two print
+   queues, one stopped. Jobs: STEWARD_TEST's held, the work account's executing, and
+   STEWARD_ADM's pending. */
+typedef struct { const char *name; int batch, generic; unsigned int status; const char *node, *desc; unsigned int limit; } stub_queue;
+static const stub_queue stub_queues[] = {
+    { "SYS$BATCH", 1, 1, 0x0, "", "Batch: generic", 0 },
+    { "X86VMS_BATCH", 1, 0, 0x40000 | 0x10000, "X86VMS", "Batch on X86VMS", 4 },
+    { "SYS$PRINT", 0, 1, 0x0, "", "", 0 },
+    { "LPA0_PRINT", 0, 0, 0x1000, "X86VMS", "Line printer (stopped)", 1 },
+};
+typedef struct { unsigned int entry; const char *name, *user; unsigned int uic, status; const char *queue, *file; int age; } stub_job;
+static const stub_job stub_jobs[] = {
+    { 269, "NIGHTLY", "STEWARD_TEST", 0x00F20001u, 0x4, "SYS$BATCH", "SYS$SYSDEVICE:[STEWARD_TEST]NIGHTLY.COM;1", 600 },
+    { 141, "BZSOAK", "IAIN", 0x00C80065u, 0x2, "X86VMS_BATCH", "X86VMS$DKA300:[IAIN]BZSOAK.COM;3", 86400 },
+    { 272, "REPORT", "STEWARD_ADM", 0x00F20002u, 0x800, "X86VMS_BATCH", "SYS$SYSDEVICE:[STEWARD_ADM]REPORT.COM;1", 60 },
+};
+
+/* As the queue manager decides (probe_qui): one's own and one's group's jobs (the
+   queues give G:R), anyone's with SYSPRV; the rest inaccessible. */
+static int stub_may_read_job(const stub_job *j)
+{
+    if (!persona) return 0;
+    return system_access() || (j->uic >> 16) == (persona->u.uic >> 16);
+}
+
+static void stub_job_fill(const stub_job *s, st_job *j)
+{
+    memset(j, 0, sizeof *j);
+    j->entry = s->entry;
+    st_copy(j->queue, sizeof j->queue, s->queue);
+    if (!stub_may_read_job(s)) { j->status = s->status | ST_JOB_INACCESSIBLE; return; }
+    j->status = s->status;
+    st_copy(j->name, sizeof j->name, s->name);
+    st_copy(j->username, sizeof j->username, s->user);
+    j->submitted = (long long) time(NULL) - s->age;
+}
+
+static void stub_queue_fill(const stub_queue *s, st_queue *q)
+{
+    size_t i;
+    memset(q, 0, sizeof *q);
+    st_copy(q->name, sizeof q->name, s->name);
+    q->batch = s->batch;
+    q->generic = s->generic;
+    q->status = s->status;
+    st_copy(q->node, sizeof q->node, s->node);
+    st_copy(q->description, sizeof q->description, s->desc);
+    q->job_limit = s->limit;
+    for (i = 0; i < sizeof stub_jobs / sizeof stub_jobs[0]; i++)
+        if (!strcmp(stub_jobs[i].queue, s->name)) {
+            unsigned int st = stub_jobs[i].status;
+            if (st & 0x2) q->executing++;
+            if (st & 0x800) q->pending++;
+            if (st & 0x4) q->holding++;
+            if (st & 0x200) q->timed++;
+        }
+}
+
+int st_plat_queue_enum(st_queue_cb fn, void *ctx, st_err *e)
+{
+    size_t i;
+    st_queue q;
+    (void) e;
+    for (i = 0; i < sizeof stub_queues / sizeof stub_queues[0]; i++) {
+        stub_queue_fill(&stub_queues[i], &q);
+        if (fn(&q, ctx)) break;
+    }
+    return 0;
+}
+
+int st_plat_queue_get(const char *name, st_queue *q, st_job_cb fn, void *ctx, st_err *e)
+{
+    size_t i;
+    st_job j;
+    for (i = 0; i < sizeof stub_queues / sizeof stub_queues[0]; i++)
+        if (!strcmp(stub_queues[i].name, name)) break;
+    if (i == sizeof stub_queues / sizeof stub_queues[0])
+        return fail(e, ST_E_NOTFOUND, C_NOSUCHQUE, "%JBC-E-NOSUCHQUE, no such queue");
+    stub_queue_fill(&stub_queues[i], q);
+    for (i = 0; i < sizeof stub_jobs / sizeof stub_jobs[0]; i++) {
+        if (strcmp(stub_jobs[i].queue, name)) continue;
+        stub_job_fill(&stub_jobs[i], &j);
+        if (fn(&j, ctx)) break;
+    }
+    return 0;
+}
+
+int st_plat_job_get(unsigned int entry, st_job_detail *d, st_err *e)
+{
+    size_t i;
+    memset(d, 0, sizeof *d);
+    for (i = 0; i < sizeof stub_jobs / sizeof stub_jobs[0]; i++) {
+        const stub_job *s = &stub_jobs[i];
+        if (s->entry != entry) continue;
+        if (!stub_may_read_job(s)) return stub_noprive(e);
+        stub_job_fill(s, &d->j);
+        d->priority = 100;
+        d->uic = s->uic;
+        st_copy(d->account, sizeof d->account, "STEWARD");
+        snprintf(d->log, sizeof d->log, "SYS$SYSDEVICE:[%s]%s.LOG", s->user, s->name);
+        st_copy(d->files[d->nfiles++], sizeof d->files[0], s->file);
+        return 0;
+    }
+    return fail(e, ST_E_NOTFOUND, C_NOSUCHENT, "%JBC-E-NOSUCHENT, no such entry");
 }
 
 /* ================================================================ misc */

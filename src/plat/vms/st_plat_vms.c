@@ -103,7 +103,7 @@ static void set_cond(st_err *e, unsigned int cond)
     case SS$_NOSYSNAM: case SS$_NOGRPNAM:
         e->kind = ST_E_NOPRIV; break;
     case SS$_NOSUCHID: case RMS$_RNF: case SS$_NOLOGNAM: case SS$_NOLOGTAB: case SS$_IVLOGTAB:
-    case SS$_NONEXPR:
+    case SS$_NONEXPR: case JBC$_NOSUCHQUE: case JBC$_NOSUCHJOB: case JBC$_NOSUCHENT:
         e->kind = ST_E_NOTFOUND; break;
     case SS$_IVIDENT: case SS$_BADPARAM: case SS$_INVPWDLEN: case SS$_PWDINHIS:
     case SS$_PWDINDIC: case SS$_PWDWEAK: case SS$_PWDSYNTAX:
@@ -3201,6 +3201,200 @@ int st_plat_proc_stop(unsigned int pid, st_err *e)
     if (pid == proc_self()) { set_cond(e, SS$_NONEXPR); return -1; }
     st = sys$delprc(&target, 0, 0);
     if (!(st & 1)) { set_cond(e, st); return -1; }
+    return 0;
+}
+
+/* ================================================================ queues (Phase 9, D17) */
+
+/* One queue's items, for $GETQUI QUI$_DISPLAY_QUEUE. */
+typedef struct {
+    unsigned int flags, status, limit, executing, pending, holding, timed;
+    char name[32], node[16], desc[256];
+    unsigned short l_name, l_node, l_desc;
+} queue_raw;
+
+static int queue_items(st_ile3 *it, queue_raw *r)
+{
+    int n = 0;
+    memset(r, 0, sizeof *r);
+    item(&it[n++], QUI$_QUEUE_NAME, r->name, sizeof r->name - 1, &r->l_name);
+    item(&it[n++], QUI$_QUEUE_FLAGS, &r->flags, 4, 0);
+    item(&it[n++], QUI$_QUEUE_STATUS, &r->status, 4, 0);
+    item(&it[n++], QUI$_SCSNODE_NAME, r->node, sizeof r->node - 1, &r->l_node);
+    item(&it[n++], QUI$_QUEUE_DESCRIPTION, r->desc, sizeof r->desc - 1, &r->l_desc);
+    item(&it[n++], QUI$_JOB_LIMIT, &r->limit, 4, 0);
+    item(&it[n++], QUI$_EXECUTING_JOB_COUNT, &r->executing, 4, 0);
+    item(&it[n++], QUI$_PENDING_JOB_COUNT, &r->pending, 4, 0);
+    item(&it[n++], QUI$_HOLDING_JOB_COUNT, &r->holding, 4, 0);
+    item(&it[n++], QUI$_TIMED_RELEASE_JOB_COUNT, &r->timed, 4, 0);
+    return n;
+}
+
+static void queue_from_raw(const queue_raw *r, st_queue *q)
+{
+    memset(q, 0, sizeof *q);
+    blank_trim(r->name, r->l_name, q->name, sizeof q->name);
+    q->batch = (r->flags & QUI$M_QUEUE_BATCH) != 0;
+    q->generic = (r->flags & QUI$M_QUEUE_GENERIC) != 0;
+    q->status = r->status;
+    blank_trim(r->node, r->l_node, q->node, sizeof q->node);
+    blank_trim(r->desc, r->l_desc, q->description, sizeof q->description);
+    q->job_limit = r->limit;
+    q->executing = r->executing;
+    q->pending = r->pending;
+    q->holding = r->holding;
+    q->timed = r->timed;
+}
+
+/* $GETQUI's status: a longword condition first (JBC$_ codes). */
+static unsigned int qui(unsigned int func, unsigned int *ctx, st_ile3 *it)
+{
+    unsigned int iosb[2] = { 0, 0 }, st;
+    st = sys$getquiw(0, func, ctx, it, iosb, 0, 0);
+    return (st & 1) ? iosb[0] : st;
+}
+
+int st_plat_queue_enum(st_queue_cb fn, void *ctx, st_err *e)
+{
+    static char search[] = "*";
+    unsigned int qctx = 0xFFFFFFFFu, st;
+    queue_raw r;
+    st_queue q;
+    st_ile3 it[13];
+    int n;
+    for (;;) {
+        n = queue_items(it, &r);
+        item(&it[n++], QUI$_SEARCH_NAME, search, 1, 0);
+        item_end(&it[n]);
+        st = qui(QUI$_DISPLAY_QUEUE, &qctx, it);
+        if (st == JBC$_NOMOREQUE) break;
+        if (!(st & 1)) { set_cond(e, st); qui(QUI$_CANCEL_OPERATION, &qctx, 0); return -1; }
+        queue_from_raw(&r, &q);
+        if (fn(&q, ctx)) break;
+    }
+    qui(QUI$_CANCEL_OPERATION, &qctx, 0);
+    return 0;
+}
+
+/* One job's summary items, for QUI$_DISPLAY_JOB and QUI$_DISPLAY_ENTRY. */
+typedef struct {
+    unsigned int entry, status, submitted[2];
+    char name[40], user[13], queue[32];
+    unsigned short l_name, l_user, l_queue;
+} job_raw;
+
+static int job_items(st_ile3 *it, job_raw *r)
+{
+    int n = 0;
+    memset(r, 0, sizeof *r);
+    item(&it[n++], QUI$_ENTRY_NUMBER, &r->entry, 4, 0);
+    item(&it[n++], QUI$_JOB_NAME, r->name, sizeof r->name - 1, &r->l_name);
+    item(&it[n++], QUI$_USERNAME, r->user, sizeof r->user - 1, &r->l_user);
+    item(&it[n++], QUI$_JOB_STATUS, &r->status, 4, 0);
+    item(&it[n++], QUI$_SUBMISSION_TIME, r->submitted, 8, 0);
+    item(&it[n++], QUI$_QUEUE_NAME, r->queue, sizeof r->queue - 1, &r->l_queue);
+    return n;
+}
+
+static void job_from_raw(const job_raw *r, st_job *j)
+{
+    memset(j, 0, sizeof *j);
+    j->entry = r->entry;
+    j->status = r->status;
+    if (!(r->status & QUI$M_JOB_INACCESSIBLE)) {   /* only what the viewer may read */
+        blank_trim(r->name, r->l_name, j->name, sizeof j->name);
+        blank_trim(r->user, r->l_user, j->username, sizeof j->username);
+        j->submitted = unix_time(r->submitted);
+    }
+    blank_trim(r->queue, r->l_queue, j->queue, sizeof j->queue);
+}
+
+int st_plat_queue_get(const char *name, st_queue *q, st_job_cb fn, void *ctx, st_err *e)
+{
+    unsigned int qctx = 0xFFFFFFFFu, st, all = QUI$M_SEARCH_ALL_JOBS, wild = QUI$M_SEARCH_WILDCARD, n;
+    char search[32];
+    queue_raw r;
+    job_raw jr;
+    st_job j;
+    st_ile3 it[14];
+    int k;
+
+    st_copy(search, sizeof search, name);
+    k = queue_items(it, &r);
+    item(&it[k++], QUI$_SEARCH_NAME, search, (unsigned short) strlen(search), 0);
+    /* WILDCARD keeps the search context for the job walk that follows; without it a
+       queue named exactly gives no jobs (phase9_live.py, 2026-10-15). */
+    item(&it[k++], QUI$_SEARCH_FLAGS, &wild, 4, 0);
+    item_end(&it[k]);
+    st = qui(QUI$_DISPLAY_QUEUE, &qctx, it);
+    if (st == JBC$_NOMOREQUE || st == JBC$_NOSUCHQUE) { set_cond(e, JBC$_NOSUCHQUE); qui(QUI$_CANCEL_OPERATION, &qctx, 0); return -1; }
+    if (!(st & 1)) { set_cond(e, st); qui(QUI$_CANCEL_OPERATION, &qctx, 0); return -1; }
+    queue_from_raw(&r, q);
+    /* Its jobs. An empty queue answers NOSUCHJOB, not NOMOREJOB (probe_qui): both end
+       the walk, which is bounded besides. */
+    for (n = 0; n < 100000; n++) {
+        k = job_items(it, &jr);
+        item(&it[k++], QUI$_SEARCH_FLAGS, &all, 4, 0);
+        item_end(&it[k]);
+        st = qui(QUI$_DISPLAY_JOB, &qctx, it);
+        if (st == JBC$_NOMOREJOB || st == JBC$_NOSUCHJOB) break;
+        if (!(st & 1)) { set_cond(e, st); qui(QUI$_CANCEL_OPERATION, &qctx, 0); return -1; }
+        job_from_raw(&jr, &j);
+        if (!j.queue[0]) st_copy(j.queue, sizeof j.queue, q->name);
+        if (fn(&j, ctx)) break;
+    }
+    qui(QUI$_CANCEL_OPERATION, &qctx, 0);
+    return 0;
+}
+
+int st_plat_job_get(unsigned int entry, st_job_detail *d, st_err *e)
+{
+    unsigned int qctx = 0xFFFFFFFFu, st, after[2] = { 0, 0 }, prio = 0, uic = 0, target = entry, n;
+    unsigned int wild = QUI$M_SEARCH_WILDCARD;
+    char acct[9], log[256], file[256];
+    unsigned short l_acct = 0, l_log = 0, l_file = 0;
+    job_raw jr;
+    st_ile3 it[17];
+    int k;
+
+    memset(d, 0, sizeof *d);
+    k = job_items(it, &jr);
+    item(&it[k++], QUI$_SEARCH_NUMBER, &target, 4, 0);
+    item(&it[k++], QUI$_SEARCH_FLAGS, &wild, 4, 0);   /* context for the file walk */
+    item(&it[k++], QUI$_AFTER_TIME, after, 8, 0);
+    item(&it[k++], QUI$_PRIORITY, &prio, 4, 0);
+    item(&it[k++], QUI$_ACCOUNT_NAME, acct, sizeof acct - 1, &l_acct);
+    item(&it[k++], QUI$_UIC, &uic, 4, 0);
+    item(&it[k++], QUI$_LOG_SPECIFICATION, log, sizeof log - 1, &l_log);
+    item_end(&it[k]);
+    st = qui(QUI$_DISPLAY_ENTRY, &qctx, it);
+    if (st == JBC$_NOSUCHJOB || st == JBC$_NOMOREJOB || st == JBC$_NOSUCHENT) {
+        set_cond(e, st == JBC$_NOSUCHENT ? JBC$_NOSUCHENT : JBC$_NOSUCHJOB);
+        qui(QUI$_CANCEL_OPERATION, &qctx, 0);
+        return -1;
+    }
+    if (!(st & 1)) { set_cond(e, st); qui(QUI$_CANCEL_OPERATION, &qctx, 0); return -1; }
+    if (jr.status & QUI$M_JOB_INACCESSIBLE) {
+        qui(QUI$_CANCEL_OPERATION, &qctx, 0);
+        set_cond(e, SS$_NOPRIV);
+        return -1;
+    }
+    job_from_raw(&jr, &d->j);
+    d->after = unix_time(after);
+    d->priority = prio;
+    blank_trim(acct, l_acct, d->account, sizeof d->account);
+    d->uic = uic;
+    blank_trim(log, l_log, d->log, sizeof d->log);
+    /* Its files, in the same context. */
+    for (n = 0; n < 1000 && d->nfiles < ST_JOB_FILES; n++) {
+        l_file = 0;
+        item(&it[0], QUI$_FILE_SPECIFICATION, file, sizeof file - 1, &l_file);
+        item_end(&it[1]);
+        st = qui(QUI$_DISPLAY_FILE, &qctx, it);
+        if (!(st & 1)) break;   /* JBC$_NOMOREFILE */
+        blank_trim(file, l_file, d->files[d->nfiles++], sizeof d->files[0]);
+    }
+    qui(QUI$_CANCEL_OPERATION, &qctx, 0);
     return 0;
 }
 
