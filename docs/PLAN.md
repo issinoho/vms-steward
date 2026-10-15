@@ -173,7 +173,10 @@ shadowing probe (0.6.2). See `docs/PHASE7.md`.
 **Phase 8: processes** (D16): read-only (8a) and stopping a process (8b) closed
 2026-10-15 on the user's browser checks and a review (0.7.2). See `docs/PHASE8.md`. See `docs/PHASE8.md`.
 
-**Later areas, one at a time and each with the same read-only → modify split:** batch/print queues, system parameters, licences, installed products,
+**Phase 9: batch and print queues** (D17), started 2026-10-15: read-only (9a), then
+hold, release and delete a job and stop and start a queue (9b). See `docs/PHASE9.md`.
+
+**Later areas, one at a time and each with the same read-only → modify split:** system parameters, licences, installed products,
 CPU/memory monitoring, error log, and a WebSocket terminal (lighttpd `mod_wstunnel`).
 The user confirmed this order on 2026-10-11 (licences stay where they are).
 

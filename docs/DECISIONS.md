@@ -471,3 +471,19 @@ small: 42 processes in 0.01 s on x86).
     on a system process.
   - **Audited:** PID, process name, username and OpenVMS's answer.
 
+## D17. Queues: $GETQUI and $SNDJBC in-process, as the viewer
+
+**Status:** 9b's scope approved by the user 2026-10-15 (hold, release and delete a job;
+stop and start a queue); the rest follows from the probe (`probes/probe_qui.c`,
+PHASE9.md). Phase 9.
+
+Queues and jobs are read with `$GETQUI` in-process under the persona. The queue
+manager judges each request by the persona: a job the viewer may not read comes back
+as inaccessible (entry and status only), as `SHOW QUEUE/ALL` shows it. Steward shows
+it so too, and adds nothing. Changes will be `$SNDJBC` under the persona, once a probe
+shows the queue manager judges those by the persona as well.
+
+Alternatives not taken: driving SHOW QUEUE in a helper process (D14's way; not needed,
+`$GETQUI` gives everything a terminal shows); reading as the service and filtering
+(Steward would decide).
+

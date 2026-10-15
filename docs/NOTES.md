@@ -281,3 +281,12 @@ whatever the viewer holds. OPCOM is restarted with `@SYS$SYSTEM:STARTUP OPCOM`
 ran three of four test jobs at once, other jobs taking the fourth slot; the live
 test now waits for the last one.
 
+**$GETQUI judges the persona; an empty queue answers NOSUCHJOB to a job walk**
+(Phase 9, 2026-10-15). Under STEWARD_TEST's persona, from my all-privileged process,
+`QUI$_DISPLAY_JOB` with `QUI$M_SEARCH_ALL_JOBS` returned other users' jobs with
+`QUI$M_JOB_INACCESSIBLE` (%X8) and no name or username; with SYSPRV, everything.
+STEWARD_ADM saw STEWARD_TEST's job in full (same UIC group; the queues give G:R). A
+queue with no jobs answered `JBC$_NOSUCHJOB`, not `JBC$_NOMOREJOB`: a walk that skips
+NOSUCHJOB and goes on never ends (the probe's first version, stopped by hand).
+Observed with `probes/probe_qui.c`.
+
