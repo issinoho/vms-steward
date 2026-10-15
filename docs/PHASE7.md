@@ -136,6 +136,9 @@ no_alias: no warning, and the user-mode name was replaced (audit log: `7B_TEST u
 definition. Fixed in 0.6.1: `GET logical` takes a `mode`, a name at several modes gets
 a Modify button per mode that opens that mode's own definition, and the dialog's
 title names the mode.
+Kit T0.6-1 built by `tools/kit.sh x86` (289 native checks), SHA-256
+`d5789b23e9901816dc87cd0a75d5ed1fe117fe94ce7d29bb7a638542bc31f66f`;
+`phase7b_live.py` 24 ok, 0 failed on the build it packages.
 
 **Exit (7b):**
 - Defines and deassigns match DEFINE and DEASSIGN (`SHOW LOGICAL` after each), for
