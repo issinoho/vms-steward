@@ -102,6 +102,7 @@ static void set_cond(st_err *e, unsigned int cond)
     case SS$_NOSYSNAM: case SS$_NOGRPNAM:
         e->kind = ST_E_NOPRIV; break;
     case SS$_NOSUCHID: case RMS$_RNF: case SS$_NOLOGNAM: case SS$_NOLOGTAB: case SS$_IVLOGTAB:
+    case SS$_NONEXPR:
         e->kind = ST_E_NOTFOUND; break;
     case SS$_IVIDENT: case SS$_BADPARAM: case SS$_INVPWDLEN: case SS$_PWDINHIS:
     case SS$_PWDINDIC: case SS$_PWDWEAK: case SS$_PWDSYNTAX:
@@ -2993,6 +2994,148 @@ int st_plat_lnm_deassign(const char *table, const char *name, int mode, st_err *
     desc(&nam, name, (unsigned short) strlen(name));
     st = sys$dellnm(&tab, &nam, &m);
     if (!(st & 1)) { set_cond(e, st); return -1; }
+    return 0;
+}
+
+/* ================================================================ processes (Phase 8, D16) */
+
+/* $GETJPI's answers for one process, before they are tidied into an st_proc. */
+typedef struct {
+    unsigned int pid, uic, state, pri, prib, mode, owner, cputim, dirio, bufio, pageflts;
+    unsigned int login[2];
+    char name[16], user[13], term[16], image[256];
+    unsigned short l_name, l_user, l_term, l_image;
+} proc_raw;
+
+static int proc_items(st_ile3 *it, proc_raw *r)
+{
+    int n = 0;
+    memset(r, 0, sizeof *r);
+    item(&it[n++], JPI$_PID, &r->pid, 4, 0);
+    item(&it[n++], JPI$_PRCNAM, r->name, sizeof r->name - 1, &r->l_name);
+    item(&it[n++], JPI$_USERNAME, r->user, sizeof r->user - 1, &r->l_user);
+    item(&it[n++], JPI$_UIC, &r->uic, 4, 0);
+    item(&it[n++], JPI$_STATE, &r->state, 4, 0);
+    item(&it[n++], JPI$_PRI, &r->pri, 4, 0);
+    item(&it[n++], JPI$_PRIB, &r->prib, 4, 0);
+    item(&it[n++], JPI$_MODE, &r->mode, 4, 0);
+    item(&it[n++], JPI$_OWNER, &r->owner, 4, 0);
+    item(&it[n++], JPI$_TERMINAL, r->term, sizeof r->term - 1, &r->l_term);
+    item(&it[n++], JPI$_IMAGNAME, r->image, sizeof r->image - 1, &r->l_image);
+    item(&it[n++], JPI$_CPUTIM, &r->cputim, 4, 0);
+    item(&it[n++], JPI$_DIRIO, &r->dirio, 4, 0);
+    item(&it[n++], JPI$_BUFIO, &r->bufio, 4, 0);
+    item(&it[n++], JPI$_PAGEFLTS, &r->pageflts, 4, 0);
+    item(&it[n++], JPI$_LOGINTIM, r->login, 8, 0);
+    return n;
+}
+
+static void proc_from_raw(const proc_raw *r, st_proc *p)
+{
+    memset(p, 0, sizeof *p);
+    p->pid = r->pid;
+    blank_trim(r->name, r->l_name, p->name, sizeof p->name);
+    blank_trim(r->user, r->l_user, p->username, sizeof p->username);
+    p->uic = r->uic;
+    p->state = (int) r->state;
+    p->pri = (int) r->pri;
+    p->prib = (int) r->prib;
+    p->mode = (int) r->mode;
+    p->subprocess = r->owner != 0;
+    blank_trim(r->term, r->l_term, p->terminal, sizeof p->terminal);
+    blank_trim(r->image, r->l_image, p->image, sizeof p->image);
+    p->cputim = r->cputim;
+    p->dirio = r->dirio;
+    p->bufio = r->bufio;
+    p->pageflts = r->pageflts;
+    p->login = unix_time(r->login);
+}
+
+/* The PID of the process serving the request: under the persona it reports the
+   viewer's username and UIC, so it is never shown (PHASE8.md). */
+static unsigned int proc_self(void)
+{
+    unsigned int pid = 0, iosb[2];
+    st_ile3 it[2];
+    item(&it[0], JPI$_PID, &pid, 4, 0);
+    item_end(&it[1]);
+    return (sys$getjpiw(0, 0, 0, it, iosb, 0, 0) & 1) ? pid : 0;
+}
+
+int st_plat_proc_enum(st_proc_cb fn, void *ctx, st_err *e)
+{
+    unsigned int wild = 0xFFFFFFFFu, iosb[2], st, self = proc_self();
+    proc_raw r;
+    st_proc p;
+    st_ile3 it[20];
+    for (;;) {
+        item_end(&it[proc_items(it, &r)]);
+        st = sys$getjpiw(0, &wild, 0, it, iosb, 0, 0);
+        if (st & 1) st = iosb[0] & 0xFFFF;
+        if (st == SS$_NOMOREPROC) break;
+        if (st == SS$_NOPRIV || st == SS$_SUSPENDED) continue;   /* not the viewer's to see */
+        if (!(st & 1)) { set_cond(e, st); return -1; }
+        if (r.pid == self) continue;
+        proc_from_raw(&r, &p);
+        if (fn(&p, ctx)) break;
+    }
+    return 0;
+}
+
+int st_plat_proc_get(unsigned int pid, st_proc_detail *d, st_err *e)
+{
+    unsigned int iosb[2], st, i, target = pid, prccnt = 0, prclm = 0;
+    unsigned int rights[2 * ST_MAX_IDS * 2], ppg = 0, gpg = 0;
+    unsigned short rlen = 0;
+    struct dsc$descriptor_s ds;
+    proc_raw r;
+    st_ile3 it[48];
+    int n;
+    static const unsigned short lm[ST_PQ_COUNT] = { JPI$_ASTLM, JPI$_BIOLM, JPI$_DIOLM, JPI$_FILLM,
+        JPI$_PRCLM, JPI$_TQLM, JPI$_ENQLM, JPI$_BYTLM, JPI$_PGFLQUOTA };
+    static const unsigned short cnt[ST_PQ_COUNT] = { JPI$_ASTCNT, JPI$_BIOCNT, JPI$_DIOCNT, JPI$_FILCNT,
+        0, JPI$_TQCNT, JPI$_ENQCNT, JPI$_BYTCNT, JPI$_PAGFILCNT };
+
+    memset(d, 0, sizeof *d);
+    if (pid == proc_self()) { set_cond(e, SS$_NONEXPR); return -1; }
+    n = proc_items(it, &r);
+    item(&it[n++], JPI$_MASTER_PID, &d->master, 4, 0);
+    item(&it[n++], JPI$_PRCCNT, &prccnt, 4, 0);
+    item(&it[n++], JPI$_WSSIZE, &d->wssize, 4, 0);
+    item(&it[n++], JPI$_PPGCNT, &ppg, 4, 0);
+    item(&it[n++], JPI$_GPGCNT, &gpg, 4, 0);
+    item(&it[n++], JPI$_CURPRIV, d->priv_cur, 8, 0);
+    item(&it[n++], JPI$_AUTHPRIV, d->priv_auth, 8, 0);
+    item(&it[n++], JPI$_PROCESS_RIGHTS, rights, sizeof rights, &rlen);
+    for (i = 0; i < ST_PQ_COUNT; i++) {
+        item(&it[n++], lm[i], &d->quota[i], 4, 0);
+        if (cnt[i]) item(&it[n++], cnt[i], &d->left[i], 4, 0);
+    }
+    item(&it[n++], JPI$_PRCLM, &prclm, 4, 0);
+    item_end(&it[n]);
+    st = sys$getjpiw(0, &target, 0, it, iosb, 0, 0);
+    if (st & 1) st = iosb[0] & 0xFFFF;
+    if (!(st & 1)) { set_cond(e, st); return -1; }
+
+    proc_from_raw(&r, &d->p);
+    d->owner = r.owner;
+    d->subprocesses = prccnt;
+    d->wspages = ppg + gpg;
+    d->left[ST_PQ_PRC] = prclm > prccnt ? prclm - prccnt : 0;   /* no PRCCNT-left item */
+    for (i = 0; i + 1 < rlen / 4u && d->nids < ST_MAX_IDS; i += 2) {
+        unsigned int id = rights[i], resid, attrib, ctx = 0;
+        char name[32] = { 0 };
+        unsigned short nlen = 0;
+        if (!(id & 0x80000000u)) continue;   /* general identifiers, as SHOW PROCESS */
+        desc(&ds, name, sizeof name - 1);
+        if (sys$idtoasc(id, &nlen, &ds, &resid, &attrib, &ctx) & 1) {
+            name[nlen] = '\0';
+            st_copy(d->ids[d->nids++], sizeof d->ids[0], name);
+        } else {
+            snprintf(d->ids[d->nids++], sizeof d->ids[0], "%%X%08X", id);
+        }
+        sys$finish_rdb(&ctx);
+    }
     return 0;
 }
 

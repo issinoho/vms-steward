@@ -47,6 +47,7 @@
 #define C_NOLOGTAB  0x2294u   /* SS$_NOLOGTAB 8852 */
 #define C_IVLOGTAB  0x015Cu   /* SS$_IVLOGTAB 348 (SHOW LOGICAL returns it as a warning, %X158) */
 #define C_NOSYSNAM  0x2814u   /* SS$_NOSYSNAM 10260 */
+#define C_NONEXPR   0x08E8u   /* SS$_NONEXPR 2280 */
 
 typedef struct {
     st_user u;
@@ -151,7 +152,7 @@ static void seed(void)
     add_user("DEFAULT", NULL, "", "", 0x00800080u,
              BIT(15) | BIT(20), 0, BIT(15) | BIT(20), 0, 1u << ST_UF_DISUSER, -1);
     add_user("STEWARD_ADM", "admin-pass", "Steward administrator", "STEWARD", 0x00F20002u,
-             BIT(15) | BIT(20) | BIT(28) | BIT(18) | BIT(2), BIT(2), BIT(15) | BIT(20) | BIT(18), 0,
+             BIT(15) | BIT(20) | BIT(28) | BIT(18) | BIT(2) | BIT(8) | BIT(16), BIT(2), BIT(15) | BIT(20) | BIT(18), 0,
              1u << ST_UF_DISCTLY, 1791000000LL);
     add_user("STEWARD_TEST", "test-pass", "Test account", "STEWARD", 0x00F20001u,
              BIT(15) | BIT(20), 0, BIT(15) | BIT(20), 0, 0, 1791000000LL);
@@ -307,7 +308,9 @@ int st_plat_whoami(st_whoami *w, st_err *e)
 
 static int cur_has(int bit) { return persona && (persona_cur[bit / 32] & (1u << (bit % 32))); }
 #define P_SYSNAM  2
-#define P_GRPNAM  8
+#define P_GRPNAM  3
+#define P_GROUP   8
+#define P_WORLD   16
 #define P_SYSPRV  28
 #define P_GRPPRV  34
 #define P_READALL 35
@@ -1115,6 +1118,96 @@ int st_plat_lnm_deassign(const char *table, const char *name, int mode, st_err *
         }
     if (!n) { fail(e, ST_E_NOTFOUND, C_NOLOGNAM, "%SYSTEM-F-NOLOGNAM, no logical name match"); return -1; }
     return 0;
+}
+
+/* ---------------------------------------------------------------- processes (D16) */
+
+/* A few processes as x86 has them (PHASE8.md): system ones, Steward's pool in
+   [362,2] (the service account shares group 362 with the test accounts there),
+   STEWARD_TEST's session, and another group's. The process serving the request is
+   not among them, as on OpenVMS it is never given. */
+typedef struct {
+    unsigned int pid; const char *name, *user; unsigned int uic; int state, pri, prib, mode, sub;
+    const char *term, *image; unsigned int cpu, dirio, bufio, pf; int age;
+} stub_proc;
+
+static const stub_proc stub_procs[] = {
+    { 0x00000401, "SWAPPER", "SYSTEM", 0x00010004u, 7, 16, 0, 0, 0, "", "", 12, 0, 0, 0, 86400 },
+    { 0x0000040B, "OPCOM", "SYSTEM", 0x00010004u, 7, 8, 6, 0, 0, "", "X86VMS$DKA0:[SYS0.SYSCOMMON.][SYSEXE]OPCOM.EXE", 140, 30, 900, 410, 86400 },
+    { 0x00007500, "STEWARD_19300", "STEWARD", 0x00F20002u, 5, 4, 4, 0, 0, "", "X86VMS$DKA0:[SYS0.SYSCOMMON.STEWARD.][BIN]STEWARD.EXE;1", 1600, 220, 5100, 3100, 3600 },
+    { 0x00007501, "STEWARD_19301", "STEWARD", 0x00F20002u, 5, 4, 4, 0, 0, "", "X86VMS$DKA0:[SYS0.SYSCOMMON.STEWARD.][BIN]STEWARD.EXE;1", 1200, 180, 4300, 2900, 3600 },
+    { 0x00007520, "STEWARD_TEST", "STEWARD_TEST", 0x00F20001u, 5, 4, 4, 3, 0, "FTA12:", "", 35, 120, 300, 800, 1200 },
+    { 0x00007521, "_FTA12:_S1", "STEWARD_TEST", 0x00F20001u, 7, 4, 4, 3, 1, "", "X86VMS$DKA0:[SYS0.SYSCOMMON.][SYSEXE]MONITOR.EXE;1", 9, 4, 40, 200, 600 },
+    { 0x00007530, "WEBMASTER", "WEBMASTER", 0x00C80021u, 5, 4, 4, 3, 0, "FTA14:", "", 70, 60, 500, 900, 2400 },
+};
+
+/* As OpenVMS decides (probe_jpi): one's own UIC, one's group with GROUP, any with WORLD. */
+static int stub_may_see(const stub_proc *p)
+{
+    if (!persona) return 0;
+    if (p->uic == persona->u.uic || cur_has(P_WORLD)) return 1;
+    return cur_has(P_GROUP) && (p->uic >> 16) == (persona->u.uic >> 16);
+}
+
+static void stub_proc_fill(const stub_proc *s, st_proc *p)
+{
+    memset(p, 0, sizeof *p);
+    p->pid = s->pid;
+    st_copy(p->name, sizeof p->name, s->name);
+    st_copy(p->username, sizeof p->username, s->user);
+    p->uic = s->uic;
+    p->state = s->state;
+    p->pri = s->pri;
+    p->prib = s->prib;
+    p->mode = s->mode;
+    p->subprocess = s->sub;
+    st_copy(p->terminal, sizeof p->terminal, s->term);
+    st_copy(p->image, sizeof p->image, s->image);
+    p->cputim = s->cpu;
+    p->dirio = s->dirio;
+    p->bufio = s->bufio;
+    p->pageflts = s->pf;
+    p->login = (long long) time(NULL) - s->age;
+}
+
+int st_plat_proc_enum(st_proc_cb fn, void *ctx, st_err *e)
+{
+    size_t i;
+    st_proc p;
+    (void) e;
+    for (i = 0; i < sizeof stub_procs / sizeof stub_procs[0]; i++) {
+        if (!stub_may_see(&stub_procs[i])) continue;
+        stub_proc_fill(&stub_procs[i], &p);
+        if (fn(&p, ctx)) break;
+    }
+    return 0;
+}
+
+int st_plat_proc_get(unsigned int pid, st_proc_detail *d, st_err *e)
+{
+    size_t i;
+    memset(d, 0, sizeof *d);
+    for (i = 0; i < sizeof stub_procs / sizeof stub_procs[0]; i++) {
+        const stub_proc *s = &stub_procs[i];
+        if (s->pid != pid) continue;
+        if (!stub_may_see(s)) return stub_noprive(e);
+        stub_proc_fill(s, &d->p);
+        if (s->sub) d->owner = s->pid - 1;
+        d->master = s->sub ? s->pid - 1 : s->pid;
+        d->wssize = 4096;
+        d->wspages = 1800;
+        d->priv_cur[0] = d->priv_auth[0] = (1u << 15) | (1u << 20);   /* TMPMBX, NETMBX */
+        if (s->uic == 0x00010004u) d->priv_cur[0] = d->priv_auth[0] = 0xFFFFFFFFu;
+        d->nids = 0;
+        if (s->uic >> 16 == 0xF2) st_copy(d->ids[d->nids++], sizeof d->ids[0], "STEWARD_OPS");
+        {
+            static const unsigned int q[ST_PQ_COUNT] = { 300, 150, 150, 128, 8, 100, 4000, 128000, 256000 };
+            int k;
+            for (k = 0; k < ST_PQ_COUNT; k++) { d->quota[k] = q[k]; d->left[k] = q[k] - q[k] / 10; }
+        }
+        return 0;
+    }
+    return fail(e, ST_E_NOTFOUND, C_NONEXPR, "%SYSTEM-W-NONEXPR, nonexistent process");
 }
 
 /* ================================================================ misc */

@@ -398,6 +398,54 @@ int st_plat_lnm_define(const st_lnm_def *d, st_err *e);
    SYSNAM rule. Returns 0, or -1 (NOLOGNAM: ST_E_NOTFOUND). */
 int st_plat_lnm_deassign(const char *table, const char *name, int mode, st_err *e);
 
+/* ---- processes (Phase 8, D16), as the current persona ----
+
+   OpenVMS decides which processes the persona may see: its own, its UIC group's with
+   GROUP, all with WORLD (probe_jpi, PHASE8.md). The process serving the request is
+   never given: under the persona it reports the viewer's username and UIC. */
+
+typedef struct {
+    unsigned int pid;
+    char         name[16];          /* process name */
+    char         username[13];
+    unsigned int uic;
+    int          state;             /* JPI$_STATE: st_proc_state_name */
+    int          pri, prib;         /* current and base priority */
+    int          mode;              /* JPI$_MODE: st_proc_kind */
+    int          subprocess;        /* it has an owner */
+    char         terminal[16];      /* "" for none */
+    char         image[256];        /* the image running, "" for none */
+    unsigned int cputim;            /* CPU time, 10 ms ticks */
+    unsigned int dirio, bufio, pageflts;
+    long long    login;             /* login or creation, seconds since 1970 */
+} st_proc;
+
+/* A quota: its limit and what is left of it, as SHOW PROCESS/QUOTAS shows them. */
+enum { ST_PQ_AST, ST_PQ_BIO, ST_PQ_DIO, ST_PQ_FIL, ST_PQ_PRC, ST_PQ_TQ, ST_PQ_ENQ,
+       ST_PQ_BYT, ST_PQ_PGFL, ST_PQ_COUNT };
+
+typedef struct {
+    st_proc      p;
+    unsigned int owner;             /* the owner's PID, for a subprocess; else 0 */
+    unsigned int master;            /* the job's master process */
+    unsigned int subprocesses;
+    unsigned int wssize;            /* working set size, pagelets */
+    unsigned int wspages;           /* pages in the working set */
+    unsigned int priv_cur[2], priv_auth[2];
+    int          nids;
+    char         ids[ST_MAX_IDS][32];  /* rights held, general identifiers, by name */
+    unsigned int quota[ST_PQ_COUNT];   /* limits */
+    unsigned int left[ST_PQ_COUNT];    /* remaining */
+} st_proc_detail;
+
+typedef int (*st_proc_cb)(const st_proc *p, void *ctx);   /* nonzero stops the walk */
+
+/* Every process the persona may see, in the order OpenVMS walks them. */
+int st_plat_proc_enum(st_proc_cb fn, void *ctx, st_err *e);
+/* One process: ST_E_NOPRIV if the persona may not see it, ST_E_NOTFOUND if there is
+   none (or it is the one serving the request). */
+int st_plat_proc_get(unsigned int pid, st_proc_detail *d, st_err *e);
+
 /* ---- audit and diagnostics ---- */
 void st_plat_audit(const char *line);    /* one record; the platform adds a timestamp */
 void st_plat_log(const char *line);      /* operational log (SYS$ERROR / stderr) */

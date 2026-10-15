@@ -74,7 +74,7 @@ static const char *table_kind(const char *name, const char *attrs)
 
 /* ---- the tables ---- */
 
-typedef struct { st_jw *w; int n; } tables_ctx;
+typedef struct { st_jw *w; int n, truncated; } tables_ctx;
 
 static int table_cb(const st_lnm_table *t, const st_lnm *n, void *ctx)
 {
@@ -91,7 +91,9 @@ static int table_cb(const st_lnm_table *t, const st_lnm *n, void *ctx)
     st_jw_kstr(tc->w, "kind", table_kind(n->name, n->attributes));
     st_jw_kbool(tc->w, "listable", st_valid_lnm_table(n->name, table));
     st_jw_obj_end(tc->w);
-    return ++tc->n >= MAX_NAMES;
+    if (++tc->n < MAX_NAMES) return 0;
+    tc->truncated = 1;
+    return 1;
 }
 
 void svc_logical_tables(st_ctx *c)
@@ -109,7 +111,7 @@ void svc_logical_tables(st_ctx *c)
     st_jw_key(&w, "tables");
     st_jw_arr(&w);
     tc.w = &w;
-    tc.n = 0;
+    tc.n = tc.truncated = 0;
     session_privs(c, privs, sizeof privs);
     if (st_plat_lnm_list("LNM$SYSTEM_DIRECTORY", "*", privs, table_cb, &tc, &e)) {
         st_jw_arr_end(&w);
@@ -118,6 +120,7 @@ void svc_logical_tables(st_ctx *c)
         return;
     }
     st_jw_arr_end(&w);
+    st_jw_kbool(&w, "truncated", tc.truncated);
     st_jw_obj_end(&w);
 }
 
@@ -166,7 +169,11 @@ void svc_logicals(st_ctx *c)
     if (!got || !*raw) st_copy(raw, sizeof raw, "*");
     else if (!strchr(raw, '*') && !strchr(raw, '%')) {   /* plain text: anywhere in the name */
         char sub[96];
-        if (strlen(raw) > ST_LNM_PATTERN_MAX - 2) raw[ST_LNM_PATTERN_MAX - 2] = '\0';
+        if (strlen(raw) > ST_LNM_PATTERN_MAX - 2) {   /* refused, not cut: it would match more */
+            st_resp_problem(c->resp, 400, "bad-request", "Bad filter",
+                            "Plain text is at most 61 characters (a pattern, 63).", 0, NULL);
+            return;
+        }
         snprintf(sub, sizeof sub, "*%s*", raw);
         st_copy(raw, sizeof raw, sub);
     }

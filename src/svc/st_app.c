@@ -37,6 +37,8 @@ static const route routes[] = {
     { "GET",    "/api/v1/logical",                     svc_logical_one,      0 },
     { "PUT",    "/api/v1/logical",                     svc_logical_define,   0 },
     { "DELETE", "/api/v1/logical",                     svc_logical_deassign, 0 },
+    { "GET",    "/api/v1/processes",                   svc_processes,        0 },
+    { "GET",    "/api/v1/processes/{p}",               svc_process_get,      0 },
     { "GET",    "/api/v1/users",                       svc_users_list,       0 },
     { "GET",    "/api/v1/users/{u}",                   svc_user_get,         0 },
     { "GET",    "/api/v1/users/{u}/identifiers",       svc_user_identifiers, 0 },

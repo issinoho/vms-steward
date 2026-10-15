@@ -11,6 +11,7 @@
 #include "st_http.h"
 #include "st_route.h"
 #include "st_lnm.h"
+#include "st_proc.h"
 #include "st_app.h"
 
 static int checks, failures;
@@ -1049,6 +1050,7 @@ static void test_logicals(void)
           strstr(body, "{\"name\":\"LNM$SYSTEM_TABLE\",\"mode\":\"kernel\",\"kind\":\"system\",\"listable\":true}") &&
           strstr(body, "\"kind\":\"cluster\"") && strstr(body, "\"kind\":\"job\"") && !strstr(body, "LNM$FILE_DEV"),
           "the tables: only real tables, by kind; the viewer's group table named");
+    CHECK(strstr(body, "\"truncated\":false"), "the tables list says whether it was cut short");
     st_resp_free(&b.resp);
 
     call("GET", "/api/v1/logicals?table=lnm$system_table&filter=sys$s*", t, NULL, &b);
@@ -1079,6 +1081,9 @@ static void test_logicals(void)
     st_resp_free(&b.resp);
     call("GET", "/api/v1/logicals/LNM$PROCESS_TABLE/STEWARD_GATEWAY_SECRET", t, NULL, &b);
     CHECK(b.resp.status == 400 && !strstr(b.resp.body.data, "secret"), "nor can a name be read from it");
+    st_resp_free(&b.resp);
+    call("GET", "/api/v1/logicals?table=LNM$SYSTEM_TABLE&filter=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA", t, NULL, &b);
+    CHECK(b.resp.status == 400, "plain text over 61 characters is refused, not cut short");
     st_resp_free(&b.resp);
     call("GET", "/api/v1/logicals?table=LNM$SYSTEM_TABLE&filter=a%2Fb", t, NULL, &b);
     CHECK(b.resp.status == 400, "a filter that is not a name or pattern is refused");
@@ -1482,6 +1487,82 @@ static void test_logical_changes(void)
     CHECK(!st_plat_persona_active(), "no persona left active");
 }
 
+/* Phase 8 (D16): processes. */
+static void test_processes(void)
+{
+    result b;
+    char tc[140], ac[140], tcsrf[65], acsrf[65];
+    const char *body;
+    hdr t[3], adm[3];
+    unsigned int pid = 0;
+
+    CHECK(st_parse_pid("0000751A", &pid) && pid == 0x751A && st_parse_pid("%X0000751a", &pid) && pid == 0x751A,
+          "a PID: 8 hex digits, with or without %X, either case");
+    CHECK(!st_parse_pid("751A", &pid) && !st_parse_pid("0000751G", &pid) && !st_parse_pid("00000000", &pid) &&
+          !st_parse_pid("0000751A0", &pid) && !st_parse_pid("", &pid), "short, non-hex, zero and long PIDs refused");
+    CHECK(!strcmp(st_proc_state_name(5), "LEF") && !strcmp(st_proc_state_name(14), "CUR") &&
+          !strcmp(st_proc_state_name(0), "?") && !strcmp(st_proc_state_name(15), "?"), "state names, SCH$C_ 1 to 14");
+    CHECK(!strcmp(st_proc_kind(3, 0), "interactive") && !strcmp(st_proc_kind(2, 0), "batch") &&
+          !strcmp(st_proc_kind(1, 0), "network") && !strcmp(st_proc_kind(0, 0), "detached") &&
+          !strcmp(st_proc_kind(3, 1), "subprocess"), "process kinds from JPI$_MODE and the owner");
+
+    call("GET", "/api/v1/processes", NULL, NULL, &b);
+    CHECK(b.resp.status == 401, "processes need a session");
+    st_resp_free(&b.resp);
+
+    sign_in("{\"username\":\"steward_test\",\"password\":\"test-pass\"}", tc, sizeof tc, tcsrf);
+    t[0].n = "HTTP_COOKIE"; t[0].v = tc; t[1].n = "HTTP_X_STEWARD_CSRF"; t[1].v = tcsrf; t[2].n = NULL;
+    call("GET", "/api/v1/processes", t, NULL, &b);
+    body = b.resp.body.data;
+    CHECK(b.resp.status == 200 && strstr(body, "\"pid\":\"00007520\"") && strstr(body, "\"pid\":\"00007521\"") &&
+          !strstr(body, "00007500") && !strstr(body, "\"SYSTEM\"") && !strstr(body, "WEBMASTER"),
+          "no privileges: only the viewer's own processes, as OpenVMS shows them");
+    CHECK(strstr(body, "\"state\":\"LEF\"") && strstr(body, "\"kind\":\"subprocess\"") &&
+          strstr(body, "\"uic\":\"[362,1]\"") && strstr(body, "\"cpu_ms\":350"), "state, kind, UIC and CPU in the list");
+    st_resp_free(&b.resp);
+    call("GET", "/api/v1/processes/00007500", t, NULL, &b);
+    CHECK(b.resp.status == 403 && strstr(b.resp.body.data, "NOPRIV"), "another's process: NOPRIV, as SHOW PROCESS/ID");
+    st_resp_free(&b.resp);
+    call("GET", "/api/v1/processes/0000FFF0", t, NULL, &b);
+    CHECK(b.resp.status == 404 && strstr(b.resp.body.data, "NONEXPR"), "no such process: NONEXPR");
+    st_resp_free(&b.resp);
+    call("GET", "/api/v1/processes/7520", t, NULL, &b);
+    CHECK(b.resp.status == 400, "a PID not in OpenVMS's form is refused");
+    st_resp_free(&b.resp);
+    call("GET", "/api/v1/processes/%25X00007520", t, NULL, &b);
+    body = b.resp.body.data;
+    CHECK(b.resp.status == 200 && strstr(body, "\"master\":\"00007520\"") && strstr(body, "\"rights\":[\"STEWARD_OPS\"]") &&
+          strstr(body, "\"astlm\":{\"limit\":300,\"left\":270}") && strstr(body, "\"current_privileges\":[\"TMPMBX\",\"NETMBX\"]"),
+          "one process: master, rights, quotas and privileges");
+    st_resp_free(&b.resp);
+
+    sign_in("{\"username\":\"steward_adm\",\"password\":\"admin-pass\"}", ac, sizeof ac, acsrf);
+    adm[0].n = "HTTP_COOKIE"; adm[0].v = ac; adm[1].n = "HTTP_X_STEWARD_CSRF"; adm[1].v = acsrf; adm[2].n = NULL;
+    call("PUT", "/api/v1/session/privileges", adm, "{\"enabled\":[\"group\"]}", &b);
+    CHECK(b.resp.status == 200, "STEWARD_ADM switches GROUP on");
+    st_resp_free(&b.resp);
+    call("GET", "/api/v1/processes", adm, NULL, &b);
+    body = b.resp.body.data;
+    CHECK(b.resp.status == 200 && strstr(body, "00007500") && strstr(body, "00007520") &&
+          !strstr(body, "\"SYSTEM\"") && !strstr(body, "WEBMASTER"), "with GROUP: the group's processes, Steward's pool among them");
+    st_resp_free(&b.resp);
+    call("PUT", "/api/v1/session/privileges", adm, "{\"enabled\":[\"world\"]}", &b);
+    st_resp_free(&b.resp);
+    call("GET", "/api/v1/processes?filter=steward_1*", adm, NULL, &b);
+    body = b.resp.body.data;
+    CHECK(b.resp.status == 200 && strstr(body, "00007500") && strstr(body, "00007501") && !strstr(body, "00007520"),
+          "with WORLD, filtered by a pattern on the process name");
+    st_resp_free(&b.resp);
+    call("GET", "/api/v1/processes?filter=webmaster", adm, NULL, &b);
+    CHECK(b.resp.status == 200 && strstr(b.resp.body.data, "00007530") && strstr(b.resp.body.data, "\"truncated\":false"),
+          "and by username");
+    st_resp_free(&b.resp);
+    call("GET", "/api/v1/processes?filter=a%22b", adm, NULL, &b);
+    CHECK(b.resp.status == 400, "a filter with a quote is refused");
+    st_resp_free(&b.resp);
+    CHECK(!st_plat_persona_active(), "no persona left active");
+}
+
 int main(void)
 {
     st_app_config cfg;
@@ -1512,6 +1593,7 @@ int main(void)
     test_logicals();
     test_lnm_def();
     test_logical_changes();
+    test_processes();
     test_create();
     test_gateway();
     printf("%d checks, %d failed\n", checks, failures);
