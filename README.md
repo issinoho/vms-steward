@@ -16,17 +16,17 @@ see and change.
 
 ## Status
 
-**0.5.1, an early test release** for OpenVMS x86-64: a PCSI kit is on the
+**0.6.2, an early test release** for OpenVMS x86-64: a PCSI kit is on the
 [releases page](https://github.com/issinoho/vms-steward/releases). It opens on a dashboard
 of the system, covers users and rights identifiers (what AUTHORIZE does, from
 creating and copying accounts to deleting them), shows the system's access
 history (who signed in, when, from where and by which route), and lets you browse
-logical names as `SHOW LOGICAL` shows them to you. The 0.6.0 test kit adds
-defining and deassigning them. Please try it on a test system first and report what you find.
+logical names as `SHOW LOGICAL` shows them to you, and define and deassign them as
+DEFINE and DEASSIGN do. Please try it on a test system first and report what you find.
 
-Phases 1 to 6 and 7a are closed: sign-in, the read-only views, changes, creating and
+Phases 1 to 7 are closed: sign-in, the read-only views, changes, creating and
 deleting users, hardening (a load run and soak, [`docs/PHASE5.md`](docs/PHASE5.md)),
-access history and logical names, read-only. Their exit checks passed on the x86 test system and in a browser
+access history and logical names. Their exit checks passed on the x86 test system and in a browser
 through nginx proxy manager. An independent code review and an external review and
 penetration test are still to come ([`docs/REVIEW-BRIEF.md`](docs/REVIEW-BRIEF.md)). See [`docs/PLAN.md`](docs/PLAN.md),
 [`docs/api.md`](docs/api.md) and [`docs/security.md`](docs/security.md).
@@ -41,7 +41,7 @@ penetration test are still to come ([`docs/REVIEW-BRIEF.md`](docs/REVIEW-BRIEF.m
 | Hardening: load run, soak, review of the new code | done (Phase 5, closed 2026-10-11; external review open) |
 | Access history: who connected, when, how (SSH, TELNET, DECnet, LAT, batch, Steward) in one view | done (Phase 6, closed 2026-10-11) |
 | Logical names: tables, names and translations, read-only | done (Phase 7a, closed 2026-10-13, 0.5.1) |
-| Logical names: define, change and deassign | built (Phase 7b, 0.6.0 test kit); exit checks open |
+| Logical names: define, change and deassign | done (Phase 7b, closed 2026-10-15, 0.6.2) |
 | Processes, queues, SYSGEN, licences, products, monitoring, error log, terminal | later |
 
 ## Installing
@@ -87,6 +87,7 @@ Two account points:
 make test            # core unit tests (Linux, stub platform)
 make api-test        # the real server over FastCGI
 make audit           # analyzers, sanitizers, fuzzing, project rules (D8)
+make ui-test         # the front end in node + jsdom against the stub (needs jsdom in tests/ui)
 make dev             # the front end at http://127.0.0.1:8080/ on the stub platform
 ```
 

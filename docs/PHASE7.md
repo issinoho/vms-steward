@@ -75,7 +75,7 @@ The user's browser checks passed, and the security gate is met (the exit record
 above). Released as 0.5.1 (T0.5-1). Next: 7b, define and deassign, after the items
 left from the review are weighed (end of this file).
 
-## 7b: define and deassign (started 2026-10-13)
+## 7b: define and deassign (started 2026-10-13, closed 2026-10-15)
 
 Design: DECISIONS D15. The user chose any listable table; user, supervisor and
 executive mode; and a 409 unless the request says replace.
@@ -146,7 +146,25 @@ Restored; `make ui-test` (new) now renders the view and walks Modify per mode, t
 no_alias warning and Deassign, on the stub. It fails on 0.6.1's file. The same check
 had also been confused by the browser's cache (NOTES.md): x86's `STEWARD.CONF;4` now
 sends `Cache-Control: no-cache`. Kit T0.6-2, SHA-256
-`38d0e3663f03158d19949adad6c40de45fd8054a5a86c21b7b7b8d2a08e63817`.
+`38d0e3663f03158d19949adad6c40de45fd8054a5a86c21b7## 7b closed (2026-10-15)
+
+Every exit criterion was met, on the installed kit T0.6-2:
+
+| Criterion | Shown by | State |
+|---|---|---|
+| Defines and deassigns match DEFINE and DEASSIGN | `phase7b_live.py` 24 ok: each change checked with `SHOW LOGICAL/FULL` and `F$TRNLNM` at every mode; STEWARD_ADM with SYSNAM in the system and cluster tables, STEWARD_TEST with GRPPRV in its group table | done |
+| What OpenVMS refuses is refused; an inner mode without SYSNAM refused first, nothing changed | NOPRIV for STEWARD_TEST without GRPPRV; NOSYSNAM with the user-mode name untouched | done |
+| Every change audited, without its equivalences | the live test's audit check; the API suite | done |
+| The browser asks first, naming what is replaced or removed | the user, 2026-10-15: Modify executive with no_alias warns that the user-mode name goes, saves on the second press; Deassign names the modes (audit: `7B_TEST exec ... replaced`, then deassigned; nothing left) | done |
+| Security gate | security.md Phase 7b section and invariants; an independent review (fixes in 4a8580a); the shadowing probe found and fixed the D14 helper path (d1b48e4) | done |
+
+Found along the way and fixed: OpenVMS's quiet user-mode fallback without SYSNAM
+(refused), NO_ALIAS's SUPERSEDE for a new name, the helper path taken over from a
+group table, Modify editing the outermost mode only, the browser's cache of script
+modules (`Cache-Control: no-cache`), and the view broken by an edit (now `make
+ui-test`). STEWARD_ADM keeps SYSNAM authorized, for testing.
+
+b7b8d2a08e63817`.
 
 **Exit (7b):**
 - Defines and deassigns match DEFINE and DEASSIGN (`SHOW LOGICAL` after each), for

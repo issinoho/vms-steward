@@ -165,9 +165,10 @@ where and by which route. As built (D13), there is no collector: each request re
 accounting, the security audit journal, OpenSSH's logs, Steward's own log and the
 live process list, under the viewer's persona, and merges them. See `docs/PHASE6.md`.
 
-**Phase 7: logical names** (D14). 7a, read-only, closed 2026-10-13 on the user's
+**Phase 7: logical names** (D14, D15). 7a, read-only, closed 2026-10-13 on the user's
 browser checks and an independent review of the whole phase, released as 0.5.1. 7b,
-define and deassign, is next. See `docs/PHASE7.md`.
+define and deassign, closed 2026-10-15 on the user's browser checks, a review and the
+shadowing probe (0.6.2). See `docs/PHASE7.md`.
 
 **Later areas, one at a time and each with the same read-only → modify split:** processes, batch/print queues, system parameters, licences, installed products,
 CPU/memory monitoring, error log, and a WebSocket terminal (lighttpd `mod_wstunnel`).
