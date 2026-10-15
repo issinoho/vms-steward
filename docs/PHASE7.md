@@ -140,6 +140,14 @@ Kit T0.6-1 built by `tools/kit.sh x86` (289 native checks), SHA-256
 `d5789b23e9901816dc87cd0a75d5ed1fe117fe94ce7d29bb7a638542bc31f66f`;
 `phase7b_live.py` 24 ok, 0 failed on the build it packages.
 
+**Browser check of 0.6.1 (2026-10-15): the view did not load** ("%STEWARD-F-NOSERVER").
+The per-mode Modify edit had cut `tablesPanel` and `chain` out of `logicals.js`.
+Restored; `make ui-test` (new) now renders the view and walks Modify per mode, the
+no_alias warning and Deassign, on the stub. It fails on 0.6.1's file. The same check
+had also been confused by the browser's cache (NOTES.md): x86's `STEWARD.CONF;4` now
+sends `Cache-Control: no-cache`. Kit T0.6-2, SHA-256
+`38d0e3663f03158d19949adad6c40de45fd8054a5a86c21b7b7b8d2a08e63817`.
+
 **Exit (7b):**
 - Defines and deassigns match DEFINE and DEASSIGN (`SHOW LOGICAL` after each), for
   STEWARD_ADM with SYSNAM in the system table and STEWARD_TEST with GRPPRV in its
