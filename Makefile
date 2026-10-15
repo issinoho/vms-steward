@@ -80,6 +80,9 @@ audit: test-asan api-test-asan fuzz
 	else echo "audit: flawfinder not installed, skipped (CI runs it)"; fi
 	tools/audit_rules.sh
 
+ui-test: $(B)/steward
+	tests/ui/run.sh
+
 dev: $(B)/steward
 	python3 tools/devserver.py $(B)/steward
 

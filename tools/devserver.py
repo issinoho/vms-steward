@@ -25,7 +25,7 @@ from fcgi_client import request  # noqa: E402
 
 ROOT = os.path.join(os.path.dirname(__file__), "..", "www")
 PREFIX = os.environ.get("DEV_PREFIX", "").rstrip("/")
-FCGI = ("127.0.0.1", 19190)
+FCGI = ("127.0.0.1", int(os.environ.get("STEWARD_DEV_FCGI_PORT", "19190")))   # another, if a dev server already runs
 DEV_GATEWAY = "devserver-gateway-secret-not-for-production"   # plays lighttpd's part
 
 # The page-level headers lighttpd sets in vms/steward.conf, so the dev server

@@ -187,6 +187,43 @@ function nameActions(ctx, d, reload) {
     modes.length ? h('button', { type: 'button', class: 'danger', onclick: () => deassignDialog(d, reload) }, 'Deassign…') : null);
 }
 
+// The tables, grouped, as links; the current one marked.
+function tablesPanel(r, current, onPick) {
+  const groups = new Map(KINDS.map(([k]) => [k, []]));
+  for (const t of r.tables) {
+    const kind = t.name === r.your_group_table ? 'yours' : t.kind;
+    (groups.get(kind) || groups.get('other')).push(t);
+  }
+  return h('nav', { class: 'panel tables', 'aria-label': 'Logical name tables' },
+    KINDS.filter(([k]) => groups.get(k).length).map(([k, label]) => [
+      h('h4', {}, label),
+      h('ul', {}, groups.get(k).map((t) => h('li', {},
+        t.listable
+          ? h('a', { href: '#/logicals', class: t.name === current ? 'current mono' : 'mono',
+              'aria-current': t.name === current ? 'true' : false,
+              onclick: (ev) => { ev.preventDefault(); onPick(t.name); } }, t.name)
+          : h('span', { class: 'mono muted', title: 'Not listed here' }, t.name)))),
+    ]));
+}
+
+// What one name leads to: each equivalence, then each name it translates to in turn.
+function chain(detail) {
+  const n = detail.logical;
+  return h('div', { class: 'chain' },
+    n.equivalences.map((e, i) => h('div', { class: 'chainrow' },
+      h('span', { class: 'mono' }, e.value === '' ? '""' : e.value),
+      tags(e.attributes),
+      (detail.translations[i] || []).map((s) => [
+        h('span', { class: 'arrow', 'aria-hidden': 'true' }, '→'),
+        h('span', { class: 'mono' }, s.name, ' = ', s.value),
+        h('span', { class: 'muted small' }, ` (${s.table})`),
+        tags(s.attributes),
+      ]),
+      !(detail.translations[i] || []).length && !e.attributes.includes('terminal')
+        ? h('span', { class: 'muted small' }, ' (no further translation)') : null)),
+    n.more_equivalences ? h('p', { class: 'muted small' }, `and ${n.more_equivalences} more`) : null);
+}
+
 function namesTable(ctx, t, reload) {
   const rows = [];
   for (const n of t.names) {
