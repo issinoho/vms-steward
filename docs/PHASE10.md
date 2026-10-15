@@ -34,6 +34,11 @@ viewer, and Steward parses its fixed columns (NOTES.md).
 helpers included). A first attempt failed for want of the node: x86 dropped off the
 network for some minutes ("No route to host"; no reboot).
 
+Kit T0.9-0, built by `tools/kit.sh x86` (375 native checks; the first attempt was cut
+off by the network outage), SHA-256
+`e298c82fec8511f3731ded41b7f9b3f88d78d59a9d6d5f25c426d44cebdad52c`, for the browser
+checks.
+
 ## Exit
 
 - The parameters match SYSGEN SHOW/ALL, for STEWARD_TEST.
