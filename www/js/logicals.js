@@ -51,6 +51,10 @@ async function outerModes(table, name, mode) {
 // named in the dialog first, and the button pressed again goes ahead.
 function defineDialog(ctx, table, existing, done) {
   const n = existing ? existing.logical : null;
+  if (n && n.more_equivalences) {   // saving would drop the ones not shown
+    toast(`${n.name} has more than 16 equivalences: change it with DEFINE at a terminal.`, 'error');
+    return;
+  }
   const tableIn = h('input', { value: existing ? existing.table : table, required: true, maxlength: 31,
     spellcheck: 'false', autocapitalize: 'characters', class: 'mono', disabled: !!n });
   const nameIn = h('input', { value: n ? n.name : '', required: true, maxlength: 255, spellcheck: 'false',
@@ -83,7 +87,7 @@ function defineDialog(ctx, table, existing, done) {
   let sureAlias = false;
   let sureReplace = !!n;
   const reset = () => { note.hidden = true; sureAlias = false; sureReplace = !!n; };
-  dialog(n ? `Modify ${n.name}` : 'Define a logical name', h('div', { class: 'editor', oninput: reset, onclick: (ev) => {
+  dialog(n ? `Modify ${n.name} (${MODE_LABEL[n.mode].toLowerCase()} mode)` : 'Define a logical name', h('div', { class: 'editor', oninput: reset, onclick: (ev) => {
     if (ev.target.closest('.keys')) reset();
   } },
     h('div', { class: 'fields' },
@@ -154,53 +158,33 @@ function deassignDialog(detail, done) {
   } }]);
 }
 
-// The changes offered for one name, under its translation.
+// The changes offered for one name, under its translation. A name at several modes
+// gets a Modify button per mode: the translation shows only the outermost, and
+// each button opens the definition at its own mode.
 function nameActions(ctx, d, reload) {
   const n = d.logical;
-  const modes = d.modes || [n.mode];
-  const changeable = modes.some((m) => m in OUTER);
+  const modes = (d.modes && d.modes.length ? d.modes : [n.mode]).filter((m) => m in OUTER);
+  const edit = async (m, b) => {
+    if (m === n.mode) { defineDialog(ctx, d.table, d, reload); return; }
+    b.disabled = true;
+    try {
+      defineDialog(ctx, d.table, await api.logical(d.table, n.name, m), reload);
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 401) { ctx.authLost(); return; }
+      toast(err.message, 'error');
+    } finally {
+      b.disabled = false;
+    }
+  };
   return h('div', { class: 'actions lnm-actions' },
-    modes.length > 1 ? h('span', { class: 'muted small' }, `At ${list(modes)} mode; SHOW LOGICAL shows the outermost.`) : null,
-    n.mode in OUTER && !n.more_equivalences
-      ? h('button', { type: 'button', onclick: () => defineDialog(ctx, d.table, d, reload) }, 'Modify…') : null,
-    changeable ? h('button', { type: 'button', class: 'danger', onclick: () => deassignDialog(d, reload) }, 'Deassign…') : null);
-}
-
-// The tables, grouped, as links; the current one marked.
-function tablesPanel(r, current, onPick) {
-  const groups = new Map(KINDS.map(([k]) => [k, []]));
-  for (const t of r.tables) {
-    const kind = t.name === r.your_group_table ? 'yours' : t.kind;
-    (groups.get(kind) || groups.get('other')).push(t);
-  }
-  return h('nav', { class: 'panel tables', 'aria-label': 'Logical name tables' },
-    KINDS.filter(([k]) => groups.get(k).length).map(([k, label]) => [
-      h('h4', {}, label),
-      h('ul', {}, groups.get(k).map((t) => h('li', {},
-        t.listable
-          ? h('a', { href: '#/logicals', class: t.name === current ? 'current mono' : 'mono',
-              'aria-current': t.name === current ? 'true' : false,
-              onclick: (ev) => { ev.preventDefault(); onPick(t.name); } }, t.name)
-          : h('span', { class: 'mono muted', title: 'Not listed here' }, t.name)))),
-    ]));
-}
-
-// What one name leads to: each equivalence, then each name it translates to in turn.
-function chain(detail) {
-  const n = detail.logical;
-  return h('div', { class: 'chain' },
-    n.equivalences.map((e, i) => h('div', { class: 'chainrow' },
-      h('span', { class: 'mono' }, e.value === '' ? '""' : e.value),
-      tags(e.attributes),
-      (detail.translations[i] || []).map((s) => [
-        h('span', { class: 'arrow', 'aria-hidden': 'true' }, '→'),
-        h('span', { class: 'mono' }, s.name, ' = ', s.value),
-        h('span', { class: 'muted small' }, ` (${s.table})`),
-        tags(s.attributes),
-      ]),
-      !(detail.translations[i] || []).length && !e.attributes.includes('terminal')
-        ? h('span', { class: 'muted small' }, ' (no further translation)') : null)),
-    n.more_equivalences ? h('p', { class: 'muted small' }, `and ${n.more_equivalences} more`) : null);
+    modes.length > 1 ? h('span', { class: 'muted small' },
+      `At ${list(modes.map((m) => MODE_LABEL[m].toLowerCase()))} mode. Shown above: ${MODE_LABEL[n.mode].toLowerCase()}, the outermost, as SHOW LOGICAL shows it.`) : null,
+    modes.map((m) => {
+      const b = h('button', { type: 'button' }, modes.length > 1 ? `Modify ${MODE_LABEL[m].toLowerCase()}…` : 'Modify…');
+      b.addEventListener('click', () => edit(m, b));
+      return b;
+    }),
+    modes.length ? h('button', { type: 'button', class: 'danger', onclick: () => deassignDialog(d, reload) }, 'Deassign…') : null);
 }
 
 function namesTable(ctx, t, reload) {

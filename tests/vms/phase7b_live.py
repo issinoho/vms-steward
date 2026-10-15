@@ -106,6 +106,9 @@ try:
     check(got == {"user": ("U", "0"), "supervisor": ("S", "0"), "executive": ("E", "0")} and
           doc["modes"] == ["user", "super", "exec"],
           "each mode its own name, as F$TRNLNM sees them, and the answer lists all three", (got, doc))
+    st, doc = api("STEWARD_ADM", "SYSPRV,SYSNAM", "/api/v1/logical?table=LNM$SYSTEM_TABLE&name=%s&mode=exec" % NAME)
+    check(st == 200 and doc["logical"]["mode"] == "exec" and doc["logical"]["equivalences"][0]["value"] == "E",
+          "read at a mode: the executive-mode definition, not the outermost", (st, doc))
     st, doc = define("STEWARD_ADM", "SYSPRV,SYSNAM", "LNM$SYSTEM_TABLE", "super", ["S2"])
     check(st == 409 and modes_in("LNM$SYSTEM_TABLE")["supervisor"][0] == "S", "again without replace: 409, unchanged", (st, doc))
     st, doc = define("STEWARD_ADM", "SYSPRV,SYSNAM", "LNM$SYSTEM_TABLE", "super", ["S2"], replace=True)

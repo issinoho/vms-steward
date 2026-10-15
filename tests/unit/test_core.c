@@ -1412,6 +1412,16 @@ static void test_logical_changes(void)
     CHECK(b.resp.status == 201 && strstr(b.resp.body.data, "\"modes\":[\"user\",\"exec\"]"),
           "with SYSNAM: executive mode, beside the user-mode name");
     st_resp_free(&b.resp);
+    call("GET", "/api/v1/logical?table=LNM$SYSTEM_TABLE&name=STEWARD_7B&mode=exec", adm, NULL, &b);
+    CHECK(b.resp.status == 200 && strstr(b.resp.body.data, "\"mode\":\"exec\"") &&
+          strstr(b.resp.body.data, "\"value\":\"INNER\""), "read at a mode: the executive-mode definition, not the outermost");
+    st_resp_free(&b.resp);
+    call("GET", "/api/v1/logical?table=LNM$SYSTEM_TABLE&name=STEWARD_7B&mode=super", adm, NULL, &b);
+    CHECK(b.resp.status == 404 && strstr(b.resp.body.data, "NOLOGNAM"), "read at a mode it is not at: NOLOGNAM");
+    st_resp_free(&b.resp);
+    call("GET", "/api/v1/logical?table=LNM$SYSTEM_TABLE&name=STEWARD_7B&mode=kernel", adm, NULL, &b);
+    CHECK(b.resp.status == 400, "read at kernel mode: refused as a parameter");
+    st_resp_free(&b.resp);
     call("GET", "/api/v1/logicals?table=LNM$SYSTEM_TABLE&filter=STEWARD_7B", adm, NULL, &b);
     body = b.resp.body.data;
     CHECK(b.resp.status == 200 && strstr(body, "\"mode\":\"user\"") && !strstr(body, "INNER"),

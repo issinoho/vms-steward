@@ -2847,13 +2847,13 @@ static int lnm_real_table(const char *table, st_err *e)
     return 0;
 }
 
-int st_plat_lnm_get(const char *table, const char *name, st_lnm *out,
+int st_plat_lnm_get(const char *table, const char *name, int mode, st_lnm *out,
                     char table_out[ST_LNM_TABLE_MAX + 1], st_err *e)
 {
     static const char *const modes[] = { "kernel", "exec", "super", "user" };
     struct dsc$descriptor_s tab, nam;
     unsigned int attrs = 0, index = 0, maxidx = 0, st;
-    unsigned char acmode = 0;
+    unsigned char acmode = 0, want = (unsigned char) mode;
     unsigned short slen = 0, tlen = 0;
     char string[ST_LNM_NAME_MAX + 1], tname[ST_LNM_TABLE_MAX + 1];
     st_ile3 it[7];
@@ -2876,9 +2876,12 @@ int st_plat_lnm_get(const char *table, const char *name, st_lnm *out,
             item(&it[5], LNM$_TABLE, tname, ST_LNM_TABLE_MAX, &tlen);
             item_end(&it[6]);
         } else item_end(&it[3]);
-        st = sys$trnlnm(0, &tab, &nam, 0, it);
+        /* At a mode, $TRNLNM ignores outer modes and gives the outermost of the
+           rest: the name is at that mode only if it says so. */
+        st = sys$trnlnm(0, &tab, &nam, mode >= 0 ? &want : 0, it);
         if (st == SS$_NOLOGNAM) { set_cond(e, st); return 0; }
         if (!(st & 1)) { set_cond(e, st); return -1; }
+        if (index == 0 && mode >= 0 && acmode != want) { set_cond(e, SS$_NOLOGNAM); return 0; }
         if (index == 0) {
             if (maxidx > 127) maxidx = 127;
             st_copy(out->mode, sizeof out->mode, acmode < 4 ? modes[acmode] : "?");

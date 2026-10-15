@@ -206,7 +206,7 @@ static int translate(const char *group, const char *name, st_lnm *out, char *tab
     st_err e;
     tables[0] = group; tables[1] = "LNM$SYSTEM_TABLE"; tables[2] = "LNM$SYSCLUSTER_TABLE";
     for (i = 0; i < 3; i++)
-        if (st_plat_lnm_get(tables[i], name, out, table, &e) == 1) return 1;
+        if (st_plat_lnm_get(tables[i], name, -1, out, table, &e) == 1) return 1;
     return 0;
 }
 
@@ -266,7 +266,7 @@ static void modes_json(st_jw *w, const char *key, int bits, int from)
 
 /* One name, its modes and its translation chain, answered with status. The table has
    passed st_valid_lnm_table, the name st_valid_lnm_name. */
-static void one_name(st_ctx *c, const char *table, const char *name, int status)
+static void one_name(st_ctx *c, const char *table, const char *name, int mode, int status)
 {
     static st_lnm n, step;
     char found[ST_LNM_TABLE_MAX + 1], group[24];
@@ -275,7 +275,7 @@ static void one_name(st_ctx *c, const char *table, const char *name, int status)
     int rc, i, modes;
 
     if (group_table(c, group)) return;
-    rc = st_plat_lnm_get(!strcmp(table, "LNM$GROUP") ? group : table, name, &n, found, &e);
+    rc = st_plat_lnm_get(!strcmp(table, "LNM$GROUP") ? group : table, name, mode, &n, found, &e);
     if (rc <= 0) { st_app_error(c, &e); return; }
     /* SHOW LOGICAL shows the outermost mode only; a name may be at others too. */
     if ((modes = st_plat_lnm_modes(found, name, &e)) < 0) modes = 0;
@@ -315,22 +315,28 @@ void svc_logical_get(st_ctx *c)
 {
     char table[ST_LNM_TABLE_MAX + 1];
     if (bad_table_name(c, c->args[0], c->args[1], table)) return;
-    one_name(c, table, c->args[1], 200);
+    one_name(c, table, c->args[1], -1, 200);
 }
 
-/* GET api/v1/logical?table=&name=: as logicals/{table}/{name}, for any name, "/" too. */
+/* GET api/v1/logical?table=&name=[&mode=]: as logicals/{table}/{name}, for any name,
+   "/" too; with mode, the definition at that mode rather than the outermost. */
 void svc_logical_one(st_ctx *c)
 {
-    char raw[40], table[ST_LNM_TABLE_MAX + 1], name[ST_LNM_NAME_MAX + 1];
-    int gt, gn;
-    if ((gt = svc_query(c, "table", raw, sizeof raw)) < 0 || (gn = svc_query(c, "name", name, sizeof name)) < 0)
+    char raw[40], table[ST_LNM_TABLE_MAX + 1], name[ST_LNM_NAME_MAX + 1], mraw[16];
+    int gt, gn, gm, mode = -1;
+    if ((gt = svc_query(c, "table", raw, sizeof raw)) < 0 || (gn = svc_query(c, "name", name, sizeof name)) < 0 ||
+        (gm = svc_query(c, "mode", mraw, sizeof mraw)) < 0)
         return;
     if (!gt || !gn) {
         st_resp_problem(c->resp, 400, "bad-request", "table and name are required", NULL, 0, NULL);
         return;
     }
     if (bad_table_name(c, raw, name, table)) return;
-    one_name(c, table, name, 200);
+    if (gm && (mode = st_lnm_mode(mraw)) < 0) {
+        st_resp_problem(c->resp, 400, "bad-request", "Bad mode", "user, super or exec.", 0, NULL);
+        return;
+    }
+    one_name(c, table, name, mode, 200);
 }
 
 /* ---- changes (Phase 7b, D15) ---- */
@@ -376,7 +382,7 @@ void svc_logical_define(st_ctx *c)
        too when no_alias removes the name at an outer mode (NOTES.md). */
     replaced = (modes & (1 << d.mode)) != 0;
     st_app_audit(c, c->session.username, "logical-define", target, "ok", replaced ? "replaced" : NULL);
-    one_name(c, d.table, d.name, replaced ? 200 : 201);
+    one_name(c, d.table, d.name, d.mode, replaced ? 200 : 201);
 }
 
 /* DELETE api/v1/logical?table=&name=&mode=: the name at that mode and every outer

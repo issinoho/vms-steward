@@ -955,7 +955,7 @@ static int stub_get_cb(const st_lnm_table *t, const st_lnm *n, void *ctx)
     return 1;
 }
 
-int st_plat_lnm_get(const char *table, const char *name, st_lnm *out,
+int st_plat_lnm_get(const char *table, const char *name, int mode, st_lnm *out,
                     char table_out[ST_LNM_TABLE_MAX + 1], st_err *e)
 {
     const stub_table *t = stub_find_table(table);
@@ -965,8 +965,23 @@ int st_plat_lnm_get(const char *table, const char *name, st_lnm *out,
         return fail(e, ST_E_NOTFOUND, C_NOLOGTAB, "%SYSTEM-F-NOLOGTAB, no logical name table matches the specified name");
     if (!stub_may_read(t)) return fail(e, ST_E_NOPRIV, C_NOPRIV, "%SYSTEM-F-NOPRIV, insufficient privilege or object protection violation");
     g.want = name; g.out = out; g.found = 0;
-    st_copy(pattern, sizeof pattern, "*");
-    if (st_plat_lnm_list(t->table, pattern, "-", stub_get_cb, &g, e)) return -1;
+    if (mode >= 0) {   /* the definition at exactly that mode, through the parser */
+        st_lnm_parser p;
+        char line[200];
+        int i;
+        stub_lnm_load();
+        st_lnm_parse_init(&p, stub_get_cb, &g);
+        snprintf(line, sizeof line, "(%s)\t%s", t->table, t->header);
+        st_lnm_parse_line(&p, line, strlen(line));
+        for (i = 0; i < STUB_LNM_MAX; i++)
+            if (stub_lnms[i].used && stub_lnms[i].table == t && stub_lnms[i].mode == mode &&
+                !strcmp(stub_lnms[i].name, name))
+                stub_lines(&p, stub_lnms[i].text);
+        st_lnm_parse_end(&p);
+    } else {
+        st_copy(pattern, sizeof pattern, "*");
+        if (st_plat_lnm_list(t->table, pattern, "-", stub_get_cb, &g, e)) return -1;
+    }
     if (!g.found) { fail(e, ST_E_NOTFOUND, C_NOLOGNAM, "%SYSTEM-F-NOLOGNAM, no logical name match"); return 0; }
     st_copy(table_out, ST_LNM_TABLE_MAX + 1, t->table);
     return 1;

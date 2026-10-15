@@ -534,10 +534,12 @@ turn, as `SHOW LOGICAL` does.
   `LNM$SYSCLUSTER_TABLE`, and never in the process or job table. So a step that only a
   process or job name would resolve is not shown.
 
-### `GET api/v1/logical?table=&name=`
+### `GET api/v1/logical?table=&name=&mode=`
 
 The same as `logicals/{table}/{name}`, with the name as a query parameter, so a name
-with `/` in it can be reached. Both answers also carry `modes`: every mode the name
+with `/` in it can be reached. With `mode` (`user`, `super` or `exec`), it gives the
+definition at exactly that mode, or `404` NOLOGNAM if the name is not at it; without
+it, the outermost. Both answers also carry `modes`: every mode the name
 has in that table, outermost first. `SHOW LOGICAL` and `logical` show only the
 outermost one.
 

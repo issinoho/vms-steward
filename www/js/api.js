@@ -67,7 +67,8 @@ export const api = {
   logicalTables: () => call('GET', 'logicals/tables'),
   logicals: (q) => call('GET', `logicals${query(q)}`),
   // One name by query, so a name with / in it works too; with every mode it has.
-  logical: (table, name) => call('GET', `logical${query({ table, name })}`),
+  // mode: the definition at exactly that mode; without it, the outermost.
+  logical: (table, name, mode) => call('GET', `logical${query({ table, name, mode })}`),
   // Phase 7b (D15). def: { table, name, mode, attributes, equivalences, replace }.
   // 409 if the name exists at that mode and replace is not set.
   defineLogical: (def) => call('PUT', 'logical', def),

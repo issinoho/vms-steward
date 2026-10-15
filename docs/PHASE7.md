@@ -129,6 +129,14 @@ DETACH, TMPMBX, NETMBX. Against the installed `STEWARD_LNM.COM;1`: `phase7_live.
 20 ok, `phase7b_live.py` 23 ok, 0 failed. `x86.issinoho.com`: health 200. Next: the
 user's browser checks.
 
+**Browser check, 2026-10-15 (the user): Modify edited the wrong mode.** With 7B_TEST
+at user and executive mode, the user modified "the exec logical" and turned on
+no_alias: no warning, and the user-mode name was replaced (audit log: `7B_TEST user
+... replaced`). The name's detail, and so Modify, showed only the outermost
+definition. Fixed in 0.6.1: `GET logical` takes a `mode`, a name at several modes gets
+a Modify button per mode that opens that mode's own definition, and the dialog's
+title names the mode.
+
 **Exit (7b):**
 - Defines and deassigns match DEFINE and DEASSIGN (`SHOW LOGICAL` after each), for
   STEWARD_ADM with SYSNAM in the system table and STEWARD_TEST with GRPPRV in its
