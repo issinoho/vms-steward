@@ -644,6 +644,22 @@ The above, plus what `SHOW PROCESS/ALL` shows:
   does not exist. That is what `SHOW PROCESS/ID=` says, and reveals no more.
 - `400` for a PID not in that form.
 
+### `DELETE api/v1/processes/{pid}` (Phase 8b)
+
+Stops the process, as `STOP/ID` does (`$DELPRC`), as you: OpenVMS lets you stop your
+own processes, your group's with GROUP and anyone's with WORLD. Needs the CSRF header.
+
+```json
+{"pid": "00007D90", "name": "BATCH_232", "username": "STEWARD_TEST", "stopping": true}
+```
+
+- `202`: OpenVMS accepted the stop. It is asynchronous: for a moment the process may
+  still be listed.
+- `409` for a process of Steward's own account (its pool), whatever your privileges.
+  Use `STEWARD$CONTROL` at a terminal.
+- `403` with NOPRIV and `404` with NONEXPR, as for reading.
+- Audited with the PID, process name and username, refusals included.
+
 ## Coming
 
-Stopping a process (Phase 8b), then queues (`docs/PLAN.md`).
+Batch and print queues (`docs/PLAN.md`).

@@ -78,6 +78,7 @@ browser ─(1)─ nginx proxy manager ─(2)─ lighttpd ─(3)─ STEWARD.EXE �
 | An inner mode is never quietly made user mode | `st_plat_lnm_define` and `_deassign` refuse supervisor and executive without SYSNAM, before OpenVMS is asked | unit "executive mode without SYSNAM"; `phase7b_live.py` "the user-mode name is untouched" |
 | A logical name change never records its equivalences | `svc_logical_define`, `svc_logical_deassign` | API suite "without the equivalence"; `phase7b_live.py` "never an equivalence" |
 | Steward's serving process is never shown as the viewer's | `st_plat_proc_enum` and `_get` leave out (404) the calling process | `phase8_live.py` "nothing switched on: none"; unit "only the viewer's own processes" |
+| Steward's pool is never stopped through Steward | `svc_process_stop` refuses the service account's processes; `st_plat_proc_stop` the serving one | unit "Steward's own pool process: refused"; API suite; `phase8b_live.py` (on a test job named as the account) |
 
 ## Phase 2 additions (users and identifiers, read-only)
 
@@ -305,8 +306,16 @@ browser ─(1)─ nginx proxy manager ─(2)─ lighttpd ─(3)─ STEWARD.EXE �
   `dom.js`.
 - **Steward's own pool is visible** to anyone with GROUP in the service account's
   group, or WORLD, as at a terminal. On x86 that group is shared with the test
-  accounts; README.VMS advises a group of its own. 8b (stopping) will refuse the
-  service account's processes.
+  accounts; README.VMS advises a group of its own.
+- **Stopping (8b):** `DELETE api/v1/processes/{pid}` is `$DELPRC` under the persona,
+  with CSRF, audited. The probe (`probes/probe_delprc.c`) showed OpenVMS checks the
+  persona: NOPRIV from an all-privileged process without GROUP. Steward refuses (409)
+  any process of the service account, whatever the viewer holds: stopping the pool
+  from the browser would cut the browser off, and a viewer with GROUP in a shared
+  group, or WORLD, could otherwise do it. The serving process is NONEXPR to the stop
+  as to the read. Nothing else is refused: system processes are stoppable by whoever
+  OpenVMS allows, as at a terminal, and the browser names them as such and asks for
+  the process name to be typed.
 
 ## Phase 5: load run and review (2026-10-11)
 

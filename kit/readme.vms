@@ -26,7 +26,7 @@ cluster), and covers users and rights identifiers, roughly what AUTHORIZE does:
     group table
   - processes: the ones OpenVMS lets you see (your own; your group's with GROUP
     switched on; everyone's with WORLD), as SHOW SYSTEM lists them, and one as
-    SHOW PROCESS/ALL shows it
+    SHOW PROCESS/ALL shows it; stop one, as STOP/ID (never Steward's own)
 
 Every request runs as you: Steward takes on your OpenVMS identity (a persona) for
 the request, so OpenVMS decides what you may see and change, exactly as at a
