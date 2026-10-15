@@ -266,9 +266,11 @@ $ write c "        ( ""host"" => ""127.0.0.1"", ""port"" => ", base + n, ", ""ch
 $ n = n + 1
 $ if n .lt. count then goto fcgi_loop
 $ write c "    ) )"
-$ write c "    # the page: its own scripts, styles and images only; never framed"
+$ write c "    # the page: its own scripts, styles and images only; never framed; and asked"
+$ write c "    # for again each time (no-cache), so an upgrade never mixes old and new scripts"
 $ write c "    $HTTP[""url""] !~ ""^/api/"" {"
 $ write c "        setenv.add-response-header = ("
+$ write c "            ""Cache-Control"" => ""no-cache"","
 $ write c "            ""Content-Security-Policy"" => ""default-src 'self'; img-src 'self'; style-src 'self'; script-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'"","
 $ write c "            ""X-Frame-Options"" => ""DENY"","
 $ write c "            ""Referrer-Policy"" => ""no-referrer"","

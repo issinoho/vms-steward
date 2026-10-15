@@ -215,3 +215,12 @@ service, with `NAM$M_NOCONCEAL` and the device's `DVI$_FULLDEVNAM` (`_DEV:`, nev
 translated), and gives the helper that. Afterwards the viewer-group decoys had no
 effect. Observed with `probes/lnm_shadow.py` (STW_PROBE_ROOT, under
 `[STEWARD_TEST.SHADOW]`), before and after the change.
+
+**Browsers kept an old script module across a kit upgrade** (Phase 7b, 2026-10-15).
+After 0.6.1 was installed and the page reloaded, the user's browser ran the new
+`logicals.js` with the old `api.js`: the static files had no `Cache-Control`, so the
+browser could reuse a module it had cached on its own (Last-Modified) heuristic.
+"Modify executive…" then loaded the outermost (user) definition, and the audit log
+shows user-mode defines. The server was serving the new `api.js` (checked with
+curl). The static files now carry `Cache-Control: no-cache`, so the browser asks
+again each time and gets a 304 if nothing changed.
