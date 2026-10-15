@@ -44,7 +44,8 @@ penetration test are still to come ([`docs/REVIEW-BRIEF.md`](docs/REVIEW-BRIEF.m
 | Logical names: define, change and deassign | done (Phase 7b, closed 2026-10-15, 0.6.2) |
 | Processes: the list and one process, read-only | done (Phase 8a, closed 2026-10-15, 0.7.0 test kit) |
 | Processes: stop a process (never Steward's own or a system process) | done (Phase 8b, closed 2026-10-15, 0.7.2) |
-| Batch and print queues | next |
+| Queues: the queues, their jobs, one job, read-only | done (Phase 9a, closed 2026-10-15, 0.8.0 test kit) |
+| Queues: hold, release, delete a job; stop and start a queue | next (Phase 9b) |
 | SYSGEN, licences, products, monitoring, error log, terminal | later |
 
 ## Installing

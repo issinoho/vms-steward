@@ -1,5 +1,7 @@
 # Phase 9: batch and print queues
 
+9a (read-only) closed 2026-10-15; 9b (changes) next.
+
 Read-only first (9a), then changes (9b), as for the earlier areas. Design: DECISIONS D17.
 
 ## How queues are read (probe, 2026-10-15)
@@ -65,3 +67,13 @@ checks.
   ENTRY/FULL`, for STEWARD_TEST and for STEWARD_ADM with SYSPRV.
 - Another's job is shown as inaccessible, as at a terminal.
 - Browser checks (the user's); the security gate.
+
+## 9a closed (2026-10-15)
+
+On the installed kit T0.8-0, the user's browser checks: the four queues; as
+STEWARD_TEST the work account's jobs in X86VMS_BATCH inaccessible; as STEWARD_ADM with
+SYSPRV readable, a job matching `SHOW ENTRY/FULL`; an inaccessible job by entry
+refused with NOPRIV. `phase9_live.py` 9 ok; `phase7_live.py` 20 ok against the
+installed helper procedure (its new process name). Security gate: security.md Phase 9
+section and invariant; the review runs with 9b's.
+
