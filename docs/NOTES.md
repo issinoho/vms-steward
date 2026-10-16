@@ -350,3 +350,13 @@ sequential, variable records, carriage-return control. A header, then one line p
 VMSINSTAL run, `|`-separated: name (often blank), mnemonic, version, date, status
 (S/F), IVP (S/F/NA), node, installer, signature (VSI, HP, U, NA, NV). It records
 installs, successful or failed, and never removals.
+
+**IA64: Steward builds and its native tests pass unchanged** (2026-10-16). A second
+node, OpenVMS V8.4-2L3 on an rx2660, VSI C V7.4-001 (x86 has V7.7-003), VSI SSL3
+V3.0-22, TCP/IP V6.0-31: `tools/push.sh ia64`, then `tools/vms.sh ia64 dcl
+'@build_vms TEST'` gave BUILD-OK and 389 checks, 0 failed, with no source or build
+changes. QUIDEF, STATEDEF, UAIDEF and JBCMSGDEF, extracted on both nodes with
+`LIBRARY/EXTRACT` and their `#define`s compared, are identical except
+**`UAI$C_MAX_PWD_LENGTH`: 64 on x86, 32 on IA64**. Steward checks and words the limit
+as 64 (`svc_edit.c`, the INVPWDLEN text in `st_plat_vms.c`). The password itself is
+set by `$SETUAI`, so the OS still enforces 32, but the message would be wrong.
