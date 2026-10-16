@@ -799,6 +799,39 @@ UIC, SYSPRV, BYPASS, READALL, UIC group 1); a refusal is in `sources`, and `data
   platform); `type` and `units_required` where its "Type:" line gives them.
 - `truncated`: more than 2,000 licences in a part.
 
+## Installed products (Phase 12, D20): read-only
+
+### `GET api/v1/products`
+
+What PCSI has installed and its history (`PRODUCT SHOW PRODUCT/FULL` and `PRODUCT SHOW
+HISTORY/FULL`, run in the D14 helper as **you**, with the privileges you switched on),
+and VMSINSTAL's own history, read as you. PRODUCT needs SYSLCK: without it both PCSI
+parts are refused, in PRODUCT's own words, and VMSINSTAL's history is still shown.
+
+```json
+{"products": [
+   {"producer": "VSI", "base": "X86VMS", "name": "SSL3", "version": "V3.0-21",
+    "kit_type": "Full LP", "state": "Installed", "maintenance": [],
+    "referenced_by": ["VSI X86VMS OPENVMS E9.2-3", "VSI X86VMS TCPIP V6.0-31"]}],
+ "history": [
+   {"producer": "VSI", "base": "X86VMS", "name": "VMS923X_UPDATE", "version": "V2.0",
+    "kit_type": "Patch", "operation": "Install", "validation": "Val",
+    "date": "02-MAY-2026 14:40:11", "error": "0", "user": "SYSTEM", "remark": ""}],
+ "vmsinstal": [
+   {"name": "", "mnemonic": "VSIFMS", "version": "2.6", "date": "5-JUL-2024", "status": "S",
+    "ivp": "S", "node": "X86VMS", "installer": "SYSTEM", "signature": "VSI"}],
+ "truncated": false,
+ "sources": {"products": {"read": true}, "history": {"read": true}, "vmsinstal": {"read": true}}}
+```
+
+- `products` in PCSI's order; `history` newest first, as PCSI gives it; `vmsinstal`
+  oldest first, as the file holds it. VMSINSTAL records installs only, never a removal.
+- Without SYSLCK: `"products": {"read": false, "vms_status": "%X0652800A",
+  "vms_message": "%PCSIUI-E-PRIVCLASS1, operation requires SYSLCK privilege"}`, and the
+  same for `history`; both arrays empty.
+- Dates are as OpenVMS prints them, in the node's local time.
+- `truncated`: more than 5,000 entries in a part.
+
 ## Coming
 
-Installed products (`docs/PLAN.md`).
+Monitoring, the error log and a terminal (`docs/PLAN.md`).
