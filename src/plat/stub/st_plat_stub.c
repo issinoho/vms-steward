@@ -408,12 +408,14 @@ int st_plat_user_modify(const char *username, const st_user_change *c, st_err *e
     return 0;
 }
 
+int st_plat_password_max(void) { return 64; }   /* as x86-64 */
+
 int st_plat_user_set_password(const char *username, const char *password, int pre_expired,
                               st_err *e)
 {
     stub_user *s = writable_user(username, e);
     if (!s) return -1;
-    if ((int) strlen(password) < s->u.pwd_minimum || strlen(password) > 64)
+    if ((int) strlen(password) < s->u.pwd_minimum || strlen(password) > (size_t) st_plat_password_max())
         return fail(e, ST_E_INVALID, C_INVPWDLEN, "%SYSTEM-F-INVPWDLEN, password length must be between the minimum and 64 characters");
     st_copy(s->password, sizeof s->password, password);
     s->u.pwd_date = pre_expired ? -1 : (long long) time(NULL);
@@ -683,7 +685,7 @@ int st_plat_user_create(st_user_new *n, st_err *e)
     if (ident_by_name(n->username)) return fail(e, ST_E_CONFLICT, C_DUPIDENT, "%SYSTEM-F-DUPIDENT, duplicate identifier");
     if (ident_value_used(n->uic)) return fail(e, ST_E_CONFLICT, C_DUPIDENT, "the UIC is already in use");
     if (!(t = find_user(n->template_user))) return fail(e, ST_E_NOTFOUND, C_RNF, "%RMS-E-RNF, record not found");
-    if ((int) strlen(n->password) < t->u.pwd_minimum || strlen(n->password) > 64)
+    if ((int) strlen(n->password) < t->u.pwd_minimum || strlen(n->password) > (size_t) st_plat_password_max())
         return fail(e, ST_E_INVALID, C_INVPWDLEN, "%SYSTEM-F-INVPWDLEN, password length must be between the minimum and 64 characters");
     for (i = 0; i < MAXUSERS && users[i].used; i++) ;
     if (i == MAXUSERS) return fail(e, ST_E_INTERNAL, 0, "stub SYSUAF full");

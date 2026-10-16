@@ -80,6 +80,15 @@ structures. VSI C's `/POINTER_SIZE=32`, with `SSL3$LIBCRYPTO_SHR32`, is the comb
 vmsguard has proven on both x86-64 and IA64 (vmsguard `build_vms.com`). The code stays
 C99 (`-std=c99 -pedantic` on Linux).
 
+**IA64 (2026-10-16):** the same sources build unchanged on IA64 V8.4-2L3 with VSI C
+V7.4-001, and the native unit tests pass (NOTES.md). The one difference found in the
+headers, the longest password, is taken from the headers of the build node
+(`st_plat_password_max`, `UAI$C_MAX_PWD_LENGTH`), not hard-coded: the kit is built on
+the architecture it ships for, so that is the target's value. Alternatives: a run-time
+probe (there is no service that reports it, and `$HASH_PASSWORD` takes any length), or
+64 everywhere and leave it to `$SETUAI` (unverified on IA64, and the message would be
+wrong). The browser's input fields stay at 64; the service's 422 names the real limit.
+
 ## D4. Front end: vanilla ES modules, no build step
 
 **Status:** approved by the user (2026-10-10, plan).

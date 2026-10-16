@@ -204,6 +204,11 @@ int st_plat_user_modify(const char *username, const st_user_change *c, st_err *e
 int st_plat_user_set_password(const char *username, const char *password, int pre_expired,
                               st_err *e);
 
+/* The longest password the system takes: UAI$C_MAX_PWD_LENGTH from the headers the
+   image was built with, 64 on x86-64 and 32 on IA64. $HASH_PASSWORD hashes any length
+   (NOTES.md), so the service checks new passwords against this itself. */
+int st_plat_password_max(void);
+
 /* A user changes their own password ($ACM CHANGE_PASSWORD), after the caller has
    checked the current one with st_plat_authenticate: a failed change is charged to
    the account, not the client (PHASE3.md). Returns ST_AUTH_OK, ST_AUTH_FAILED (the

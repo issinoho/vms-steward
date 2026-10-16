@@ -358,5 +358,12 @@ V3.0-22, TCP/IP V6.0-31: `tools/push.sh ia64`, then `tools/vms.sh ia64 dcl
 changes. QUIDEF, STATEDEF, UAIDEF and JBCMSGDEF, extracted on both nodes with
 `LIBRARY/EXTRACT` and their `#define`s compared, are identical except
 **`UAI$C_MAX_PWD_LENGTH`: 64 on x86, 32 on IA64**. Steward checks and words the limit
-as 64 (`svc_edit.c`, the INVPWDLEN text in `st_plat_vms.c`). The password itself is
-set by `$SETUAI`, so the OS still enforces 32, but the message would be wrong.
+as 64 (`svc_edit.c`, the INVPWDLEN text in `st_plat_vms.c`).
+
+**`$HASH_PASSWORD` hashes a password of any length** (2026-10-16, `probes/probe_pwdlen.c`
+on both nodes). Lengths 1, 32, 33, 64 and 65 all returned SS$_NORMAL, on x86 (header
+64) and IA64 (header 32) alike, so it does not tell us the limit. Whether `$SETUAI`
+refuses 33 to 64 characters on IA64 is not yet known: finding out means setting a
+real account's password. Steward now checks against `UAI$C_MAX_PWD_LENGTH` itself
+(`st_plat_password_max`), so it never hands the system a password the header says is
+too long.

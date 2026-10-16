@@ -381,9 +381,11 @@ void svc_user_set_password(st_ctx *c)
         }
     if (pre && pre->type != ST_JBOOL) { st_json_free(&doc); TOO(c, "pre_expired: true or false"); return; }
     if (pre) pre_expired = pre->boolean;
-    if (!v || v->type != ST_JSTR || !v->slen || st_json_latin1(v->str, v->slen, pw, 65)) {
+    if (!v || v->type != ST_JSTR || !v->slen || st_json_latin1(v->str, v->slen, pw, 65) ||
+        strlen(pw) > (size_t) st_plat_password_max()) {
         st_json_free(&doc);
-        TOO(c, "password: 1 to 64 characters");
+        st_zero(pw, sizeof pw);
+        TOO(c, "password: 1 to %d characters", st_plat_password_max());
         return;
     }
     st_json_free(&doc);   /* scrubs the decoded password */
@@ -432,10 +434,10 @@ void svc_password_change(st_ctx *c)
         st_resp_problem(c->resp, 401, "sign-in-failed", "Sign-in failed", NULL, 0, NULL);
         return;
     }
-    if (st_json_latin1(u8new, strlen(u8new), neu, 65)) {
+    if (st_json_latin1(u8new, strlen(u8new), neu, 65) || strlen(neu) > (size_t) st_plat_password_max()) {
         st_json_free(&doc);
-        st_zero(cur, sizeof cur);
-        TOO(c, "new: at most 64 characters, none above U+00FF");
+        st_zero(cur, sizeof cur); st_zero(neu, sizeof neu);
+        TOO(c, "new: at most %d characters, none above U+00FF", st_plat_password_max());
         return;
     }
     st_json_free(&doc);
@@ -800,8 +802,9 @@ void svc_user_create(st_ctx *c)
         } else if (!strcmp(k, "template")) {
             if (m->type != ST_JSTR || !st_valid_username(m->str, tmpl)) { TOO(c, "template: a username"); goto bad; }
         } else if (!strcmp(k, "password")) {
-            if (m->type != ST_JSTR || !m->slen || st_json_latin1(m->str, m->slen, pw, 65)) {
-                TOO(c, "password: 1 to 64 characters"); goto bad;
+            if (m->type != ST_JSTR || !m->slen || st_json_latin1(m->str, m->slen, pw, 65) ||
+                strlen(pw) > (size_t) st_plat_password_max()) {
+                TOO(c, "password: 1 to %d characters", st_plat_password_max()); goto bad;
             }
             have_pw = 1;
         } else if (!strcmp(k, "pre_expired") || !strcmp(k, "copy_identifiers") || !strcmp(k, "create_directory")) {

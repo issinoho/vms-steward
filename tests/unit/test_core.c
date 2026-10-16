@@ -705,6 +705,16 @@ static void test_edit(void)
     CHECK(b.resp.status == 422 && strstr(b.resp.body.data, "INVPWDLEN"),
           "setting a password below the account's minimum is refused by the system");
     st_resp_free(&b.resp);
+    {   /* one over the system's longest (UAI$C_MAX_PWD_LENGTH: 32 on IA64), refused by Steward */
+        char body[128], lim[24];
+        int n = st_plat_password_max() + 1;
+        snprintf(body, sizeof body, "{\"password\":\"%.*s\"}", n, "kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk");
+        snprintf(lim, sizeof lim, "1 to %d characters", n - 1);
+        call("POST", "/api/v1/users/STEWARD_TEST/password", adm, body, &b);
+        CHECK(b.resp.status == 422 && strstr(b.resp.body.data, lim),
+              "a password longer than the system takes is refused before it reaches the system");
+        st_resp_free(&b.resp);
+    }
     call("POST", "/api/v1/users/STEWARD_TEST/password", adm, "{\"password\":\"a-long-enough-pass\",\"extra\":1}", &b);
     CHECK(b.resp.status == 422, "and unknown members are refused");
     st_resp_free(&b.resp);

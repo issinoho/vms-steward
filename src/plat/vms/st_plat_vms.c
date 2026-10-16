@@ -1190,6 +1190,8 @@ int st_plat_user_modify(const char *username, const st_user_change *c, st_err *e
     return 0;
 }
 
+int st_plat_password_max(void) { return UAI$C_MAX_PWD_LENGTH; }
+
 int st_plat_user_set_password(const char *username, const char *password, int pre_expired,
                               st_err *e)
 {
@@ -1705,11 +1707,11 @@ int st_plat_user_create(st_user_new *n, st_err *e)
     uaf_key(key, n->template_user);
     st = sys$get(&rab);
     if (!(st & 1)) { sys$close(&fab); set_cond(e, st); return -1; }
-    if (plen < rec.uaf$b_pwd_length || plen > 64) {      /* the template's minimum, before writing */
+    if (plen < rec.uaf$b_pwd_length || plen > UAI$C_MAX_PWD_LENGTH) {   /* the template's minimum, before writing */
         sys$close(&fab);
         set_cond(e, SS$_INVPWDLEN);
-        snprintf(e->text, sizeof e->text, "%%SYSTEM-F-INVPWDLEN, the password must be %u to 64 characters",
-                 (unsigned) rec.uaf$b_pwd_length);
+        snprintf(e->text, sizeof e->text, "%%SYSTEM-F-INVPWDLEN, the password must be %u to %d characters",
+                 (unsigned) rec.uaf$b_pwd_length, (int) UAI$C_MAX_PWD_LENGTH);
         return -1;
     }
     /* The template's record, with a new name (the tag byte kept), UIC and no history. */

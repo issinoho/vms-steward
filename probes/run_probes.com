@@ -2,7 +2,7 @@ $! RUN_PROBES.COM - build the Phase 0 probes and run the read-only ones.
 $!
 $!   @RUN_PROBES [BUILD|ALL]
 $!     BUILD  compile and link only
-$!     ALL    (default) also run probe_crypto, probe_rights and probe_uaf
+$!     ALL    (default) also run probe_crypto, probe_rights, probe_uaf and probe_pwdlen
 $!
 $! probe_persona, probe_setprv, probe_crelnm, probe_jpi, probe_delprc, probe_acm and probe_acm_host need a username (and the
 $! acm ones a password), so
@@ -32,7 +32,7 @@ $!
 $ define/process/nolog OPENSSL SSL3$INCLUDE:
 $ ccq = "/STANDARD=C99/POINTER_SIZE=32/NAMES=AS_IS/WARNINGS=ENABLE=QUESTCODE"
 $ failed = 0
-$ probes = "probe_crypto,probe_rights,probe_uaf,probe_persona,probe_acm,probe_acm_host,probe_setprv,probe_selfuai,probe_crelnm,probe_jpi,probe_delprc,probe_hold,probe_qui,probe_sndjbc"
+$ probes = "probe_crypto,probe_rights,probe_uaf,probe_persona,probe_acm,probe_acm_host,probe_setprv,probe_selfuai,probe_crelnm,probe_jpi,probe_delprc,probe_hold,probe_qui,probe_sndjbc,probe_pwdlen"
 $ i = 0
 $build_loop:
 $ p = f$element(i, ",", probes)
@@ -71,5 +71,7 @@ $ say "=== run probe_rights"
 $ mcr sys$disk:[]probe_rights
 $ say "=== run probe_uaf"
 $ mcr sys$disk:[]probe_uaf 10
+$ say "=== run probe_pwdlen"
+$ run probe_pwdlen
 $ say "=== done"
 $ exit 1
