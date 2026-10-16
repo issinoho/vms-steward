@@ -32,6 +32,7 @@
 #include "st_platform.h"
 #include "st_queue.h"
 #include "st_sysgen.h"
+#include "st_license.h"
 #include "st_route.h"
 
 #define BIT(n) (1u << (n))
@@ -1452,6 +1453,72 @@ int st_plat_sysgen_list(const char *privs, st_param_cb fn, void *ctx, st_err *e)
     for (i = 0; stub_sysgen[i]; i++)
         if (st_sysgen_line(&p, stub_sysgen[i], strlen(stub_sysgen[i]))) break;
     st_sysgen_end(&p);
+    return 0;
+}
+
+/* ---------------------------------------------------------------- licences (D19) */
+
+/* STEWARD_LICENSE.COM's output as x86 printed it (2026-10-16), shortened, with an
+   authorization number made up, so the parser in st_license.c is the one that reads
+   it, as on OpenVMS. The database is refused unless the viewer has SYSPRV or READALL
+   switched on, as LMF$LICENSE's protection does there (PHASE11.md). */
+static const char *const stub_lic_loaded[] = {
+    "%%PART%% LOADED",
+    "Active licenses on node X86VMS:",
+    "", "BASIC", "\tProducer: VSI", "\tUnits: 0", "\tVersion: 0.0", "\tRelease Date: (none)",
+    "\tTermination Date: 30-APR-2027", "\tAvailability: 0  ", "\tActivity: 1  ", "\tX86_64",
+    "", "FMS", "\tProducer: VSI", "\tUnits: 0", "\tVersion: 0.0", "\tRelease Date: (none)",
+    "\tTermination Date: 30-APR-2027", "\tPer Core License", "\tActivity: 0  ", "\tX86_64",
+    "", "OPENVMS-X86-HAOE", "\tProducer: VSI", "\tUnits: 0", "\tVersion: 0.0", "\tRelease Date: (none)",
+    "\tTermination Date: 30-APR-2027", "\tPer Core License", "\tActivity: 0  ", "\tX86_64",
+    "%%STATUS%% 00000001",
+    "%%PART%% CHARGE",
+    "", "OpenVMS X86_64/LMF Charge Information for node X86VMS",
+    "This is an QEMU Standard PC (Q35 + ICH9, 2009), with 2 cores active",
+    "Type: PCL,   Units Required: 2  (X86_64 Per Core)",
+    "%%STATUS%% 10000001",
+    "%%PART%% DATABASE",
+    NULL };
+static const char *const stub_lic_database[] = {
+    "License Management Facility  V2.0", "  ",
+    "License Database File:       SYS$COMMON:[SYSEXE]LMF$LICENSE.LDB;1",
+    "Created on:                  20-APR-2023", "Created by user:             SYSTEM",
+    "Created by LMF Version:      V2.0", "  ",
+    "-----------------------------------",
+    "Issuer:                      VSI", "Authorization:               ISV-EXAMPLE-D000000000001",
+    "Product Name:                BASIC", "Producer:                    VSI", "Units:                       0",
+    "Version:                     0.0", "Release Date:                (none)",
+    "PAK Termination Date:        30-APR-2027", "Availability:                0",
+    "Activity:                     000000001", "Options:                     X86_64", "Hardware ID:", "  ",
+    "Revision Level:              3", "Status:                      Active", "Command:                     ENABLE",
+    "Modified by user:            SYSTEM", "Modified on:                 15-APR-2026 15:22:29.19", "  ",
+    "-----------------------------------",
+    "Issuer:                      VSI", "Authorization:               ISV-EXAMPLE-D000000000002",
+    "Product Name:                FMS", "Producer:                    VSI", "Units:                       0",
+    "Version:                     0.0", "Release Date:                (none)",
+    "PAK Termination Date:        30-APR-2027", "Options:                     X86_64, PCL", "Hardware ID:", "  ",
+    "Revision Level:              3", "Status:                      Active", "Command:                     ENABLE",
+    "Modified by user:            SYSTEM", "Modified on:                 15-APR-2026 15:22:29.66", "  ",
+    "[End Of List]",
+    "%%STATUS%% 00000001",
+    NULL };
+
+int st_plat_license_list(const char *privs, st_license_parser *p, char text[ST_LIC_PARTS][256], st_err *e)
+{
+    int i, may = privs && (strstr(privs, "SYSPRV") || strstr(privs, "READALL"));
+    static const char refused[] = "%%STATUS%% 1001829C";   /* %RMS-F-PRV, as on x86 */
+    (void) e;
+    for (i = 0; i < ST_LIC_PARTS; i++) text[i][0] = '\0';
+    for (i = 0; stub_lic_loaded[i]; i++)
+        if (st_license_line(p, stub_lic_loaded[i], strlen(stub_lic_loaded[i]))) break;
+    if (may) {
+        for (i = 0; stub_lic_database[i]; i++)
+            if (st_license_line(p, stub_lic_database[i], strlen(stub_lic_database[i]))) break;
+    } else {
+        st_license_line(p, refused, strlen(refused));
+        st_copy(text[ST_LIC_DATABASE], 256, "insufficient privilege or file protection violation");
+    }
+    st_license_end(p);
     return 0;
 }
 

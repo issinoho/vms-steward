@@ -39,6 +39,7 @@ void st_plat_vms_test_svc_acct(const char *name);
 void st_plat_vms_test_svc_img(const char *image);
 void st_plat_vms_test_svc_grp(unsigned int group);
 void st_plat_vms_test_sysgen(const char *path);
+void st_plat_vms_test_license(const char *path);
 
 static void nv(st_buf *b, const char *n, const char *v)
 {
@@ -188,6 +189,7 @@ int main(int argc, char **argv)
     /* A D14 helper procedure to test in place of the installed one. */
     if (getenv("API_PROBE_LNM_HELPER")) st_plat_vms_test_helper(getenv("API_PROBE_LNM_HELPER"));
     if (getenv("API_PROBE_SYSGEN_HELPER")) st_plat_vms_test_sysgen(getenv("API_PROBE_SYSGEN_HELPER"));
+    if (getenv("API_PROBE_LICENSE_HELPER")) st_plat_vms_test_license(getenv("API_PROBE_LICENSE_HELPER"));
     /* The account whose processes count as Steward's own (D16): by default this
        process's, the work account's, never the real pool's. */
     if (getenv("API_PROBE_SERVICE_ACCOUNT")) st_plat_vms_test_svc_acct(getenv("API_PROBE_SERVICE_ACCOUNT"));

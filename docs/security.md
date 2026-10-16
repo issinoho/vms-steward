@@ -370,6 +370,31 @@ browser ─(1)─ nginx proxy manager ─(2)─ lighttpd ─(3)─ STEWARD.EXE �
 - **New data shown:** the system parameters, which any user may see with SYSGEN SHOW
   at a terminal.
 
+## Phase 11 additions (licences, read-only; D19)
+
+- **New endpoint:** `GET api/v1/licenses` (api.md). Session, persona, read-only.
+- **The D14 helper, a third fixed procedure.** `STEWARD_LICENSE.COM` runs `SHOW
+  LICENSE/FULL`, `SHOW LICENSE/UNIT_REQUIREMENTS` and `LICENSE LIST/FULL` as the
+  viewer, through `helper_run` with the guards of Phase 10. It takes only the
+  session's privileges as data, checked as before; the commands are fixed, and their
+  output goes straight to the reply mailbox by `/OUTPUT=` with the mailbox's device
+  name, made from the process name's unit number (digits only).
+- **What OpenVMS refuses stays refused.** The database is read by LICENSE as the viewer:
+  without SYSPRV or READALL switched on (or a UIC in group 1) LMF$LICENSE refuses it
+  (RMS-F-PRV), and Steward shows that status and nothing of the database. Never read by
+  the service.
+- **The output is untrusted** and parsed in core (`st_license.c`) with bounded copies;
+  fuzzed. The part markers (`%%PART%%`, `%%STATUS%%`) are lines the procedure writes;
+  LMF's fields follow a tab or a label, so only a product name could begin a line
+  with one, and only someone who may write LMF$LICENSE registers products (not
+  checked: whether LICENSE REGISTER accepts `%`). The viewer's own login procedures
+  could write such lines into the mailbox, which is theirs. Either way the effect is
+  a wrong listing: Steward shows the result and acts on nothing in it.
+- **New data shown:** the licences loaded (any user may SHOW LICENSE) and, to viewers
+  OpenVMS lets read the database, each PAK's authorization number, status and who last
+  changed it, as LICENSE LIST/FULL shows them. No checksum: LICENSE LIST/FULL prints
+  none.
+
 ## Phase 5: load run and review (2026-10-11)
 
 - **Load run, Linux** (`tests/load/load.py fcgi`). There were 8 concurrent clients, each

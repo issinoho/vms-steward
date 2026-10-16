@@ -12,6 +12,7 @@
 #include <stddef.h>
 #include "st_lnm.h"
 #include "st_sysgen.h"
+#include "st_license.h"
 
 /* What went wrong, in terms the HTTP layer can map to a status. */
 enum {
@@ -530,6 +531,15 @@ int st_plat_startup_queues(char names[][32], int max);
    viewer) by the fixed procedure STEWARD_SYSGEN.COM, and parsed by st_sysgen.c.
    privs as for st_plat_lnm_list. */
 int st_plat_sysgen_list(const char *privs, st_param_cb fn, void *ctx, st_err *e);
+
+/* ---- licences (Phase 11, D19), as the current persona ----
+
+   SHOW LICENSE/FULL, SHOW LICENSE/UNIT_REQUIREMENTS and LICENSE LIST/FULL, run in the
+   D14 helper process (the viewer) by the fixed procedure STEWARD_LICENSE.COM, into p
+   (st_license_init'ed by the caller). A part OpenVMS refused is not an error: its
+   condition is in p->status and its $GETMSG text in text[part]. privs as for
+   st_plat_lnm_list. */
+int st_plat_license_list(const char *privs, st_license_parser *p, char text[ST_LIC_PARTS][256], st_err *e);
 
 /* ---- audit and diagnostics ---- */
 void st_plat_audit(const char *line);    /* one record; the platform adds a timestamp */

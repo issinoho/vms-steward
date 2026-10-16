@@ -34,6 +34,8 @@ cluster), and covers users and rights identifiers, roughly what AUTHORIZE does:
     queues it feeds, where Steward's pool is started at boot)
   - system parameters: every active parameter as SYSGEN SHOW/ALL prints it
     (read-only)
+  - licences: those loaded on this node (SHOW LICENSE), its charge, and the
+    licence database (LICENSE LIST) if OpenVMS lets you read it (read-only)
 
 Every request runs as you: Steward takes on your OpenVMS identity (a persona) for
 the request, so OpenVMS decides what you may see and change, exactly as at a

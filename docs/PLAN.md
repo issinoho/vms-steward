@@ -180,8 +180,11 @@ checks and a review (0.8.1). See `docs/PHASE9.md`. See `docs/PHASE9.md`.
 **Phase 10: system parameters** (D18), closed 2026-10-16 on the user's browser checks
 (0.9.0): read-only, SYSGEN SHOW/ALL in the D14 helper. See `docs/PHASE10.md`.
 
+**Phase 11: licences** (D19): read-only, SHOW LICENSE and LICENSE LIST in the D14
+helper. Built 2026-10-16; awaiting the user's browser checks. See `docs/PHASE11.md`.
+
 **Later areas, one at a time and each with the same read-only → modify split:** licences, installed products,
-CPU/memory monitoring, error log, and a WebSocket terminal (lighttpd `mod_wstunnel`).
+CPU/memory monitoring, error log, and a WebSocket terminal (lighttpd `mod_wstunnel`); licences are Phase 11.
 The user confirmed this order on 2026-10-11 (licences stay where they are).
 
 **Wish list (not scheduled):** a layout made for phones (`docs/ideas/mobile.md`,

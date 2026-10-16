@@ -5,8 +5,8 @@
    No libFuzzer: the toolchain here may be GCC only. Seeds are valid inputs; each round
    flips, inserts, deletes or duplicates bytes and feeds the result to the JSON
    parser, the FastCGI record/pair parsers and connection state machine, request
-   building, cookie and query parsing, route matching, and the SHOW LOGICAL and SYSGEN
-   SHOW parsers. A crash or sanitizer
+   building, cookie and query parsing, route matching, and the SHOW LOGICAL, SYSGEN
+   SHOW and licence listings' parsers. A crash or sanitizer
    report is the failure; there are no assertions on results. */
 #include <stdio.h>
 #include <stdlib.h>
@@ -16,6 +16,7 @@
 #include "st_json.h"
 #include "st_lnm.h"
 #include "st_sysgen.h"
+#include "st_license.h"
 #include "st_http.h"
 #include "st_route.h"
 
@@ -162,6 +163,35 @@ static void run_sysgen(const unsigned char *in, size_t len)
     st_sysgen_end(&p);
 }
 
+/* STEWARD_LICENSE.COM's output, as x86 printed it (st_license.h). */
+static const char license_seed[] =
+    "%%PART%% LOADED\nActive licenses on node X86VMS:\n\nBASIC\n\tProducer: VSI\n\tUnits: 0\n"
+    "\tTermination Date: 30-APR-2027\n\tAvailability: 0  \n\tPer Core License\n\tX86_64\n%%STATUS%% 00000001\n"
+    "%%PART%% CHARGE\nType: PCL,   Units Required: 2  (X86_64 Per Core)\n%%STATUS%% 10000001\n"
+    "%%PART%% DATABASE\nLicense Database File:       SYS$COMMON:[SYSEXE]LMF$LICENSE.LDB;1\n"
+    "-----------------------------------\nIssuer:                      VSI\nProduct Name:                C\n"
+    "Hardware ID:\n  \nReserved:                    NODEA\n                             NODEB\n"
+    "Modified on:                 15-APR-2026 15:22:29.19\n[End Of List]\n%%STATUS%% 1001829C\n";
+
+static int license_cb(const st_license *l, void *ctx) { (void) l; (void) ctx; return 0; }
+
+static void run_license(const unsigned char *in, size_t len)
+{
+    st_license_parser p;
+    size_t start = 0, i;
+    st_license_init(&p, license_cb, NULL);
+    for (i = 0; i <= len; i++)
+        if (i == len || in[i] == '\n') {
+            char *line = malloc(i - start ? i - start : 1);   /* exactly its length, for ASan */
+            if (!line) return;
+            memcpy(line, in + start, i - start);
+            st_license_line(&p, line, i - start);
+            free(line);
+            start = i + 1;
+        }
+    st_license_end(&p);
+}
+
 int main(int argc, char **argv)
 {
     long i, rounds = argc > 1 ? atol(argv[1]) : 100000;
@@ -172,7 +202,12 @@ int main(int argc, char **argv)
         size_t len;
         st_jdoc d;
         char err[80];
-        if (i % 4 == 3) {
+        if (i % 5 == 4) {
+            len = sizeof license_seed - 1;
+            memcpy(buf, license_seed, len);
+            len = mutate(buf, len, sizeof buf);
+            run_license(buf, len);
+        } else if (i % 4 == 3) {
             len = sizeof sysgen_seed - 1;
             memcpy(buf, sysgen_seed, len);
             len = mutate(buf, len, sizeof buf);

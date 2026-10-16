@@ -753,6 +753,48 @@ switched on. Any user may run SYSGEN SHOW at a terminal.
 - `filter`: up to 31 printable characters, matched against the name; `*` and `%` are
   wildcards, plain text matches anywhere.
 
+## Licences (Phase 11, D19): read-only
+
+### `GET api/v1/licenses`
+
+The licences loaded on this node, its charge, and the licence database, read by the
+D14 helper process as the viewer, with the privileges switched on in the session:
+`SHOW LICENSE/FULL`, `SHOW LICENSE/UNIT_REQUIREMENTS` and `LICENSE LIST/FULL`. Any user
+may see the first two. The database is as LMF$LICENSE's protection allows (SYSPRV,
+READALL, UIC group 1); a refusal is in `sources`, and `database` is then empty.
+
+```json
+{"loaded": [
+   {"product": "FMS", "producer": "VSI", "units": "0", "version": "0.0", "release": "(none)",
+    "termination": "30-APR-2027", "availability": "", "activity": "0", "per_core": true,
+    "options": "X86_64", "other": []}],
+ "database": [
+   {"product": "BASIC", "producer": "VSI", "issuer": "VSI", "authorization": "ISV-EXAMPLE-D000000000001",
+    "units": "0", "version": "0.0", "release": "(none)", "termination": "30-APR-2027",
+    "availability": "0", "activity": "000000001", "options": "X86_64", "hardware_id": "",
+    "revision": "3", "status": "Active", "command": "ENABLE", "modified_by": "SYSTEM",
+    "modified_on": "15-APR-2026 15:22:29.19", "other": []}],
+ "truncated": false,
+ "node": "X86VMS",
+ "charge": {"lines": ["OpenVMS X86_64/LMF Charge Information for node X86VMS", "...",
+                      "Type: PCL,   Units Required: 2  (X86_64 Per Core)"],
+            "type": "PCL", "units_required": "2"},
+ "database_file": {"file": "SYS$COMMON:[SYSEXE]LMF$LICENSE.LDB;1", "created": "20-APR-2023",
+                   "created_by": "SYSTEM", "lmf_version": "V2.0"},
+ "sources": {"loaded": {"read": true}, "charge": {"read": true},
+             "database": {"read": false, "vms_status": "%X0001829C",
+                          "vms_message": "%RMS-F-PRV, insufficient privilege or file protection violation"}}}
+```
+
+- Values are strings, as LMF prints them (dates as `DD-MMM-YYYY`, "(none)" kept).
+- `per_core` (loaded only): SHOW LICENSE's "Per Core License", printed in place of an
+  availability. In the database it shows as the option `PCL`.
+- `other`: any field Steward does not name, `{"label", "value"}`, so nothing LMF prints
+  is lost; an indented line in the database listing continues the field above it.
+- `charge.lines`: SHOW LICENSE/UNIT_REQUIREMENTS as printed (its wording varies by
+  platform); `type` and `units_required` where its "Type:" line gives them.
+- `truncated`: more than 2,000 licences in a part.
+
 ## Coming
 
-Licences, then installed products (`docs/PLAN.md`).
+Installed products (`docs/PLAN.md`).

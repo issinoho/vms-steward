@@ -255,6 +255,9 @@ static char lnm_helper_path[256];
 /* The SYSGEN listing's procedure (Phase 10, D18), fixed and resolved the same way. */
 static char sysgen_helper[256] = "STEWARD$ROOT:[COM]STEWARD_SYSGEN.COM";
 static char sysgen_helper_path[256];
+/* The licences' procedure (Phase 11, D19), fixed and resolved the same way. */
+static char license_helper[256] = "STEWARD$ROOT:[COM]STEWARD_LICENSE.COM";
+static char license_helper_path[256];
 
 /* spec to a physical path in out ("" if it cannot be): $PARSE and $SEARCH with
    NOCONCEAL, as the service, then the device's full name. */
@@ -309,6 +312,15 @@ static void lnm_resolve_helper(void)
 {
     resolve_procedure(lnm_helper, lnm_helper_path, sizeof lnm_helper_path, "logical-name helper");
     resolve_procedure(sysgen_helper, sysgen_helper_path, sizeof sysgen_helper_path, "SYSGEN helper");
+    resolve_procedure(license_helper, license_helper_path, sizeof license_helper_path, "licence helper");
+}
+
+/* For tests/vms/api_probe.c only, to run an edited licence procedure before it is
+   installed. STEWARD.EXE never calls it. */
+void st_plat_vms_test_license(const char *path)
+{
+    st_copy(license_helper, sizeof license_helper, path);
+    lnm_resolve_helper();
 }
 
 /* For tests/vms/api_probe.c only, to run an edited SYSGEN procedure before it is
@@ -2919,6 +2931,29 @@ int st_plat_sysgen_list(const char *privs, st_param_cb fn, void *ctx, st_err *e)
     if (helper_run(sysgen_helper_path, msgs, 1, sysgen_line, &p, &status, e)) return -1;
     st_sysgen_end(&p);
     if (!(status & 1)) { set_cond(e, status); return -1; }   /* SYSGEN's own failure */
+    return 0;
+}
+
+/* ---- licences (Phase 11, D19): SHOW LICENSE and LICENSE LIST in the same helper ---- */
+
+static void license_line(const char *line, size_t len, void *ctx)
+{
+    st_license_line((st_license_parser *) ctx, line, len);
+}
+
+int st_plat_license_list(const char *privs, st_license_parser *p, char text[ST_LIC_PARTS][256], st_err *e)
+{
+    const char *msgs[1];
+    unsigned int status = 0;
+    int i;
+    msgs[0] = privs;
+    for (i = 0; i < ST_LIC_PARTS; i++) text[i][0] = '\0';
+    if (helper_run(license_helper_path, msgs, 1, license_line, p, &status, e)) return -1;
+    st_license_end(p);
+    if (!(status & 1)) { set_cond(e, status); return -1; }   /* the procedure refused */
+    /* A part OpenVMS refused (the database, to most viewers) is shown, not an error. */
+    for (i = 0; i < ST_LIC_PARTS; i++)
+        if (p->seen[i] && !(p->status[i] & 1)) msgtext(p->status[i], text[i], 256);
     return 0;
 }
 

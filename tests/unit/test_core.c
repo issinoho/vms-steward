@@ -14,6 +14,7 @@
 #include "st_proc.h"
 #include "st_queue.h"
 #include "st_sysgen.h"
+#include "st_license.h"
 #include "st_app.h"
 
 static int checks, failures;
@@ -1866,6 +1867,97 @@ static void test_sysgen(void)
     CHECK(!st_plat_persona_active(), "no persona left active");
 }
 
+/* Phase 11 (D19): the licence listings' parser and the endpoint. */
+typedef struct { st_license l[6]; int n; } lic_got;
+static int lic_keep(const st_license *l, void *ctx)
+{
+    lic_got *g = ctx;
+    if (g->n < 6) g->l[g->n++] = *l;
+    return 0;
+}
+
+static void test_licenses(void)
+{
+    static const char *const lines[] = {
+        "stray line before any part",
+        "%%PART%% LOADED", "Active licenses on node X86VMS:", "",
+        "BASIC", "\tProducer: VSI", "\tUnits: 0", "\tTermination Date: 30-APR-2027", "\tAvailability: 0  ",
+        "\tActivity: 1  ", "\tX86_64",
+        "%SHOW-I-SOMETHING, a message",
+        "FMS\r", "\tProducer: VSI", "\tPer Core License", "\tReserved: NODEA", "\tX86_64", "\tPCL",
+        "%%STATUS%% 00000001",
+        "%%PART%% CHARGE", "", "Type: PCL,   Units Required: 2  (X86_64 Per Core)", "%%STATUS%% 10000001",
+        "%%PART%% DATABASE", "License Management Facility  V2.0", "  ",
+        "License Database File:       SYS$COMMON:[SYSEXE]LMF$LICENSE.LDB;1", "Created by user:             SYSTEM",
+        "-----------------------------------",
+        "Issuer:                      VSI", "Authorization:               ISV-EXAMPLE-1", "Product Name:                C",
+        "PAK Termination Date:        30-APR-2027", "Options:                     X86_64, PCL", "Hardware ID:", "  ",
+        "Reserved:                    NODEA", "                             NODEB",
+        "Status:                      Disabled", "Modified on:                 15-APR-2026 15:22:29.19",
+        "[End Of List]", "%%STATUS%% 00000001", NULL };
+    lic_got g;
+    st_license_parser p;
+    result b;
+    char tc[140], tcsrf[65], ac[140], acsrf[65];
+    const char *body;
+    hdr t[3], adm[3];
+    int i;
+
+    memset(&g, 0, sizeof g);
+    st_license_init(&p, lic_keep, &g);
+    for (i = 0; lines[i]; i++) st_license_line(&p, lines[i], strlen(lines[i]));
+    st_license_end(&p);
+    CHECK(g.n == 3, "two loaded licences and one PAK; messages and stray lines skipped");
+    CHECK(!strcmp(p.node, "X86VMS"), "the node");
+    CHECK(g.l[0].part == ST_LIC_LOADED && !strcmp(g.l[0].product, "BASIC") && !strcmp(g.l[0].producer, "VSI") &&
+          !strcmp(g.l[0].termination, "30-APR-2027") && !strcmp(g.l[0].availability, "0") &&
+          !strcmp(g.l[0].activity, "1") && !strcmp(g.l[0].options, "X86_64") && !g.l[0].per_core,
+          "a loaded licence: its fields, trailing blanks gone, the options line");
+    CHECK(!strcmp(g.l[1].product, "FMS") && g.l[1].per_core && !strcmp(g.l[1].options, "X86_64, PCL") &&
+          g.l[1].nother == 1 && !strcmp(g.l[1].other_label[0], "Reserved") && !strcmp(g.l[1].other_value[0], "NODEA"),
+          "per core, two options lines, and a field without a name of its own kept");
+    CHECK(g.l[2].part == ST_LIC_DATABASE && !strcmp(g.l[2].product, "C") && !strcmp(g.l[2].authorization, "ISV-EXAMPLE-1") &&
+          !strcmp(g.l[2].termination, "30-APR-2027") && !strcmp(g.l[2].hardware_id, "") &&
+          !strcmp(g.l[2].status, "Disabled") && !strcmp(g.l[2].modified_on, "15-APR-2026 15:22:29.19"),
+          "a PAK: label to the first colon, times kept whole, an empty hardware ID");
+    CHECK(g.l[2].nother == 1 && !strcmp(g.l[2].other_value[0], "NODEA, NODEB"), "an indented line continues the field above");
+    CHECK(!strcmp(p.db_file, "SYS$COMMON:[SYSEXE]LMF$LICENSE.LDB;1") && !strcmp(p.db_created_by, "SYSTEM"),
+          "the database's header");
+    CHECK(p.ncharge == 1 && !strcmp(p.charge_type, "PCL") && !strcmp(p.charge_units, "2"), "the charge");
+    CHECK(st_license_ok(&p, ST_LIC_LOADED) && st_license_ok(&p, ST_LIC_CHARGE) && p.status[ST_LIC_CHARGE] == 1 &&
+          st_license_ok(&p, ST_LIC_DATABASE), "each part's status, without DCL's message-shown bit");
+
+    st_license_init(&p, lic_keep, &g);
+    st_license_line(&p, "%%PART%% DATABASE", 17);
+    st_license_line(&p, "%%STATUS%% 1001829C", 19);
+    CHECK(!st_license_ok(&p, ST_LIC_DATABASE) && p.status[ST_LIC_DATABASE] == 0x0001829Cu && !st_license_ok(&p, ST_LIC_LOADED),
+          "a refused part, and one that never ran, are not ok");
+
+    sign_in("{\"username\":\"steward_test\",\"password\":\"test-pass\"}", tc, sizeof tc, tcsrf);
+    t[0].n = "HTTP_COOKIE"; t[0].v = tc; t[1].n = "HTTP_X_STEWARD_CSRF"; t[1].v = tcsrf; t[2].n = NULL;
+    call("GET", "/api/v1/licenses", t, NULL, &b);
+    body = b.resp.body.data;
+    CHECK(b.resp.status == 200 && strstr(body, "\"loaded\":[{\"product\":\"BASIC\",\"producer\":\"VSI\",\"units\":\"0\"") &&
+          strstr(body, "\"product\":\"FMS\"") && strstr(body, "\"per_core\":true") && strstr(body, "\"node\":\"X86VMS\"") &&
+          strstr(body, "\"units_required\":\"2\""), "the loaded licences and the charge, to anyone");
+    CHECK(strstr(body, "\"database\":[]") && strstr(body, "\"database\":{\"read\":false,\"vms_status\":\"%X0001829C\"") &&
+          strstr(body, "\"loaded\":{\"read\":true}") && !strstr(body, "ISV-EXAMPLE"),
+          "the database refused without privilege, with OpenVMS's status, and nothing of it shown");
+    st_resp_free(&b.resp);
+
+    sign_in("{\"username\":\"steward_adm\",\"password\":\"admin-pass\"}", ac, sizeof ac, acsrf);
+    adm[0].n = "HTTP_COOKIE"; adm[0].v = ac; adm[1].n = "HTTP_X_STEWARD_CSRF"; adm[1].v = acsrf; adm[2].n = NULL;
+    call("PUT", "/api/v1/session/privileges", adm, "{\"enabled\":[\"sysprv\"]}", &b);
+    st_resp_free(&b.resp);
+    call("GET", "/api/v1/licenses", adm, NULL, &b);
+    body = b.resp.body.data;
+    CHECK(b.resp.status == 200 && !strstr(body, "\"read\":false") &&
+          strstr(body, "\"database\":[{\"product\":\"BASIC\",\"producer\":\"VSI\",\"issuer\":\"VSI\",\"authorization\":\"ISV-EXAMPLE-D000000000001\"") &&
+          strstr(body, "\"file\":\"SYS$COMMON:[SYSEXE]LMF$LICENSE.LDB;1\""), "with SYSPRV the database is read");
+    st_resp_free(&b.resp);
+    CHECK(!st_plat_persona_active(), "no persona left active");
+}
+
 int main(void)
 {
     st_app_config cfg;
@@ -1901,6 +1993,7 @@ int main(void)
     test_queues();
     test_queue_changes();
     test_sysgen();
+    test_licenses();
     test_create();
     test_gateway();
     printf("%d checks, %d failed\n", checks, failures);

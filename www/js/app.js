@@ -14,6 +14,7 @@ import { logicalsView } from './logicals.js';
 import { processesView, processView } from './processes.js';
 import { queuesView, queueView } from './queues.js';
 import { sysgenView } from './sysgen.js';
+import { licensesView } from './licenses.js';
 
 const app = document.getElementById('app');
 let me = null;           // whoami, while signed in
@@ -30,6 +31,7 @@ const AREAS = [
   { hash: '#/processes', label: 'Processes', ready: true },
   { hash: '#/queues', label: 'Queues', ready: true },
   { hash: '#/sysgen', label: 'System parameters', ready: true },
+  { hash: '#/licenses', label: 'Licences', ready: true },
 ];
 
 // The theme switch (theme.js): Auto, Light, Dark in turn.
@@ -208,6 +210,7 @@ const VIEWS = {
   processes: (ctx, pid) => (pid ? processView(ctx, pid) : processesView(ctx)),
   queues: (ctx, name) => (name ? queueView(ctx, name) : queuesView(ctx)),
   sysgen: (ctx) => sysgenView(ctx),
+  licenses: (ctx) => licensesView(ctx),
 };
 
 let routeSeq = 0;
