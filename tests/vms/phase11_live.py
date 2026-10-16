@@ -20,7 +20,7 @@ INSTALLED = os.environ.get("PHASE11_HELPER") == "installed"
 HELPER = None if INSTALLED else STAGE + "STEWARD_LICENSE.COM"
 
 def vms(*cmds):
-    return subprocess.run(["timeout", "180", "tools/vms.sh", NODE, "dcl"] + list(cmds), capture_output=True,
+    return subprocess.run(["timeout", "180", "tools/vms.sh", NODE, "dcl"] + list(cmds), stdout=subprocess.PIPE,
                           encoding="latin-1").stdout.replace("\r", "")
 
 def api(user, privs, path):

@@ -18,7 +18,7 @@ SETUP = ['ap = "$' + TOP + '.BUILD]API_PROBE.EXE"',
          "define API_PROBE_AUDIT " + TOP + '.BUILD]PROBE_AUDIT.LOG']
 
 def vms(*cmds):
-    return subprocess.run(VMS + list(cmds), capture_output=True, text=True).stdout.replace("\r", "")
+    return subprocess.run(VMS + list(cmds), stdout=subprocess.PIPE, text=True).stdout.replace("\r", "")
 
 def access(user, privs, query):
     t0 = time.time()

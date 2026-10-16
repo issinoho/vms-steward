@@ -24,7 +24,7 @@ def api(user, privs, path, method="GET", body=None, etag=None):
     args = [user, privs, q(path), method, q(json.dumps(body)) if body is not None else q("-")]
     if etag:
         args.append(q(etag))
-    out = subprocess.run(VMS + [AP, "ap " + " ".join(args)], capture_output=True, text=True).stdout
+    out = subprocess.run(VMS + [AP, "ap " + " ".join(args)], stdout=subprocess.PIPE, text=True).stdout
     lines = [l for l in out.splitlines() if l.strip()]
     for i, l in enumerate(lines):
         m = re.match(r"^(\d{3}) (?:ETag=(\S+) )?$", l + " ") or re.match(r"^(\d{3})(?: ETag=(\S+))?\s*$", l)
@@ -39,7 +39,7 @@ def api(user, privs, path, method="GET", body=None, etag=None):
     return None, None, out
 
 def authorize(cmd):
-    return subprocess.run(VMS + ["mcr authorize " + cmd], capture_output=True, text=True).stdout
+    return subprocess.run(VMS + ["mcr authorize " + cmd], stdout=subprocess.PIPE, text=True).stdout
 
 ok = bad = 0
 def check(cond, what, extra=""):

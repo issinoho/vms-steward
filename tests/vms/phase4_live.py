@@ -24,7 +24,7 @@ def api(user, privs, path, method="GET", body=None, etag=None):
     args = [user, privs, q(path), method, q(json.dumps(body)) if body is not None else q("-")]
     if etag:
         args.append(q(etag))
-    out = subprocess.run(VMS + [AP, "ap " + " ".join(args)], capture_output=True, text=True).stdout
+    out = subprocess.run(VMS + [AP, "ap " + " ".join(args)], stdout=subprocess.PIPE, text=True).stdout
     lines = [l for l in out.splitlines() if l.strip()]
     for i, l in enumerate(lines):
         m = re.match(r"^(\d{3}) (?:ETag=(\S+) )?$", l + " ") or re.match(r"^(\d{3})(?: ETag=(\S+))?\s*$", l)
@@ -39,7 +39,7 @@ def api(user, privs, path, method="GET", body=None, etag=None):
     return None, None, out
 
 def authorize(cmd):
-    return subprocess.run(VMS + ["mcr authorize " + cmd], capture_output=True, text=True).stdout
+    return subprocess.run(VMS + ["mcr authorize " + cmd], stdout=subprocess.PIPE, text=True).stdout
 
 ok = bad = 0
 def check(cond, what, extra=""):
@@ -87,7 +87,7 @@ check("Pwdchange:      (pre-expired)" in show, "AUTHORIZE: password pre-expired"
 policy = lambda t: re.findall(r"(?:Maxjobs|Fillm|Bytlm|Prclm|Prio|WSquo|Pgflquo)[^\n]*|Pwdminimum:\s*\d+|Pwdlifetime:\s*\S+", t)
 check(policy(show) == policy(before_default), "AUTHORIZE: quotas and password policy as DEFAULT's")
 check("STEWARD_NEW" in authorize("show/identifier steward_new"), "AUTHORIZE: UIC identifier added")
-d = subprocess.run(VMS + ["dir/owner/nohead/notrail SYS$SYSDEVICE:[000000]STEWARD_NEW.DIR"], capture_output=True, text=True).stdout
+d = subprocess.run(VMS + ["dir/owner/nohead/notrail SYS$SYSDEVICE:[000000]STEWARD_NEW.DIR"], stdout=subprocess.PIPE, text=True).stdout
 check("STEWARD_NEW" in d and "[STEWARD_NEW]" in d.replace("[362,10]", "[STEWARD_NEW]"), "home directory created, owned by the new user", d)
 
 st, _, doc = api(*A, "/api/v1/users", "POST",
@@ -109,8 +109,8 @@ for u in ("STEWARD_NEW", "STEWARD_COPY"):
 
 # The directory stays, as with AUTHORIZE REMOVE: remove the empty test directory.
 subprocess.run(VMS + ["set security/protection=(o:rwed) SYS$SYSDEVICE:[000000]STEWARD_NEW.DIR",
-                      "delete/nolog SYS$SYSDEVICE:[000000]STEWARD_NEW.DIR;"], capture_output=True, text=True)
-d = subprocess.run(VMS + ["dir/nohead/notrail SYS$SYSDEVICE:[000000]STEWARD_NEW.DIR"], capture_output=True, text=True).stdout
+                      "delete/nolog SYS$SYSDEVICE:[000000]STEWARD_NEW.DIR;"], stdout=subprocess.PIPE, text=True)
+d = subprocess.run(VMS + ["dir/nohead/notrail SYS$SYSDEVICE:[000000]STEWARD_NEW.DIR"], stdout=subprocess.PIPE, text=True).stdout
 check("STEWARD_NEW.DIR" not in d, "test directory removed")
 print("%d ok, %d failed" % (ok, bad))
 sys.exit(1 if bad else 0)

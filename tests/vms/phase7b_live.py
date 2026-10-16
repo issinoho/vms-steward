@@ -20,7 +20,7 @@ AUDIT = BUILD + "PROBE_7B_AUDIT.LOG"
 NAME, GROUP = "STEWARD_PROBE_7B", "LNM$GROUP_000362"
 
 def vms(*cmds):
-    return subprocess.run(VMS + list(cmds), capture_output=True, encoding="latin-1").stdout.replace("\r", "")
+    return subprocess.run(VMS + list(cmds), stdout=subprocess.PIPE, encoding="latin-1").stdout.replace("\r", "")
 
 def dcl_quote(s):
     return '"' + s.replace('"', '""') + '"'

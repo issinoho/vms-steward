@@ -18,7 +18,7 @@ TEST_COM = "SYS$SYSDEVICE:[STEWARD_TEST]P9L_HELD.COM"
 MY_COM = WORKDIR[:-1] + ".BUILD]P9L_HELD.COM"
 
 def vms(*cmds):
-    return subprocess.run(["timeout", "120", "tools/vms.sh", NODE, "dcl"] + list(cmds), capture_output=True,
+    return subprocess.run(["timeout", "120", "tools/vms.sh", NODE, "dcl"] + list(cmds), stdout=subprocess.PIPE,
                           encoding="latin-1").stdout.replace("\r", "")
 
 def api(user, privs, path):

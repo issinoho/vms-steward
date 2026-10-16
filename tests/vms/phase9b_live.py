@@ -23,7 +23,7 @@ MY_COM = BUILD + "P9BL_HELD.COM"
 QUEUE = "STEWARD_P9B_TEST"
 
 def vms(*cmds):
-    return subprocess.run(["timeout", "120", "tools/vms.sh", NODE, "dcl"] + list(cmds), capture_output=True,
+    return subprocess.run(["timeout", "120", "tools/vms.sh", NODE, "dcl"] + list(cmds), stdout=subprocess.PIPE,
                           encoding="latin-1").stdout.replace("\r", "")
 
 def api(user, privs, path, method="GET"):

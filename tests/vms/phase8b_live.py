@@ -21,7 +21,7 @@ AUDIT = BUILD + "PROBE_8B_AUDIT.LOG"
 WAIT = "SYS$SYSDEVICE:[STEWARD_TEST]P8B_WAIT.COM"
 
 def vms(*cmds):
-    return subprocess.run(["tools/vms.sh", NODE, "dcl"] + list(cmds), capture_output=True,
+    return subprocess.run(["tools/vms.sh", NODE, "dcl"] + list(cmds), stdout=subprocess.PIPE,
                           encoding="latin-1").stdout.replace("\r", "")
 
 def api(user, privs, path, method="GET", own=None, image=None, sysgroup=None):
@@ -45,7 +45,7 @@ def exists(pid):
 def jobs():
     """The PIDs of this test's batch jobs: STEWARD_TEST's BATCH_ processes (it runs
     nothing else), from tests/vms/phase8_jpi.com."""
-    out = subprocess.run(["tools/vms.sh", NODE, "run", "tests/vms/phase8_jpi.com"], capture_output=True,
+    out = subprocess.run(["tools/vms.sh", NODE, "run", "tests/vms/phase8_jpi.com"], stdout=subprocess.PIPE,
                          encoding="latin-1").stdout
     return sorted(m.group(1) for m in re.finditer(r"^P\|(\w+)\|BATCH_\d+\|STEWARD_TEST\|", out, re.M))
 

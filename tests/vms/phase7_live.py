@@ -22,7 +22,7 @@ AP = 'ap = "$' + WORKDIR[:-1] + '.BUILD]API_PROBE.EXE"'
 
 def vms(*cmds):
     # Latin-1: logical names may hold any byte (the node's system table has a 0xC0)
-    return subprocess.run(VMS + list(cmds), capture_output=True, encoding="latin-1").stdout.replace("\r", "")
+    return subprocess.run(VMS + list(cmds), stdout=subprocess.PIPE, encoding="latin-1").stdout.replace("\r", "")
 
 def api(user, privs, path, helper=os.environ.get("PHASE7_HELPER"), timed=False):
     pre = ['define/nolog API_PROBE_LNM_HELPER "%s"' % helper] if helper else []

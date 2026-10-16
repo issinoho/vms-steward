@@ -20,7 +20,7 @@ INSTALLED = os.environ.get("PHASE10_HELPER") == "installed"
 HELPER = None if INSTALLED else STAGE + "STEWARD_SYSGEN.COM"
 
 def vms(*cmds):
-    return subprocess.run(["timeout", "180", "tools/vms.sh", NODE, "dcl"] + list(cmds), capture_output=True,
+    return subprocess.run(["timeout", "180", "tools/vms.sh", NODE, "dcl"] + list(cmds), stdout=subprocess.PIPE,
                           encoding="latin-1").stdout.replace("\r", "")
 
 def api(user, privs, path):
@@ -40,7 +40,7 @@ def reference():
     vms('open/write f [.BUILD]P10L_SHOW.COM', 'write f "$ mcr sysgen"', 'write f "SET/OUTPUT=[.BUILD]P10L_SHOW.TXT"',
         'write f "SHOW/ALL"', 'close f', '@[.BUILD]P10L_SHOW.COM')
     local = "/tmp/p10l_show_%d.txt" % os.getpid()
-    subprocess.run(["timeout", "120", "tools/vms.sh", NODE, "get", "BUILD/P10L_SHOW.TXT", local], capture_output=True)
+    subprocess.run(["timeout", "120", "tools/vms.sh", NODE, "get", "BUILD/P10L_SHOW.TXT", local], stdout=subprocess.PIPE)
     vms("delete/nolog [.BUILD]P10L_SHOW.*;*")
     ref = {}
     with open(local, encoding="latin-1") as f:

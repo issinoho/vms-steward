@@ -18,7 +18,7 @@ AP = 'ap = "$' + WORKDIR[:-1] + '.BUILD]API_PROBE.EXE"'
 TRANSIENT = {"SSH$SSH", ME}
 
 def vms(*cmds):
-    return subprocess.run(["tools/vms.sh", NODE, "dcl"] + list(cmds), capture_output=True,
+    return subprocess.run(["tools/vms.sh", NODE, "dcl"] + list(cmds), stdout=subprocess.PIPE,
                           encoding="latin-1").stdout.replace("\r", "")
 
 def api(user, privs, path):
@@ -32,7 +32,7 @@ def api(user, privs, path):
     return (int(m.group(1)) if m else None), doc
 
 def dcl_procs():
-    out = subprocess.run(["tools/vms.sh", NODE, "run", "tests/vms/phase8_jpi.com"], capture_output=True,
+    out = subprocess.run(["tools/vms.sh", NODE, "run", "tests/vms/phase8_jpi.com"], stdout=subprocess.PIPE,
                          encoding="latin-1").stdout.replace("\r", "")
     procs = {}
     for l in out.splitlines():
