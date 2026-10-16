@@ -109,10 +109,13 @@ st, doc = api("STEWARD_TEST", "-", "/api/v1/logicals?table=LNM$GROUP_000001")
 check(st == 404 and "IVLOGTAB" in json.dumps(doc), "another group's table: refused as SHOW LOGICAL refuses (IVLOGTAB)", (st, doc))
 st, doc = api("STEWARD_ADM", "-", "/api/v1/logicals?table=LNM$GROUP_000001")
 check(st == 404, "STEWARD_ADM without SYSPRV switched on: refused too", (st, doc))
+# Group 1's table has names on x86 but is empty on IA64 (every group table there is):
+# then the check can only show that SYSPRV turns the refusal into the same empty list.
 st, doc = api("STEWARD_ADM", "SYSPRV", "/api/v1/logicals?table=LNM$GROUP_000001")
 ours, theirs = names(doc), show_names("LNM$GROUP_000001", privs="SYSPRV")
-check(st == 200 and ours == theirs and ours,
-      "with SYSPRV switched on (D9), the helper has it too: group 1's %d names, as SHOW LOGICAL" % len(ours),
+check(st == 200 and ours == theirs,
+      "with SYSPRV switched on (D9), the helper has it too: group 1's %d names, as SHOW LOGICAL%s"
+      % (len(ours), "" if ours else " (the table is empty here: access only)"),
       sorted(ours ^ theirs)[:6])
 
 for path, what in (("/api/v1/logicals?table=LNM$PROCESS", "the process table"),

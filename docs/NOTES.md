@@ -367,3 +367,16 @@ refuses 33 to 64 characters on IA64 is not yet known: finding out means setting 
 real account's password. Steward now checks against `UAI$C_MAX_PWD_LENGTH` itself
 (`st_plat_password_max`), so it never hands the system a password the header says is
 too long.
+
+**Access history scales with the number of SSH logs, and a node can have tens of
+thousands** (2026-10-16, IA64). `SSH$ROOT:[VAR]` on the IA64 node holds 27,409
+`<node>_<host>_<pid>.LOG` files (x86: 6); `DIRECTORY/SIZE` over them took 13 s. One
+`/api/v1/access` request for the last hour, through `api_probe` as STEWARD_ADM with
+SYSPRV, took 1,579 s, after ACCOUNTNG.DAT and the audit journal had both been rotated
+to near-empty files. `ax_ssh_logs` opens every log with RMS to read its dates before
+it knows whether the log falls in the window, so the cost is one open per file, about
+58 ms each here. `phase6_live.py` cannot finish on that node in under an hour.
+
+**Every group logical name table on the IA64 node is empty** (2026-10-16), including
+group 1's, which has names on x86. `phase7_live.py` assumed it had some; with SYSPRV
+the check now shows access and an equal (empty) list there.
