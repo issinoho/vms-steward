@@ -1,5 +1,7 @@
 # Phase 11: licences
 
+Closed 2026-10-16 (0.10.1). Read-only; changes are decided once it is in use.
+
 Read-only (11a) now; whether to offer changes is decided once it is in use (the user,
 2026-10-16). Design: DECISIONS D19.
 
@@ -79,3 +81,11 @@ full (the system category, BYPASS).
 
 Kit T0.10-1 (0.10.1), with the review fixes, built by `tools/kit.sh x86` (389 native
 checks), SHA-256 `13617da8e47a790c5f441e35535692b0375b1e29a2e2cd55d438935411d84a15`.
+
+## Closed (2026-10-16)
+
+On the installed kit T0.10-1 (the user installed it; pool restarted, two processes):
+`PHASE11_HELPER=installed tests/vms/phase11_live.py` 9 ok, 0 failed;
+`phase7_live.py` against the installed `STEWARD_LNM.COM` 20 ok, 0 failed. The user's
+browser checks passed on T0.10-0; T0.10-1 changes only the helper's clean-up and the
+refusal hint. Security gate: security.md Phase 11 section and the audit record.
