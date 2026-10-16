@@ -47,7 +47,7 @@ penetration test are still to come ([`docs/REVIEW-BRIEF.md`](docs/REVIEW-BRIEF.m
 | Queues: the queues, their jobs, one job, read-only | done (Phase 9a, closed 2026-10-15, 0.8.0 test kit) |
 | Queues: hold, release, delete a job; stop and start a queue (never Steward's start-up queues) | done (Phase 9b, closed 2026-10-15, 0.8.1) |
 | System parameters, read-only (as SYSGEN SHOW/ALL) | done (Phase 10, closed 2026-10-16, 0.9.0) |
-| Licences | next |
+| Licences: loaded, the charge, and the database where OpenVMS lets you read it (read-only) | built (Phase 11, 0.10.0 test kit; awaiting browser checks) |
 | Installed products, monitoring, error log, terminal | later |
 
 ## Installing

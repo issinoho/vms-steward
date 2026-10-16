@@ -55,3 +55,7 @@ by a logical name, as SYSGEN's `SET/OUTPUT=` did for the D14 helper.
 - The listings match SHOW LICENSE and LICENSE LIST, for STEWARD_TEST and STEWARD_ADM.
 - Browser checks (the user's); the security gate, with the review of Phase 10's shared
   helper refactor carried over.
+
+Kit T0.10-0 (0.10.0), built by `tools/kit.sh x86` (389 native checks), SHA-256
+`4efd7fa8f43007f1d4b919501446e025585116486e4b31457fdba93c3fd476c6`, for the browser
+checks.
