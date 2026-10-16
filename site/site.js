@@ -13,6 +13,8 @@
     ['ok',  '%STEWARD-S-MDFYMSG, user record(s) updated: flags'],
     ['cmd', '$ authorize grant/identifier project_x steward_test'],
     ['ok',  '%STEWARD-S-GRANTMSG, identifier PROJECT_X granted to STEWARD_TEST'],
+    ['cmd', '$ set entry 272/hold'],
+    ['ok',  '%STEWARD-I-HELD, entry 272 held'],
     ['cmd', '$ set process/privilege=nosysprv'],
     ['ok',  '%STEWARD-S-PRVDIS, SYSPRV disabled for this session'],
     ['cmd', '$ authorize show system'],
@@ -63,7 +65,8 @@
     var buttons = document.querySelectorAll('.tabs button');
     var img = document.getElementById('shot-img'), cap = document.getElementById('shot-cap');
     var sizes = { dashboard: [1280, 920], users: [1280, 820], user: [1280, 1340], modify: [1280, 1000], account: [1280, 720],
-                  ident: [1280, 760], signin: [1280, 760] };
+                  ident: [1280, 760], access: [1280, 900], logicals: [1280, 900], processes: [1280, 900],
+                  process: [1280, 1100], queues: [1280, 800], sysgen: [1280, 1000], signin: [1280, 760] };
     Array.prototype.forEach.call(buttons, function (b) {
       b.addEventListener('click', function () {
         Array.prototype.forEach.call(buttons, function (o) { o.setAttribute('aria-selected', o === b ? 'true' : 'false'); });

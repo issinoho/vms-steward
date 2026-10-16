@@ -40,7 +40,8 @@
     <p class="eyebrow"><span class="led" aria-hidden="true"></span> Early test release &middot; OpenVMS x86-64</p>
     <h1>OpenVMS system management, <span class="amber">in your browser.</span></h1>
     <p class="lede">Steward gives your OpenVMS systems a fast, modern web console for
-      users, rights and privileges, and lets OpenVMS itself decide who may do what.
+      users and rights, access history, logical names, processes, queues and system
+      parameters, and lets OpenVMS itself decide who may do what.
       Sign in with your OpenVMS account. Every request runs <em>as you</em>.</p>
     <div class="cta">
       <a class="btn primary" id="download" href="https://github.com/issinoho/vms-steward/releases/latest">Download the kit</a>
@@ -70,9 +71,11 @@
     <span>SYS$ACM</span><span>$PERSONA_CREATE</span><span>AUTHORIZE</span><span>RIGHTSLIST</span>
     <span>SET PROCESS/PRIVILEGE</span><span>BREAK-IN EVASION</span><span>PCSI</span><span>LK201</span>
     <span>%STEWARD-S-MDFYMSG</span><span>RMS</span><span>[362,1]</span><span>DCL</span>
+    <span>SHOW SYSTEM</span><span>$GETQUI</span><span>SHOW LOGICAL</span><span>SYSGEN</span>
     <span>SYS$ACM</span><span>$PERSONA_CREATE</span><span>AUTHORIZE</span><span>RIGHTSLIST</span>
     <span>SET PROCESS/PRIVILEGE</span><span>BREAK-IN EVASION</span><span>PCSI</span><span>LK201</span>
     <span>%STEWARD-S-MDFYMSG</span><span>RMS</span><span>[362,1]</span><span>DCL</span>
+    <span>SHOW SYSTEM</span><span>$GETQUI</span><span>SHOW LOGICAL</span><span>SYSGEN</span>
   </div>
 </div>
 
@@ -102,7 +105,8 @@
     <article class="card feature">
       <div class="keycap" aria-hidden="true">DCL</div>
       <h3>It speaks VMS</h3>
-      <p>Screens laid out as AUTHORIZE lays them out. DCL wildcards in every filter.
+      <p>Screens laid out as AUTHORIZE, SHOW SYSTEM, SHOW QUEUE and SYSGEN lay them out.
+        DCL wildcards in every filter.
         Messages in <code>%FACILITY-S-IDENT</code> form, with the system's own text when
         OpenVMS says no. Privileges you switch on and off like
         <code>SET PROCESS/PRIVILEGE</code>.</p>
@@ -125,7 +129,7 @@
       <div class="keycap" aria-hidden="true">LOG</div>
       <h3>A record of every change</h3>
       <p>Each sign-in, privilege switch and change is logged with who made it, from where,
-        and what OpenVMS answered. Passwords are never recorded. Break-in evasion applies
+        and what OpenVMS answered. Passwords and logical-name values are never recorded. Break-in evasion applies
         to each browser separately, even behind a reverse proxy.</p>
     </article>
   </div>
@@ -145,6 +149,12 @@
     <button role="tab" aria-selected="false" aria-controls="shot" data-shot="modify" data-cap="Modify, as AUTHORIZE MODIFY does. Only what you change is sent, and a change made meanwhile by someone else is never overwritten.">Modify</button>
     <button role="tab" aria-selected="false" aria-controls="shot" data-shot="account" data-cap="Your session: switch authorized privileges on for this session, like SET PROCESS/PRIVILEGE. Each switch is audited.">Privileges</button>
     <button role="tab" aria-selected="false" aria-controls="shot" data-shot="ident" data-cap="Rights identifiers with their values, attributes and holders.">Identifiers</button>
+    <button role="tab" aria-selected="false" aria-controls="shot" data-shot="access" data-cap="Access history: who reached the system, when, from where and by which route, from accounting, the audit journal, the SSH logs and Steward's own log, in one view.">Access history</button>
+    <button role="tab" aria-selected="false" aria-controls="shot" data-shot="logicals" data-cap="Logical names, as SHOW LOGICAL shows them to you: the shareable tables and their names. Define, modify and deassign where OpenVMS lets you.">Logical names</button>
+    <button role="tab" aria-selected="false" aria-controls="shot" data-shot="processes" data-cap="Processes, as SHOW SYSTEM lists them: your own, your group's with GROUP, everyone's with WORLD.">Processes</button>
+    <button role="tab" aria-selected="false" aria-controls="shot" data-shot="process" data-cap="One process, as SHOW PROCESS/ALL: state, image, CPU and I/O, privileges, rights and every quota with what is left. Stop it, as STOP/ID, if OpenVMS lets you.">Process</button>
+    <button role="tab" aria-selected="false" aria-controls="shot" data-shot="queues" data-cap="Batch and print queues, as SHOW QUEUE. Open one for its jobs; hold, release and delete jobs, stop and start queues, with the queue manager deciding who may.">Queues</button>
+    <button role="tab" aria-selected="false" aria-controls="shot" data-shot="sysgen" data-cap="System parameters, as SYSGEN SHOW/ALL prints them: current, default, limits and unit, with values off their default marked. Read-only.">System parameters</button>
     <button role="tab" aria-selected="false" aria-controls="shot" data-shot="signin" data-cap="Sign in with your OpenVMS username and password, checked by SYS$ACM. An expired password can be changed right here.">Sign in</button>
   </div>
   <figure class="shot" id="shot" role="tabpanel">
@@ -161,7 +171,7 @@
   <p class="kicker">03 / How it works</p>
   <h2>Small moving parts. Each one checked.</h2>
   <div class="how">
-    <div class="term-box" role="img" aria-label="Browser, then an HTTPS reverse proxy, then lighttpd, then the Steward pool, then SYS$ACM and your persona, then SYSUAF and RIGHTSLIST">
+    <div class="term-box" role="img" aria-label="Browser, then an HTTPS reverse proxy, then lighttpd, then the Steward pool, then SYS$ACM and your persona, then the system: SYSUAF, RIGHTSLIST, processes, queues, logical names and system parameters">
 <pre><span class="dim">browser</span> <span class="amber">──HTTPS──▶</span> reverse proxy <span class="dim">(optional, ends TLS)</span>
                  │
                  ▼
@@ -173,9 +183,11 @@
        ┌─────────┴──────────┐
    <b>SYS$ACM</b>              <b>your persona</b>
   password, expiry,     $GETUAI  $SETUAI  RMS
-  break-in evasion      $IDTOASC $ADD_HOLDER …
+  break-in evasion      $GETJPI  $GETQUI  $SNDJBC
+                        $DELPRC  SHOW LOGICAL  SYSGEN …
                              │
-                     <span class="amber">SYSUAF · RIGHTSLIST</span></pre>
+                <span class="amber">SYSUAF · RIGHTSLIST · processes</span>
+                <span class="amber">queues · logical names · parameters</span></pre>
     </div>
     <ol class="steps">
       <li><b>You sign in.</b> <code>SYS$ACM</code> checks your password, so expiry, DISUSER,
@@ -198,7 +210,7 @@
 <!-- ============================================================ TODAY / ROADMAP -->
 <section class="section" id="roadmap">
   <p class="kicker">04 / Today and next</p>
-  <h2>Users and rights first. The whole system next.</h2>
+  <h2>Users, processes, queues. The rest of the system next.</h2>
   <div class="roadmap">
     <div class="col now">
       <h3><span class="pill on">In the release</span></h3>
@@ -210,6 +222,12 @@
         <li>Set passwords, pre-expired if you like; change your own, even when it has expired</li>
         <li>Rights identifiers: create, rename, attributes, delete; grant and revoke</li>
         <li>Switch your authorized privileges on and off, per session</li>
+        <li><b>Access history:</b> who connected, when, from where and how, across SSH, TELNET,
+          batch, the console and Steward, gathered into one view instead of several log files</li>
+        <li>Logical names, as SHOW LOGICAL shows them to you; define, modify and deassign</li>
+        <li>Processes, as SHOW SYSTEM and SHOW PROCESS/ALL; stop one, as STOP/ID</li>
+        <li>Batch and print queues and their jobs; hold, release and delete jobs, stop and start queues</li>
+        <li>System parameters, as SYSGEN SHOW/ALL, read-only</li>
         <li>An audit log of every sign-in and change</li>
         <li>Light and dark themes</li>
       </ul>
@@ -217,10 +235,9 @@
     <div class="col next">
       <h3><span class="pill">Coming</span></h3>
       <ul class="arrows">
-        <li><b>Access history:</b> who connected, when, and how, across SSH, TELNET, FTP,
-          DECnet, batch and Steward, gathered into one view instead of three log files</li>
-        <li>Logical names, processes, batch and print queues</li>
-        <li>System parameters, licences, installed products, the error log</li>
+        <li><b>Licences:</b> what is loaded and what is registered, read-only</li>
+        <li>Installed products</li>
+        <li>CPU and memory monitoring, the error log, a terminal in the browser</li>
         <li>IA64 kits</li>
       </ul>
     </div>
@@ -230,7 +247,7 @@
 <!-- ============================================================ INSTALL -->
 <section class="section" id="install">
   <p class="kicker">05 / Install</p>
-  <h2>Three commands and one include line.</h2>
+  <h2>Four commands and one include line.</h2>
   <div class="install">
     <div class="term-box">
 <pre><span class="dim">$!</span> <span class="dim">once, as SYSTEM</span>
@@ -238,7 +255,8 @@ $ PRODUCT INSTALL STEWARD /SOURCE=dev:[dir]
 $ @STEWARD$ROOT:[COM]STEWARD$CONFIGURE
 <span class="dim">$! add the include line it prints to LIGHTTPD.CONF</span>
 $ @STEWARD$ROOT:[COM]STEWARD$CONTROL START
-<span class="ok">STEWARD: start submitted as STEWARD</span></pre>
+<span class="ok">STEWARD: start submitted as STEWARD</span>
+$ @VMSLIGHTTPD$ROOT:[COM]VMSLIGHTTPD$CONTROL RESTART</pre>
     </div>
     <div class="req">
       <h3>You will need</h3>
