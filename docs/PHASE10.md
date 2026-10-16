@@ -1,6 +1,6 @@
 # Phase 10: system parameters
 
-Read-only (the user's choice, 2026-10-15): changing parameters is decided later, once
+Closed 2026-10-16. Read-only (the user's choice, 2026-10-15): changing parameters is decided later, once
 this is in use. Design: DECISIONS D18.
 
 ## How parameters are read (probe, 2026-10-15)
@@ -44,3 +44,12 @@ checks.
 - The parameters match SYSGEN SHOW/ALL, for STEWARD_TEST.
 - The logical-names listing still passes `phase7_live.py` through the shared helper.
 - Browser checks (the user's); the security gate.
+
+## Closed (2026-10-16)
+
+On the installed kit T0.9-0: the user's browser checks (the parameters, SCSNODE as a
+string, the filter, values against `SYSGEN SHOW`); `phase10_live.py` against the
+installed `STEWARD_SYSGEN.COM;1`: 7 ok, 0 failed; `phase7_live.py` through the shared
+helper: 22 ok. Security gate: security.md Phase 10 section. The review of the shared
+helper's refactor runs with the next phase's.
+
