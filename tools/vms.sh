@@ -44,20 +44,35 @@ vms_dir() {
 # open after the VMS process has finished.
 dcl_logged() {
     local tag=vmsrun_$$_$RANDOM
-    local com=$(mktemp) out=$(mktemp) done_f=$(mktemp)
+    local com=$(mktemp) out=$(mktemp) done_f=$(mktemp) sshlog=$(mktemp)
     { echo '$ set noon'; echo "\$ set default $WORKDIR"; printf '%s\n' "$@"
       echo '$ write sys$output "VMSRUN-END"'
       echo "\$ open/write vmsrun_done ${WORKDIR}${tag}.DONE"
       echo '$ close vmsrun_done'; } > "$com"
     sftp_batch "cd $SFTPDIR" "put $com $tag.com"
-    ssh -p "$PORT" "${ssh_opts[@]}" "$USER@$HOST" \
-        "@${WORKDIR}${tag}.COM/OUTPUT=${WORKDIR}${tag}.LOG" >/dev/null 2>&1 &
-    local pid=$! waited=0 limit=${VMS_TIMEOUT:-600}
+    start_ssh() {
+        ssh -p "$PORT" "${ssh_opts[@]}" "$USER@$HOST" \
+            "@${WORKDIR}${tag}.COM/OUTPUT=${WORKDIR}${tag}.LOG" >"$sshlog" 2>&1 &
+        pid=$!
+    }
+    local pid waited=0 limit=${VMS_TIMEOUT:-600} starts=1
+    start_ssh
     while :; do
         sleep 2; waited=$((waited + 2))
         if ! kill -0 "$pid" 2>/dev/null || [ $((waited % 10)) -eq 0 ]; then
             sftp_batch "cd $SFTPDIR" "get $tag.DONE $done_f" 2>/dev/null && break
-            kill -0 "$pid" 2>/dev/null || { sleep 3; sftp_batch "cd $SFTPDIR" "get $tag.DONE $done_f" 2>/dev/null; break; }
+            if ! kill -0 "$pid" 2>/dev/null; then
+                sleep 3
+                sftp_batch "cd $SFTPDIR" "get $tag.DONE $done_f" 2>/dev/null && break
+                # ssh ended with no marker. If the procedure left no log it never ran
+                # (seen on IA64, 2026-10-16: ssh gone in 2 s, only the .com there), so
+                # starting it again cannot run anything twice.
+                if [ "$starts" -lt 3 ] && ! sftp_batch "cd $SFTPDIR" "get $tag.LOG $out" 2>/dev/null; then
+                    echo "vms.sh: $tag did not start; ssh said: $(tr -d '\r' < "$sshlog" | grep -avE '^ *Welcome to|^ *$' | head -2 | tr '\n' ' ')- starting it again" >&2
+                    starts=$((starts + 1)); sleep 2; start_ssh; continue
+                fi
+                break
+            fi
         fi
         [ "$waited" -ge "$limit" ] && { echo "vms.sh: timed out after ${limit}s" >&2; break; }
     done
@@ -70,8 +85,13 @@ dcl_logged() {
     done
     kill "$pid" 2>/dev/null || true; wait "$pid" 2>/dev/null || true
     sftp_batch "cd $SFTPDIR" "-rm $tag.com" "-rm $tag.LOG" "-rm $tag.DONE" || true
+    # No end line: the procedure never ran, or never finished. Say so, with what ssh
+    # said, rather than return an empty result the caller takes for an answer.
+    grep -aq '^VMSRUN-END' "$out" 2>/dev/null ||
+        { echo "vms.sh: no complete output from $tag; ssh said:" >&2
+          tr -d '\r' < "$sshlog" | grep -avE '^ *Welcome to|^ *$' | head -5 >&2; }
     tr -d '\r' < "$out" | grep -av '^VMSRUN-END' || true
-    rm -f "$com" "$out" "$done_f"
+    rm -f "$com" "$out" "$done_f" "$sshlog"
 }
 
 case $op in
