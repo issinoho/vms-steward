@@ -514,3 +514,22 @@ Alternatives not taken: `$GETSYI` alone (no defaults, limits, units; Steward wou
 its own list of parameter names); SYSGEN run by the service (it would be the service's
 view, not the viewer's, D2).
 
+
+## D19. Licences: SHOW LICENSE and LICENSE LIST in the D14 helper, read-only
+
+**Status:** approved by the user 2026-10-16 (the loaded licences, the node's charge
+and the database; changes decided later). Phase 11.
+
+OpenVMS has no documented service that lists licences. The License Management
+Facility shows two things: the licences loaded in memory (`SHOW LICENSE`, any user)
+and the database of registered PAKs (`LICENSE LIST`, LMF$LICENSE, which OpenVMS lets
+SYSPRV, READALL and UIC group 1 read; probe, PHASE11.md). So the D14 helper, which is
+the viewer, runs a third fixed procedure, `STEWARD_LICENSE.COM`: `SHOW LICENSE/FULL`,
+`SHOW LICENSE/UNIT_REQUIREMENTS` and `LICENSE LIST/FULL`, each to the reply mailbox and
+each followed by its status, parsed in core. When the database is refused, the view
+shows OpenVMS's refusal and the rest as usual (D10).
+
+Read-only: registering, enabling and loading licences are decided once this is in use.
+
+Alternatives not taken: reading LMF$LICENSE with RMS (its record layout is not
+documented); the commands run by the service (its view, not the viewer's, D2).

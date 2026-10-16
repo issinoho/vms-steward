@@ -318,3 +318,15 @@ unit is 66 to 75; "D" in 77 marks dynamic. Values may hold blanks ("(none set)",
 `"X86VMS  "`, the unit "CPU bitmap"). An " internal value" line, in pages, follows some
 parameters given in pagelets. Observed with `tests/vms/phase10_live.py`.
 
+
+**Licences: the loaded ones are anyone's to see, the database is not** (Phase 11,
+2026-10-16). `probes/lic_view.com` in batch as STEWARD_TEST (TMPMBX, NETMBX): `SHOW
+LICENSE/FULL` (the licences loaded in memory) and `SHOW LICENSE/UNIT_REQUIREMENTS` ran,
+status 1; `LICENSE LIST/FULL` (LMF$LICENSE, `SYS$COMMON:[SYSEXE]LMF$LICENSE.LDB`, owner
+[1,1], `(RWED,RWED,RE,)`) failed with %RMS-F-PRV (%X1001829C). From my work account with
+every privilege off but TMPMBX and NETMBX it failed too; with SYSPRV alone, or READALL
+alone, it listed all 11. A batch job as STEWARD_ADM could not be used: it has no login
+directory, so the job ends at login with RMS-E-DNF and writes no log. All three
+commands write to `/OUTPUT=` given a logical name. `LICENSE LIST/FULL` prints the
+authorization number, status, revision, who modified it and when, but no checksum. In
+both listings a "Per Core License" has no Availability line.
