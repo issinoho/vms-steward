@@ -330,3 +330,23 @@ directory, so the job ends at login with RMS-E-DNF and writes no log. All three
 commands write to `/OUTPUT=` given a logical name. `LICENSE LIST/FULL` prints the
 authorization number, status, revision, who modified it and when, but no checksum. In
 both listings a "Per Core License" has no Availability line.
+
+**PRODUCT SHOW needs SYSLCK, though the PCSI database is world-readable** (Phase 12,
+2026-10-16). `probes/pcsi_view.com` in batch as STEWARD_TEST (TMPMBX, NETMBX): `PRODUCT
+SHOW PRODUCT/FULL` and `PRODUCT SHOW HISTORY/FULL` both failed with
+%PCSIUI-E-PRIVCLASS1 "operation requires SYSLCK privilege" (%X1652800A), although
+`SYS$COMMON:[SYSEXE]PCSI$*.PCSI$DATABASE` are `(RWED,RWED,RE,RE)`. From the work
+account: with only TMPMBX, NETMBX and SYSLCK on, both ran; with SYSPRV instead of
+SYSLCK, or nothing, refused the same way. `PRODUCT` has no `/OUTPUT=` qualifier
+(%DCL-W-IVQUAL); `DEFINE/USER SYS$OUTPUT` to a file captured both listings. Their
+columns: SHOW PRODUCT/FULL is PRODUCT (36), KIT TYPE (11), STATE (9), MAINTENANCE,
+REFERENCED BY; SHOW HISTORY/FULL is PRODUCT, KIT TYPE, OPERATION, VAL, DATE AND TIME,
+ERR, USER NAME, REMARK, with dashed rules giving the widths. A product name longer
+than its column pushes the rest of the line right (`VMSMARIADB V11.4-13E3 Full LP`).
+
+**VMSINSTAL keeps its own history, a text file** (Phase 12, 2026-10-16).
+`SYS$COMMON:[SYSUPD]VMSINSTAL.HISTORY`, owner [SYSTEM], `(RWED,RWED,RWED,RE)`:
+sequential, variable records, carriage-return control. A header, then one line per
+VMSINSTAL run, `|`-separated: name (often blank), mnemonic, version, date, status
+(S/F), IVP (S/F/NA), node, installer, signature (VSI, HP, U, NA, NV). It records
+installs, successful or failed, and never removals.

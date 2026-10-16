@@ -534,3 +534,17 @@ Read-only: registering, enabling and loading licences are decided once this is i
 
 Alternatives not taken: reading LMF$LICENSE with RMS (its record layout is not
 documented); the commands run by the service (its view, not the viewer's, D2).
+
+## D20. Installed products: PCSI in the D14 helper, VMSINSTAL's history in-process (proposed)
+
+**Status:** proposed 2026-10-16, not approved; questions in PHASE12.md. Phase 12.
+
+PCSI's database has no documented interface, and `PRODUCT SHOW` needs SYSLCK (probe,
+NOTES.md). So the D14 helper, which is the viewer, would run a fourth fixed procedure,
+`STEWARD_PRODUCT.COM`: `PRODUCT SHOW PRODUCT/FULL` and `PRODUCT SHOW HISTORY/FULL` into
+the reply mailbox (`DEFINE/USER SYS$OUTPUT`; PRODUCT has no `/OUTPUT=`), parsed in core.
+VMSINSTAL's own record, `SYS$UPDATE:VMSINSTAL.HISTORY`, is a world-readable text file:
+read in-process under the persona (as D13 reads its files) and parsed in core.
+
+Alternatives not taken: reading the PCSI$*.PCSI$DATABASE files directly (format not
+documented); the commands run by the service (its view, and its privileges, D2).

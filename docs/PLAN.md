@@ -184,6 +184,10 @@ checks and a review (0.8.1). See `docs/PHASE9.md`. See `docs/PHASE9.md`.
 helper. Closed 2026-10-16 on the user's browser checks and a review of this phase
 and Phase 10's shared helper (0.10.1). See `docs/PHASE11.md`.
 
+**Phase 12: installed products** (D20, proposed): planning. PCSI (needs SYSLCK) and,
+as the user asked, VMSINSTAL's history. Probes done; questions for the user in
+`docs/PHASE12.md`, which is where to pick up.
+
 **Later areas, one at a time and each with the same read-only → modify split:** licences, installed products,
 CPU/memory monitoring, error log, and a WebSocket terminal (lighttpd `mod_wstunnel`); licences are Phase 11.
 The user confirmed this order on 2026-10-11 (licences stay where they are).
