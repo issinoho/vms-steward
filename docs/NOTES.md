@@ -435,3 +435,10 @@ place; `AUTHORIZE MODIFY /PASSWORD= /NOPWDEXPIRED` restored it. A probe that cha
 password must restore it the way it was set, or check the minimum first. The failed
 sign-ins while it was wrong left an intrusion record (count 3) against the work
 account's ssh client, below the break-in limit.
+
+**0.10.2 (T0.10-2), kits for both architectures** (2026-10-16): the IA64 port, the
+password limit from the build node's headers, and SSH logs by exact name. Built by
+`tools/kit.sh x86` and `tools/kit.sh ia64`, each from clean with 392 native checks, 0
+failed. SHA-256: X86VMS fa1df16f532886449a7226271546d039de66bb5cffb70768f613394dea0739c2,
+I64VMS 8a1440916a0330adc53ad961aee6ef53573b8f8b89f912d8eff20ecc17a62829. Not yet
+installed on either node.
