@@ -69,8 +69,12 @@ try:
     st, doc = api("STEWARD_ADM", "SYSPRV", "/api/v1/jobs/" + m_entry)
     want = vms('write sys$output "F|", f$getqui("DISPLAY_ENTRY", "JOB_NAME", %s), "|", f$getqui("DISPLAY_ENTRY", "USERNAME", %s)' % (m_entry, m_entry))
     m = re.search(r"^F\|(.*)\|(.*)$", want, re.M)
+    # The queue manager keeps the file by device and full directory
+    # (_MYI64$DKA800:[USERS.IAIN...] where the work directory is USER$ROOT:[IAIN...], a
+    # rooted logical, on IA64): compare the last directory level and the name.
+    tail = lambda spec: re.sub(r";\d*$", "", spec.upper()).split(".")[-2:] if spec else None
     check(st == 200 and m and doc["name"] == m.group(1).strip() and doc["username"] == m.group(2).strip() and
-          doc["files"] and doc["files"][0].upper().split(":", 1)[-1].startswith(MY_COM.upper().split(":", 1)[-1]),
+          doc["files"] and tail(doc["files"][0]) == tail(MY_COM),
           "STEWARD_ADM with SYSPRV: the work account's job, as F$GETQUI gives it, with its file", (st, doc, want[-200:]))
     st, doc = api("STEWARD_TEST", "-", "/api/v1/jobs/99999999")
     check(st == 404 and "NOSUCH" in json.dumps(doc), "no such entry: 404, OpenVMS's NOSUCHENT", (st, doc))

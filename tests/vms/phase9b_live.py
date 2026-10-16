@@ -52,6 +52,14 @@ def check(cond, what, extra=""):
     else:
         bad += 1; print("FAIL", what, extra)
 
+# The node's own names, not x86's: the test queue goes on this node, and Steward's
+# start-up queues are SYS$BATCH and, when it is generic, what it feeds (X86VMS_BATCH on
+# x86; on IA64 SYS$BATCH is itself an execution queue).
+names = vms('write sys$output "N|", f$getsyi("SCSNODE")',
+            'write sys$output "T|", f$getqui("DISPLAY_QUEUE", "GENERIC_TARGET", "SYS$BATCH")')
+SCSNODE = (re.search(r"^N\|(\S+)", names, re.M) or [None, "X86VMS"])[1]
+STARTUP = ["SYS$BATCH"] + [q for q in re.split(r"[\s,]+", (re.search(r"^T\|(.*)$", names, re.M) or [None, ""])[1]) if q]
+
 entries = []
 try:
     out = vms("delete/nolog " + AUDIT + ";*", "open/write f " + TEST_COM, 'write f "$ exit"', "close f",
@@ -60,7 +68,7 @@ try:
               "submit/hold/user=steward_test/noprint/nolog_file/name=P9BL_B " + TEST_COM,
               "open/write f " + MY_COM, 'write f "$ exit"', "close f",
               "submit/hold/noprint/nolog_file/name=P9BL_C " + MY_COM,
-              "initialize/queue/batch/on=%s::/job_limit=1 %s" % (NODE.upper() if False else "X86VMS", QUEUE))
+              "initialize/queue/batch/on=%s::/job_limit=1 %s" % (SCSNODE, QUEUE))
     entries = re.findall(r"Job P9BL_\w+ \(queue \S+, entry (\d+)\)", out)
     check(len(entries) == 3 and "stopped" in queue_line(), "three held jobs and a stopped test queue", out[-300:])
     a, b, c = (entries + ["0"] * 3)[:3]
@@ -87,7 +95,7 @@ try:
     st, doc = api("STEWARD_ADM", "SYSPRV", "/api/v1/queues/%s/stop" % QUEUE, "POST")
     check(st == 200 and "stopped" in queue_line(), "and stopped, as STOP/QUEUE", (st, doc, queue_line()))
 
-    for q in ("SYS$BATCH", "X86VMS_BATCH"):
+    for q in STARTUP:
         st, doc = api("STEWARD_TEST", "-", "/api/v1/queues/%s/stop" % q, "POST")
         check(st == 409 and "startup-queue" in json.dumps(doc),
               "%s: refused as Steward's start-up queue (409), before the queue manager is asked" % q, (st, doc))
@@ -103,8 +111,8 @@ finally:
     left = vms('pipe show queue/batch/all * | search sys$pipe "P9BL_","%s"' % QUEUE)
     check("P9BL_" not in left.replace("search sys$pipe", "").replace('"P9BL_"', "") and
           QUEUE + "," not in left, "the test jobs and queue are gone", left[-300:])
-    st = vms("show queue SYS$BATCH", "show queue X86VMS_BATCH")
-    check("stopped" not in st.lower(), "SYS$BATCH and X86VMS_BATCH not stopped", st[-300:])
+    st = vms(*["show queue " + q for q in STARTUP])
+    check("stopped" not in st.lower(), "%s not stopped" % " and ".join(STARTUP), st[-300:])
 
 print("%d ok, %d failed" % (ok, bad))
 sys.exit(1 if bad else 0)

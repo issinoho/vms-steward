@@ -70,8 +70,11 @@ ours = {e["pid"] for e in (doc["events"] if doc else []) if e.get("end") and now
 acct = vms("set process/privilege=sysprv",
            'accounting/since="-0:30"/before="-0:05"/type=process/process=network/user=SSH$SSH')
 theirs = set(re.findall(r"PROCESS NETWORK\s+SSH\$SSH\s+([0-9A-F]{8})", acct))
-check(ours and ours <= theirs, "SSH connections are ACCOUNTING's SSH$SSH network processes: %d here, all among its %d" % (len(ours), len(theirs)),
-      sorted(ours - theirs)[:5])
+if not theirs and not ours:   # a quiet half hour: nothing to compare, which is not a pass
+    print("SKIP SSH connections against ACCOUNTING: none ended 30 to 5 minutes ago")
+else:
+    check(ours and ours <= theirs, "SSH connections are ACCOUNTING's SSH$SSH network processes: %d here, all among its %d" % (len(ours), len(theirs)),
+          sorted(ours - theirs)[:5])
 
 # A failure is one event, whichever sources saw it.
 st, doc, _ = access("STEWARD_ADM", "SYSPRV", "since=%d&outcome=failure&limit=2000" % (now - 86400))

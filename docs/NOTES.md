@@ -390,3 +390,30 @@ guess is that new logs, created by every ssh connection including the probe's ow
 tools, keep invalidating RMS's directory cache. Reading dates from the file header
 instead of opening the file would not help: any design that walks the directory
 pays this.
+
+**Opening a log by its exact name is cheap; walking a large live directory is not**
+(2026-10-16, IA64, `probes/probe_sshexact.c` in a scratch directory of the work
+account). With 5,000 empty files that nothing else touched: a wildcard `$SEARCH` of
+them all took 0.6 s (0.12 ms a file), 400 RMS opens by exact name 1.5 s (3.8 ms
+each), 400 exact opens of names that do not exist 0.05 s (RMS-E-FNF). So the 72 ms a
+file in `SSH$ROOT:[VAR]` was not the cost of a wildcard search as such; the
+difference was 27,651 files and sshd creating new logs in the directory while it was
+walked (not separated further). An exact lookup does not depend on either. Also seen:
+`f$search` of an exact upper-case name finds the lower-case log (lookups are
+case-blind), and `^.` escapes a dot in a name under the default (traditional) parse
+style. Creating and deleting the 5,000 files took 320 s and 316 s.
+
+**IA64 live tests, all phases** (2026-10-16, node V8.4-2L3, kit T0.10-1 installed, pool
+started with `STEWARD$CONTROL START`, the user's STEWARD_TEST [362,1] and STEWARD_ADM
+[362,3] from `tests/vms/test_accounts.com`). Phase 3 23 ok; 4 23 ok; 6 11 ok; 7 20 ok;
+7b 24 ok; 8 10 ok; 8b 12 ok; 9 9 ok; 9b 13 ok; 10 7 ok; 11 9 ok; none failed. Fixes were
+in the tests only: group 1's logical name table is empty on IA64 (phase 7); x86's node
+and queue names were hard-coded (phase 9b: SYS$BATCH on IA64 is an execution queue,
+not generic); the queue manager returns a job's file by device and full directory
+(`_MYI64$DKA800:[USERS.IAIN...]` for `USER$ROOT:[IAIN...]`, phase 9); and phase 6's
+ACCOUNTING comparison has nothing to compare after a quiet half hour.
+
+**vms.sh: the ssh session sometimes ends before the procedure starts** (IA64, 2026-10-16).
+Seen about six times over the live tests, ssh printing nothing; a restart usually
+worked, but in one call all three starts failed. The cause is not known; vms.sh now
+records ssh's exit status in its message.
