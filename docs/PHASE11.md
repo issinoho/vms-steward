@@ -76,3 +76,6 @@ fake end answered in 1 s and deleted), `phase10_live.py` 7 ok, `phase11_live.py`
 389 native, `make audit` clean. Also: event flags freed on a failed `LIB$GET_EF`; the
 licence view's privilege hint only for RMS-F-PRV; who may read LMF$LICENSE stated in
 full (the system category, BYPASS).
+
+Kit T0.10-1 (0.10.1), with the review fixes, built by `tools/kit.sh x86` (389 native
+checks), SHA-256 `13617da8e47a790c5f441e35535692b0375b1e29a2e2cd55d438935411d84a15`.
