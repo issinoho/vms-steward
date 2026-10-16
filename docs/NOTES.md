@@ -380,3 +380,13 @@ it knows whether the log falls in the window, so the cost is one open per file, 
 **Every group logical name table on the IA64 node is empty** (2026-10-16), including
 group 1's, which has names on x86. `phase7_live.py` assumed it had some; with SYSPRV
 the check now shows access and an equal (empty) list there.
+
+**The cost is the directory search itself, not opening the logs** (2026-10-16, IA64,
+`probes/probe_sshdates.c`). `$SEARCH` alone over `SSH$ROOT:[VAR]*_*.LOG;*` took 1,995 s
+for 27,651 files, 72 ms a file, without opening any (the probe was stopped before its
+header-read and RMS-open passes, when the user began purging the logs). An hour
+earlier `DIRECTORY/SIZE` over the same spec had taken 13 s. Not established why; one
+guess is that new logs, created by every ssh connection including the probe's own
+tools, keep invalidating RMS's directory cache. Reading dates from the file header
+instead of opening the file would not help: any design that walks the directory
+pays this.
