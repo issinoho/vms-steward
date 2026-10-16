@@ -410,8 +410,9 @@ started with `STEWARD$CONTROL START`, the user's STEWARD_TEST [362,1] and STEWAR
 in the tests only: group 1's logical name table is empty on IA64 (phase 7); x86's node
 and queue names were hard-coded (phase 9b: SYS$BATCH on IA64 is an execution queue,
 not generic); the queue manager returns a job's file by device and full directory
-(`_MYI64$DKA800:[USERS.IAIN...]` for `USER$ROOT:[IAIN...]`, phase 9); and phase 6's
-ACCOUNTING comparison has nothing to compare after a quiet half hour.
+(`_<device>:[USERS.<user>...]` for a work directory under a rooted logical,
+`<root>:[<user>...]`, phase 9); and phase 6's ACCOUNTING comparison has nothing to
+compare after a quiet half hour.
 
 **vms.sh: the ssh session sometimes ends before the procedure starts** (IA64, 2026-10-16).
 Seen about six times over the live tests, ssh printing nothing; a restart usually
@@ -442,3 +443,16 @@ password limit from the build node's headers, and SSH logs by exact name. Built 
 failed. SHA-256: X86VMS fa1df16f532886449a7226271546d039de66bb5cffb70768f613394dea0739c2,
 I64VMS 8a1440916a0330adc53ad961aee6ef53573b8f8b89f912d8eff20ecc17a62829. Not yet
 installed on either node.
+
+**IA64: large API responses are cut short between the pool and the browser**
+(2026-10-16; the port is on hold, docs/IA64.md). In the browser, Logicals failed with
+`%STEWARD-F-NOSERVER` (the fetch itself failed) and Firefox's
+`NS_ERROR_NET_PARTIAL_TRANSFER`. With curl, signed in as STEWARD_TEST, the 63,493-byte
+system-table listing, five times each: through the proxy, 2 stopped at 62,475 bytes
+(exit 18) and 1 stalled at 32,418 until curl's 120 s limit; straight to lighttpd on
+8443, 1 stopped at 62,475, and the complete ones took 9 to 75 s. The shortfall was
+1,018 bytes every time. Through `api_probe` (no sockets) the same request is complete
+in under a second; a 26 KB static file through lighttpd is complete. The DNS name was
+new and briefly cached as nonexistent by public resolvers (negative TTL 1,800 s),
+which first showed as "server not found". lighttpd's error and access logs could not
+be read while it ran (TYPE and CONVERT/SHARE: RMS-F-ORG; sftp: not a regular file).

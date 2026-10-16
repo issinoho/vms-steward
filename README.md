@@ -105,7 +105,8 @@ On OpenVMS: `@BUILD_VMS TEST` (VSI C, OpenSSL 3). The pool is run by
 
 OpenVMS x86-64 first (VSI C, VSI TCP/IP Services, VSI OpenSSL 3). The code is portable
 C99, and the service also builds and runs on Linux against an in-memory stub platform
-for development and tests.
+for development and tests. An IA64 kit builds and passes the live tests, but is not yet
+usable in a browser: that port is on hold (docs/IA64.md).
 
 vms-steward is an independent project. It is not affiliated with VMS Software Inc. and is
 not derived from any VSI product.
