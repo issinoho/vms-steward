@@ -522,8 +522,9 @@ and the database; changes decided later). Phase 11.
 
 OpenVMS has no documented service that lists licences. The License Management
 Facility shows two things: the licences loaded in memory (`SHOW LICENSE`, any user)
-and the database of registered PAKs (`LICENSE LIST`, LMF$LICENSE, which OpenVMS lets
-SYSPRV, READALL and UIC group 1 read; probe, PHASE11.md). So the D14 helper, which is
+and the database of registered PAKs (`LICENSE LIST`, LMF$LICENSE, protection
+`(S:RWED,O:RWED,G:RE,W:)`: OpenVMS lets the system category (a UIC up to MAXSYSGROUP,
+SYSPRV), BYPASS, READALL and UIC group 1 read it; probe, PHASE11.md). So the D14 helper, which is
 the viewer, runs a third fixed procedure, `STEWARD_LICENSE.COM`: `SHOW LICENSE/FULL`,
 `SHOW LICENSE/UNIT_REQUIREMENTS` and `LICENSE LIST/FULL`, each to the reply mailbox and
 each followed by its status, parsed in core. When the database is refused, the view

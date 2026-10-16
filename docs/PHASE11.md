@@ -17,7 +17,8 @@ read each:
 | my account, READALL only | | | 11 shown |
 
 The database is `SYS$COMMON:[SYSEXE]LMF$LICENSE.LDB`, owner [1,1], protection
-`(RWED,RWED,RE,)`: so also readable by UIC group 1. Every command takes `/OUTPUT=`
+`(RWED,RWED,RE,)`: so also readable by the system category (a UIC up to MAXSYSGROUP)
+and UIC group 1, and with BYPASS. Every command takes `/OUTPUT=`
 by a logical name, as SYSGEN's `SET/OUTPUT=` did for the D14 helper.
 
 ## Scope (approved by the user, 2026-10-16)
@@ -59,3 +60,19 @@ by a logical name, as SYSGEN's `SET/OUTPUT=` did for the D14 helper.
 Kit T0.10-0 (0.10.0), built by `tools/kit.sh x86` (389 native checks), SHA-256
 `4efd7fa8f43007f1d4b919501446e025585116486e4b31457fdba93c3fd476c6`, for the browser
 checks.
+
+**On the installed kit (2026-10-16):** the user's browser checks pass.
+`PHASE11_HELPER=installed tests/vms/phase11_live.py` against `STEWARD_LICENSE.COM;1`:
+9 ok, 0 failed.
+
+**Security gate (2026-10-16).** An independent review of this phase and of Phase 10's
+`helper_run` refactor: no Medium findings; security.md's audit record has the rest.
+Fixed: a helper the viewer's LOGIN.COM made answer `%%END%%` (or write into the
+termination mailbox) and stay was never deleted. Now only OpenVMS's DELPROC for its
+PID counts as gone, and it is deleted otherwise. Reproduced first on the old build
+(`probes/lnm_fakeend.com`: 200, and STW... left running as STEWARD_TEST until it
+logged out), then on the fixed one: `phase7_live.py` with `PHASE7_FAILDIR` 23 ok (the
+fake end answered in 1 s and deleted), `phase10_live.py` 7 ok, `phase11_live.py` 9 ok,
+389 native, `make audit` clean. Also: event flags freed on a failed `LIB$GET_EF`; the
+licence view's privilege hint only for RMS-F-PRV; who may read LMF$LICENSE stated in
+full (the system category, BYPASS).

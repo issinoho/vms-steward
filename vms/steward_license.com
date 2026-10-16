@@ -10,7 +10,8 @@ $! "%%PART%% <name>" before and "%%STATUS%% <status>" after (hexadecimal), then 
 $! line "%%END%% 1"; "%%END%% <status>" if it refused the privileges.
 $!
 $! The viewer's SYLOGIN and LOGIN.COM have run first: none of their symbols, global
-$! or local, reaches this level.
+$! or local, reaches this level after the next line (a global SET symbol would act on
+$! that line itself: security.md, 2026-10-13).
 $ set symbol/scope=(nolocal,noglobal)
 $ set noon
 $ set message/nofacility/noseverity/noidentification/notext

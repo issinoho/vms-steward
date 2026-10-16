@@ -8,7 +8,8 @@ $! from the first, checks them, and has SYSGEN SHOW/ALL write to the second, the
 $! last line "%%END%% <status>": SYSGEN's exit status, in hexadecimal.
 $!
 $! The viewer's SYLOGIN and LOGIN.COM have run first: none of their symbols, global
-$! or local, reaches this level.
+$! or local, reaches this level after the next line (a global SET symbol would act on
+$! that line itself: security.md, 2026-10-13).
 $ set symbol/scope=(nolocal,noglobal)
 $ set noon
 $ set message/nofacility/noseverity/noidentification/notext

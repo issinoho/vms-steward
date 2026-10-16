@@ -2781,7 +2781,11 @@ static int helper_run(const char *path, const char *const *msgs, int nmsgs,
     }
     if (!efr && (!(lib$get_ef(&efr) & 1) || !(lib$get_ef(&eft) & 1) || !(lib$get_ef(&efm) & 1) ||
                  efr / 32 != eft / 32 || efr / 32 != efm / 32)) {
-        efr = 0;
+        /* Give back whichever were taken, so the next request tries afresh. */
+        if (efr) lib$free_ef(&efr);
+        if (eft) lib$free_ef(&eft);
+        if (efm) lib$free_ef(&efm);
+        efr = eft = efm = 0;
         set_text(e, ST_E_INTERNAL, "no event flags");
         return -1;
     }
@@ -2855,15 +2859,22 @@ static int helper_run(const char *path, const char *const *msgs, int nmsgs,
                 line_fn(line, iosb[1], ctx);   /* once the caller has enough, it only drains */
             }
         }
-        if (waiting && tiosb[0]) {
+        if (waiting && tiosb[0] &&
+            !((tiosb[0] & 1) && tiosb[1] >= 12 && (trm[0] | (trm[1] << 8)) == MSG$_DELPROC && le32(trm + 8) == pid)) {
+            /* Not the helper's termination message: the mailbox is the viewer's, and
+               their login procedure could write to it (the Phase 11 review). Read on. */
+            if (++nmsg > LNM_MAX_MSGS) { st = SS$_DATAOVERUN; break; }
+            sys$clref(efm);
+            memset(tiosb, 0, sizeof tiosb);
+            st = sys$qio(efm, trmchan, IO$_READVBLK, (void *) tiosb, 0, 0, trm, LNM_TRM_LEN, 0, 0, 0, 0);
+            if (!(st & 1)) { waiting = 0; break; }
+        } else if (waiting && tiosb[0]) {
             /* The helper has gone. What it wrote is already queued: a short grace to
                read it, then stop. Its final status explains a helper that never ran
                the procedure. Explicit offsets (ACCDEF): type at 0, status at 4, PID at 8. */
             waiting = 0;
             ended = 1;
-            if ((tiosb[0] & 1) && tiosb[1] >= 12 && (trm[0] | (trm[1] << 8)) == MSG$_DELPROC &&
-                le32(trm + 8) == pid)
-                final = le32(trm + 4);
+            final = le32(trm + 4);
             sys$clref(efm);
             mask &= ~(1u << (efm % 32));
             sys$cantim(reqidt, 0);
@@ -2875,7 +2886,10 @@ static int helper_run(const char *path, const char *const *msgs, int nmsgs,
 
 out:
     sys$cantim(reqidt, 0);
-    if (!done && !ended && pid) sys$delprc(&pid, 0, 0);   /* never leave one behind */
+    /* Never leave one behind: unless OpenVMS has told us it is gone, delete it, even
+       after its %%END%% (which the viewer's login procedure could have written, then
+       stayed: the Phase 11 review). After a real %%END%% it is only logging out. */
+    if (!ended && pid) sys$delprc(&pid, 0, 0);
     if (reading) { sys$cancel(repchan); sys$synch(efr, (void *) iosb); }
     if (waiting) { sys$cancel(trmchan); sys$synch(efm, (void *) tiosb); }
     if (reqchan) sys$dassgn(reqchan);

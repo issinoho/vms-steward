@@ -760,8 +760,8 @@ switched on. Any user may run SYSGEN SHOW at a terminal.
 The licences loaded on this node, its charge, and the licence database, read by the
 D14 helper process as the viewer, with the privileges switched on in the session:
 `SHOW LICENSE/FULL`, `SHOW LICENSE/UNIT_REQUIREMENTS` and `LICENSE LIST/FULL`. Any user
-may see the first two. The database is as LMF$LICENSE's protection allows (SYSPRV,
-READALL, UIC group 1); a refusal is in `sources`, and `database` is then empty.
+may see the first two. The database is as LMF$LICENSE's protection allows (a system
+UIC, SYSPRV, BYPASS, READALL, UIC group 1); a refusal is in `sources`, and `database` is then empty.
 
 ```json
 {"loaded": [

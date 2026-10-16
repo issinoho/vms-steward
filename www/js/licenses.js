@@ -60,13 +60,17 @@ function database(r, me) {
   }
   const can = me.authorized_privileges.some((p) => p === 'SYSPRV' || p === 'READALL');
   const on = me.current_privileges.some((p) => p === 'SYSPRV' || p === 'READALL');
-  return h('div', { class: 'refusal' },
-    h('pre', { class: 'vmsmsg' }, `LICENSE LIST: ${s.vms_message || s.vms_status || 'not read'}`),
+  const msg = h('pre', { class: 'vmsmsg' }, `LICENSE LIST: ${s.vms_message || s.vms_status || 'not read'}`);
+  // What would let you read it, only when OpenVMS said no for want of privilege
+  // (RMS-F-PRV): a missing database is not a matter of privilege. The system
+  // category (a UIC up to MAXSYSGROUP) and group 1 may read it too.
+  if (s.vms_status !== '%X0001829C') return h('div', { class: 'refusal' }, msg);
+  return h('div', { class: 'refusal' }, msg,
     h('p', { class: 'muted' }, on
       ? 'OpenVMS refused the licence database even with your privileges switched on: its protection does not let you read it.'
       : can
         ? h('span', {}, 'The licence database needs SYSPRV or READALL. You hold one: switch it on under ', h('a', { href: '#/account' }, 'My account'), ' to read it.')
-        : 'The licence database needs SYSPRV or READALL, which your account does not hold. The licences loaded on this node are above.'));
+        : 'The licence database needs SYSPRV or READALL (or a system UIC), which your account does not have. The licences loaded on this node are above.'));
 }
 
 export async function licensesView(ctx) {

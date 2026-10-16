@@ -9,8 +9,9 @@ procedure must be at STEWARD$ROOT:[COM]STEWARD_LNM.COM (the kit puts it there). 
 
     PHASE7_HELPER=dev:[dir]STEWARD_LNM.COM   test that procedure instead of the
         installed one (API_PROBE_LNM_HELPER); STEWARD_TEST must be able to read it.
-    PHASE7_FAILDIR=dev:[dir]   also run LNM_DEAD.COM and LNM_FLOOD.COM (probes/) from
-        there, as helpers that die at once and that flood the reply mailbox."""
+    PHASE7_FAILDIR=dev:[dir]   also run LNM_DEAD.COM, LNM_FLOOD.COM and LNM_FAKEEND.COM (probes/)
+        from there, as helpers that die at once, flood the reply mailbox, and answer
+        but stay."""
 import json, os, re, subprocess, sys
 
 NODE = sys.argv[1] if len(sys.argv) > 1 else "x86"
@@ -139,6 +140,12 @@ if FAIL:
     st, doc, took = api("STEWARD_TEST", "-", "/api/v1/logicals?table=LNM$SYSTEM_TABLE", FAIL + "LNM_FLOOD.COM", timed=True)
     check(st == 500 and "TIMEOUT" in json.dumps(doc) and took is not None and 29 <= took <= 33,
           "a helper that floods the mailbox: stopped at the deadline (%ss on the node)" % took, (st, doc))
+    # A helper that answers and stays (as the viewer's LOGIN.COM could make it): still
+    # deleted, since OpenVMS has not said it is gone (the Phase 11 review).
+    st, doc, took = api("STEWARD_TEST", "-", "/api/v1/logicals?table=LNM$SYSTEM_TABLE", FAIL + "LNM_FAKEEND.COM", timed=True)
+    left = vms('pipe show system | search sys$pipe "STW"')
+    check(st == 200 and took is not None and took <= 5 and "STW" not in left.replace("search sys$pipe", ""),
+          "a helper that sends its END line and stays: answered in %ss, and deleted" % took, (st, left[-200:]))
 
 left = vms('pipe show system | search sys$pipe "STW"')
 check("STW" not in left.replace("search sys$pipe", ""), "no helper process left behind", left[-200:])
