@@ -335,6 +335,21 @@ of its own (durable history, but a second privileged component to secure, and da
 copied outside OpenVMS's own controls); enabling LOGIN auditing to use the journal
 alone (not needed: accounting already records successful sessions).
 
+**Amended 2026-10-16 (user's choice, "bound + faster", then the probe's finding): the
+SSH logs are looked up by name, and any search of them is bounded.** On IA64,
+`SSH$ROOT:[VAR]` held 27,409 logs and one request took 1,579 s; a probe showed the cost
+was the directory walk itself, not opening the logs, so reading dates from file
+headers (the first plan) would not have helped (NOTES.md). Each SSH connection that
+accounting gives is now opened by its exact name, `<node>_<host>_<pid>.LOG` (a dot
+escaped as `^.`; a host with any other character outside letters, digits, `-` and `_`
+gets no name). Only connections with no usable name (live ones, which carry no remote
+full name; unusual hosts) or every log, when accounting is refused, need the wildcard
+walk, and it stops after 5 seconds. A source read but not to the end is reported
+`"complete": false`, and the page says what that means and that purging old logs fixes
+it. Alternatives: walk everything with a budget only (on a crowded node every request
+would lose the SSH detail); leave it to the site to purge (the problem returns as logs
+accumulate).
+
 ## D14. Logical names: list tables through a short-lived detached process, as the viewer
 
 **Status:** approved by the user 2026-10-11 (option A). Phase 7.

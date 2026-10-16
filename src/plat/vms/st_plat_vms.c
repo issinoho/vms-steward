@@ -2194,14 +2194,116 @@ static void ax_ssh_line(ax_ssh *c, const char *line)
     }
 }
 
-static unsigned int ax_ssh_logs(long long since, long long until)
+/* One log, open: its dates bound the connection; its lines, read only when it falls in
+   the window, give the method, user and address. */
+static unsigned int ax_ssh_read(const char *spec, unsigned int pid, const char *host, size_t hostlen,
+                                long long since, long long until)
+{
+    static unsigned char line[1024];
+    struct FAB f;
+    struct RAB r;
+    struct XABDAT dat;
+    ax_ssh *c;
+    int lines = 0;
+    unsigned int st = ax_open(&f, &r, &dat, spec, 0, line, sizeof line - 1);
+    if (!(st & 1)) return st;
+    c = &ax_s[ax_ns];
+    memset(c, 0, sizeof *c);
+    c->pid = pid;
+    {
+        unsigned long long q;
+        memcpy(&q, &dat.xab$q_cdt, 8);
+        c->start = ax_time(q);
+        memcpy(&q, &dat.xab$q_rdt, 8);
+        c->end = ax_time(q);
+    }
+    if (c->end < c->start) c->end = c->start;
+    ax_text((const unsigned char *) host, hostlen, c->host, sizeof c->host);
+    if (c->end >= since - AX_NEAR && c->start <= until) {
+        ax_ns++;
+        while (lines++ < 400 && (ax_get(&r) & 1)) {
+            line[r.rab$w_rsz] = '\0';
+            ax_ssh_line(c, (char *) line);
+        }
+    }
+    sys$close(&f);
+    return SS$_NORMAL;
+}
+
+/* An SSH connection in the window: the server's NETWORK process under SSH$SSH. */
+static int ax_ssh_wanted(const ax_proc *c, long long since, long long until)
+{
+    return !c->logfail && c->sub == ACR$K_NETWORK && ax_prefix(c->user, "SSH$")
+        && (c->live || c->end >= since - AX_NEAR) && c->start <= until;
+}
+
+/* The log's own name, <node>_<client host>_<pid>.LOG, from what accounting gives. A
+   dot is escaped (^.); a host with any character beyond letters, digits, - and _ (an
+   IPv6 address, say) gets no name, and so no lookup that could misparse. 0: none. */
+static int ax_ssh_name(char *out, size_t outlen, const char *node, const char *host, unsigned int pid)
+{
+    size_t o;
+    const char *h;
+    int n = snprintf(out, outlen, "SSH$ROOT:[VAR]%s_", node);
+    if (!*node || !*host || n < 0 || (size_t) n >= outlen) return 0;
+    o = (size_t) n;
+    for (h = host; *h; h++) {
+        unsigned char ch = (unsigned char) *h;
+        int plain = (ch >= 'A' && ch <= 'Z') || (ch >= 'a' && ch <= 'z') || (ch >= '0' && ch <= '9')
+                    || ch == '-' || ch == '_';
+        if (!plain && ch != '.') return 0;
+        if (o + 3 >= outlen) return 0;
+        if (ch == '.') out[o++] = '^';
+        out[o++] = (char) ch;
+    }
+    n = snprintf(out + o, outlen - o, "_%08X.LOG", pid);
+    return n > 0 && (size_t) n < outlen - o;
+}
+
+static long long ax_ms(void)
+{
+    unsigned long long q = 0;
+    sys$gettim((void *) &q);
+    return (long long) (q / 10000ull);
+}
+
+/* OpenSSH's logs, without walking SSH$ROOT:[VAR] where possible: a node can hold tens
+   of thousands, and a walk of 27,651 while sshd added more took 1,995 s on IA64, where
+   an open by exact name takes milliseconds (NOTES.md). So each connection accounting
+   gave is looked up by name; only connections without a usable name (live ones, which
+   carry no remote full name, and unusual hosts), or every log when accounting could
+   not be read, need the walk, and it stops at AX_SSH_BUDGET_MS. *partial says the
+   budget ran out, by name or by walk: what was read is shown, and the source is
+   reported incomplete. */
+#define AX_SSH_BUDGET_MS 5000
+#define AX_SSH_WANT      64
+
+static unsigned int ax_ssh_logs(long long since, long long until, int acct_read, int *partial)
 {
     static const char spec[] = "SSH$ROOT:[VAR]*_*.LOG;*";
-    static unsigned char line[1024];
-    char esa[256], rsa[256];
+    char esa[256], rsa[256], node[16], name[256];
+    unsigned int want[AX_SSH_WANT], st, rs;
     struct FAB fab = cc$rms_fab;
     struct NAM nam = cc$rms_nam;
-    unsigned int st;
+    long long t0 = ax_ms();
+    int i, nwant = 0, many = 0;
+
+    *partial = 0;
+    syi_str(SYI$_NODENAME, node, sizeof node);
+    for (i = 0; i < ax_np && ax_ns < AX_SSH; i++) {
+        ax_proc *c = &ax_p[i];
+        if (!ax_ssh_wanted(c, since, until)) continue;
+        if (!ax_ssh_name(name, sizeof name, node, c->full, c->pid)) {
+            if (nwant < AX_SSH_WANT) want[nwant++] = c->pid; else many = 1;
+            continue;
+        }
+        if (ax_ms() - t0 > AX_SSH_BUDGET_MS) { *partial = 1; return SS$_NORMAL; }
+        st = ax_ssh_read(name, c->pid, c->full, strlen(c->full), since, until);
+        if (st == RMS$_PRV) return st;   /* the viewer may not read these */
+        /* RMS-E-FNF: purged, and a walk would not find it either */
+    }
+    if (acct_read && !nwant && !many) return SS$_NORMAL;
+
     fab.fab$l_fna = (char *) spec;
     fab.fab$b_fns = (unsigned char) (sizeof spec - 1);
     fab.fab$l_nam = &nam;
@@ -2210,51 +2312,29 @@ static unsigned int ax_ssh_logs(long long since, long long until)
     st = sys$parse(&fab);
     if (!(st & 1)) return st;
     while (ax_ns < AX_SSH && ((st = sys$search(&fab)) & 1)) {
-        char name[128], *u1, *u2, *end;
-        struct FAB f;
-        struct RAB r;
-        struct XABDAT dat;
+        char fname[128], *u1, *u2, *end;
         unsigned long pid;
-        ax_ssh *c;
-        int lines = 0;
-        size_t nl = nam.nam$b_name < sizeof name ? nam.nam$b_name : sizeof name - 1;
-        memcpy(name, nam.nam$l_name, nl);
-        name[nl] = '\0';
+        size_t nl = nam.nam$b_name < sizeof fname ? nam.nam$b_name : sizeof fname - 1;
+        if (ax_ms() - t0 > AX_SSH_BUDGET_MS) { *partial = 1; break; }
+        memcpy(fname, nam.nam$l_name, nl);
+        fname[nl] = '\0';
         /* <node>_<client host>_<pid>: the pid is 8 hex digits; anything else (the
            server's own SSH$SSHD_STARTUP.LOG) is not a connection. */
-        u1 = strchr(name, '_');
-        u2 = strrchr(name, '_');
+        u1 = strchr(fname, '_');
+        u2 = strrchr(fname, '_');
         if (!u1 || u2 == u1 || strlen(u2 + 1) != 8) continue;
         pid = strtoul(u2 + 1, &end, 16);
         if (*end) continue;
+        if (acct_read && !many) {        /* only the connections still without a log */
+            for (i = 0; i < nwant && want[i] != (unsigned int) pid; i++) ;
+            if (i == nwant) continue;
+        }
         rsa[nam.nam$b_rsl] = '\0';
-        st = ax_open(&f, &r, &dat, rsa, 0, line, sizeof line - 1);
-        if (!(st & 1)) {
-            if (st == RMS$_PRV) { ax_search_end(&fab, &nam); return st; }   /* the viewer may not read these */
-            continue;                           /* purged under us, or busy */
-        }
-        c = &ax_s[ax_ns];
-        memset(c, 0, sizeof *c);
-        c->pid = (unsigned int) pid;
-        {
-            unsigned long long q;
-            memcpy(&q, &dat.xab$q_cdt, 8);
-            c->start = ax_time(q);
-            memcpy(&q, &dat.xab$q_rdt, 8);
-            c->end = ax_time(q);
-        }
-        if (c->end < c->start) c->end = c->start;
-        ax_text((unsigned char *) u1 + 1, (size_t) (u2 - u1 - 1), c->host, sizeof c->host);
-        if (c->end >= since - AX_NEAR && c->start <= until) {
-            ax_ns++;
-            while (lines++ < 400 && (ax_get(&r) & 1)) {
-                line[r.rab$w_rsz] = '\0';
-                ax_ssh_line(c, (char *) line);
-            }
-        }
-        sys$close(&f);
+        rs = ax_ssh_read(rsa, (unsigned int) pid, u1 + 1, (size_t) (u2 - u1 - 1), since, until);
+        if (rs == RMS$_PRV) { ax_search_end(&fab, &nam); return rs; }
+        /* anything else: purged under us, or busy */
     }
-    if (st & 1) ax_search_end(&fab, &nam);   /* stopped at AX_SSH, not at the end */
+    if (st & 1) ax_search_end(&fab, &nam);   /* stopped early, not at the end */
     return (st == RMS$_NMF || st == RMS$_FNF || (st & 1)) ? SS$_NORMAL : st;
 }
 
@@ -2681,17 +2761,19 @@ static int ax_report(long long since, long long until, st_access_cb fn, void *ct
 }
 
 int st_plat_access(long long since, long long until, st_access_cb fn, void *ctx,
-                   unsigned int src_cond[ST_SRC_COUNT], char src_text[ST_SRC_COUNT][96], st_err *e)
+                   unsigned int src_cond[ST_SRC_COUNT], char src_text[ST_SRC_COUNT][96],
+                   int src_partial[ST_SRC_COUNT], st_err *e)
 {
     unsigned int st;
     int i, stop = 0;
     (void) e;
-    for (i = 0; i < ST_SRC_COUNT; i++) { src_cond[i] = 0; src_text[i][0] = '\0'; }
+    for (i = 0; i < ST_SRC_COUNT; i++) { src_cond[i] = 0; src_text[i][0] = '\0'; src_partial[i] = 0; }
     ax_np = ax_ns = ax_nf = ax_ring = 0;
     ax_off = local_offset();
     if (!((st = ax_accounting(since, until)) & 1)) ax_cond(&src_cond[ST_SRC_ACCOUNTING], src_text[ST_SRC_ACCOUNTING], st);
     if (until >= st_plat_time() - 60) ax_live();
-    if (!((st = ax_ssh_logs(since, until)) & 1)) ax_cond(&src_cond[ST_SRC_SSH], src_text[ST_SRC_SSH], st);
+    st = ax_ssh_logs(since, until, src_cond[ST_SRC_ACCOUNTING] == 0, &src_partial[ST_SRC_SSH]);
+    if (!(st & 1)) ax_cond(&src_cond[ST_SRC_SSH], src_text[ST_SRC_SSH], st);
     if (!((st = ax_journal(since, until)) & 1)) ax_cond(&src_cond[ST_SRC_AUDIT], src_text[ST_SRC_AUDIT], st);
     if (!((st = ax_steward(since, until, fn, ctx, &stop)) & 1)) ax_cond(&src_cond[ST_SRC_STEWARD], src_text[ST_SRC_STEWARD], st);
     if (!stop) ax_report(since, until, fn, ctx);

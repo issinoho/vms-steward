@@ -404,6 +404,7 @@ button.primary.danger, .dlg button.danger[type="submit"] { background: var(--dan
 .sources .led { width: 8px; height: 8px; border-radius: 50%; background: #3fbf5f; box-shadow: 0 0 5px #3fbf5f; }
 .sources li.no { color: var(--danger); }
 .sources li.no .led { background: transparent; border: 1px solid currentColor; box-shadow: none; }
+.sources li.part .led { background: transparent; border: 1px solid #3fbf5f; box-shadow: inset 4px 0 0 #3fbf5f; }
 .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 .figures { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 10px; margin: 0 0 1.2em; }
 .figure { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; display: flex; flex-direction: column; gap: 6px; }

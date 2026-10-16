@@ -728,7 +728,8 @@ int st_plat_user_delete(const char *username, st_err *e)
    behind accounting, the journal, the SSH logs and Steward's log need SYSPRV or
    READALL, as on the node; the live list is the persona's own process scan. */
 int st_plat_access(long long since, long long until, st_access_cb fn, void *ctx,
-                   unsigned int src_cond[ST_SRC_COUNT], char src_text[ST_SRC_COUNT][96], st_err *e)
+                   unsigned int src_cond[ST_SRC_COUNT], char src_text[ST_SRC_COUNT][96],
+                   int src_partial[ST_SRC_COUNT], st_err *e)
 {
     static const struct {
         long long ago, dur;      /* seconds before now; duration (0: none, -1: still on) */
@@ -761,6 +762,9 @@ int st_plat_access(long long since, long long until, st_access_cb fn, void *ctx,
     for (i = 0; i < ST_SRC_COUNT; i++) {
         src_cond[i] = 0;
         src_text[i][0] = '\0';
+        /* As a node with a crowded SSH$ROOT:[VAR] would: the walk for a long window
+           stops at its budget (NOTES.md). */
+        src_partial[i] = i == ST_SRC_SSH && until - since > 7 * 86400;
         if (i != ST_SRC_LIVE && !allowed) {
             src_cond[i] = C_RMS_PRV;
             st_copy(src_text[i], 96, "%RMS-E-PRV, insufficient privilege or file protection violation");

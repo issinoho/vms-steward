@@ -340,10 +340,13 @@ typedef int (*st_access_cb)(const st_access_event *ev, void *ctx);
 
 /* Calls fn for the events overlapping [since, until], in no particular order.
    src_cond[ST_SRC_COUNT] gets each source's outcome: 0 read, else the condition that
-   refused or failed it (and its text in src_text). Returns 0 unless nothing at all
-   could be read. */
+   refused or failed it (and its text in src_text). src_partial[] is 1 for a source
+   that was read but not to the end: the SSH logs stop at a time budget, since a node
+   can hold tens of thousands (NOTES.md). Returns 0 unless nothing at all could be
+   read. */
 int st_plat_access(long long since, long long until, st_access_cb fn, void *ctx,
-                   unsigned int src_cond[ST_SRC_COUNT], char src_text[ST_SRC_COUNT][96], st_err *e);
+                   unsigned int src_cond[ST_SRC_COUNT], char src_text[ST_SRC_COUNT][96],
+                   int src_partial[ST_SRC_COUNT], st_err *e);
 
 /* ---- crypto and time ---- */
 int  st_plat_random(void *p, size_t n);

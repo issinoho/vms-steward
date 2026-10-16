@@ -75,6 +75,7 @@ void svc_access(st_ctx *c)
     static st_access_event events[MAX_EVENTS];
     unsigned int cond[ST_SRC_COUNT];
     char text[ST_SRC_COUNT][96], raw[64];
+    int partial[ST_SRC_COUNT];
     long long until = st_plat_time(), since = until - 86400;
     int limit = LIMIT_DEFAULT, i, got;
     collect col;
@@ -113,7 +114,7 @@ void svc_access(st_ctx *c)
         limit = (int) n;
     }
 
-    if (st_plat_access(since, until, take, &col, cond, text, &e)) { st_app_error(c, &e); return; }
+    if (st_plat_access(since, until, take, &col, cond, text, partial, &e)) { st_app_error(c, &e); return; }
     qsort(events, (size_t) col.n, sizeof events[0], newest_first);
 
     st_resp_json(c->resp, 200, &w);
@@ -126,6 +127,7 @@ void svc_access(st_ctx *c)
         st_jw_key(&w, source_names[i]);
         st_jw_obj(&w);
         st_jw_kbool(&w, "read", cond[i] == 0);
+        if (cond[i] == 0 && partial[i]) st_jw_kbool(&w, "complete", 0);
         if (cond[i]) {
             char hex[16];
             snprintf(hex, sizeof hex, "%%X%08X", cond[i]);

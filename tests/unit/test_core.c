@@ -1170,6 +1170,13 @@ static void test_access(void)
     q = p ? strstr(p + 1, "\"start\":") : NULL;
     CHECK(p && q && strtoll(p + 8, NULL, 10) >= strtoll(q + 8, NULL, 10), "newest first");
     CHECK(strstr(body, "\"truncated\":false") != NULL, "nothing cut off");
+    CHECK(!strstr(body, "\"complete\""), "and every source read to the end");
+    st_resp_free(&b.resp);
+    snprintf(uri, sizeof uri, "/api/v1/access?since=%lld", now - 40 * 86400);
+    call("GET", uri, adm, NULL, &b);
+    CHECK(b.resp.status == 200 && strstr(b.resp.body.data, "\"ssh\":{\"read\":true,\"complete\":false}") &&
+          strstr(b.resp.body.data, "\"accounting\":{\"read\":true}"),
+          "SSH logs stopped at their budget: read, but not complete, and only that source");
     st_resp_free(&b.resp);
 
     call("GET", "/api/v1/access?outcome=failure&user=root", adm, NULL, &b);

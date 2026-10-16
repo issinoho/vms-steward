@@ -95,18 +95,28 @@ function summary(events) {
     fig(failFrom.size, failFrom.size === 1 ? 'address failing' : 'addresses failing', true));
 }
 
-// Which sources were read; a refused one with OpenVMS's message.
+// Which sources were read; a refused one with OpenVMS's message. A source read only
+// in part (complete: false) stopped at its time limit: the SSH logs, on a node whose
+// SSH$ROOT:[VAR] holds too many to search.
 function sources(src, me) {
   const refused = Object.entries(src).filter(([, s]) => !s.read);
+  const partial = Object.entries(src).filter(([, s]) => s.read && s.complete === false);
   const chips = h('ul', { class: 'sources' }, Object.entries(SOURCES).map(([k, label]) => {
     const s = src[k] || { read: false };
-    return h('li', { class: s.read ? 'ok' : 'no', title: s.read ? 'Read' : (s.vms_message || 'Not read') },
-      h('span', { class: 'led', 'aria-hidden': 'true' }), label, s.read ? null : h('span', { class: 'sr' }, ' (not read)'));
+    const part = s.read && s.complete === false;
+    return h('li', { class: !s.read ? 'no' : part ? 'part' : 'ok',
+                     title: !s.read ? (s.vms_message || 'Not read') : part ? 'Read in part: stopped at its time limit' : 'Read' },
+      h('span', { class: 'led', 'aria-hidden': 'true' }), label,
+      !s.read ? h('span', { class: 'sr' }, ' (not read)') : part ? h('span', { class: 'sr' }, ' (read in part)') : null);
   }));
-  if (!refused.length) return chips;
+  const note = partial.length
+    ? h('p', { class: 'muted' }, `${partial.map(([k]) => SOURCES[k] || k).join(', ')}: read only in part, stopped at the time limit. ` +
+        'SSH$ROOT:[VAR] holds more logs than can be searched in time, so some SSH connections show without their sign-in method. Purging old logs there brings them back.')
+    : null;
+  if (!refused.length) return note ? h('div', {}, chips, note) : chips;
   const can = me.authorized_privileges.some((p) => p === 'SYSPRV' || p === 'READALL');
   const on = me.current_privileges.some((p) => p === 'SYSPRV' || p === 'READALL');
-  return h('div', {}, chips,
+  return h('div', {}, chips, note,
     h('div', { class: 'refusal' },
       h('pre', { class: 'vmsmsg' }, refused.map(([k, s]) => `${SOURCES[k] || k}: ${s.vms_message || s.vms_status}`).join('\n')),
       h('p', { class: 'muted' }, on

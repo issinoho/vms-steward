@@ -377,7 +377,11 @@ database's UIC identifiers. A suggestion: the create still refuses a UIC in use.
 
 Who reached the system, when, from where and by which route, merged from the system's
 own records and read **as you**. A source OpenVMS will not let you read is reported,
-not hidden, and the others are still shown.
+not hidden, and the others are still shown. A source read but not to the end has
+`"complete": false`: OpenSSH's logs are looked up by name for the connections
+accounting gives, and searched for the rest (live connections, or all of them when
+accounting is refused) only for a few seconds, since `SSH$ROOT:[VAR]` can hold tens of
+thousands. Connections whose log was not reached show without their sign-in method.
 
 ```json
 {"since": 1791651600, "until": 1791738000,
