@@ -1,7 +1,7 @@
 # Phase 12: installed products
 
-**Status: planning (2026-10-16).** Probes done; the design (D20, proposed) and the
-questions below are for the user. Nothing is built. Pick up from "Questions".
+**Status: 12a being built (2026-10-16).** The user approved D20 and the suggested
+answers below ("go with your suggestions").
 
 Read-only first (12a), as for the earlier areas. The user asked (2026-10-16) that
 products installed by VMSINSTAL be reported too, not only PCSI's.
@@ -16,7 +16,7 @@ products installed by VMSINSTAL be reported too, not only PCSI's.
 `probes/pcsi_view.com` is the PCSI probe (batch as STEWARD_TEST; the work account
 with single privileges switched on).
 
-## Proposed design (D20, not yet approved)
+## Design (D20, approved)
 
 - **PCSI in the D14 helper**, a fourth fixed procedure `STEWARD_PRODUCT.COM`: `PRODUCT
   SHOW PRODUCT/FULL` and `PRODUCT SHOW HISTORY/FULL`, with `DEFINE/USER SYS$OUTPUT`
@@ -31,7 +31,7 @@ with single privileges switched on).
   a long product name pushes the line right, so split on the rule widths only where
   the line fits, by tokens otherwise); VMSINSTAL's by `|`.
 
-## Questions for the user (to settle before building)
+## Questions, settled 2026-10-16
 
 1. **SYSLCK.** No test account holds it, and without it PCSI shows nothing. Authorize
    SYSLCK for STEWARD_ADM (the user runs it), or test PCSI only as the work account?
@@ -41,3 +41,8 @@ with single privileges switched on).
    VMSINSTAL on ...") rather than as the installed list?
 3. **History:** include PCSI's install/remove history, or only what is installed now?
 4. Changes (12b): decide later, as for SYSGEN and licences?
+
+Answers (the suggestions, approved): 1. SYSLCK authorized, not default, for STEWARD_ADM
+on x86 (the user runs AUTHORIZE); viewers without it see PCSI's refusal, by name. 2.
+VMSINSTAL's record shown as history ("installed by VMSINSTAL on ..."). 3. PCSI's
+install and remove history shown beside the installed list. 4. Changes later.

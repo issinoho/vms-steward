@@ -93,6 +93,7 @@ export const api = {
   sysgen: (q) => call('GET', `sysgen${query(q)}`),
   // Phase 11: licences, as SHOW LICENSE and LICENSE LIST (D19).
   licenses: () => call('GET', 'licenses'),
+  products: () => call('GET', 'products'),
   // Phase 2: users and rights identifiers, read-only. Lists take
   // { filter, after, limit } (and type for identifiers) and return { ..., next }.
   users: (q) => call('GET', `users${query(q)}`),

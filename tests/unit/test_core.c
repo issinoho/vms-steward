@@ -15,6 +15,7 @@
 #include "st_queue.h"
 #include "st_sysgen.h"
 #include "st_license.h"
+#include "st_product.h"
 #include "st_app.h"
 
 static int checks, failures;
@@ -1975,6 +1976,121 @@ static void test_licenses(void)
     CHECK(!st_plat_persona_active(), "no persona left active");
 }
 
+typedef struct { int n[ST_PROD_PARTS]; st_product r[8]; int nr; } prod_got;
+static int prod_keep(const st_product *r, void *ctx)
+{
+    prod_got *g = ctx;
+    g->n[r->part]++;
+    if (g->nr < 8) g->r[g->nr++] = *r;
+    return 0;
+}
+static void prod_feed(st_product_parser *p, const char *const *lines)
+{
+    int i;
+    for (i = 0; lines[i]; i++) st_product_line(p, lines[i], strlen(lines[i]));
+    st_product_end(p);
+}
+
+static void test_products(void)
+{
+    /* PCSI's own layout (x86, 2026-10-16), shortened: the rule gives the columns. */
+    static const char *const out[] = {
+        "%%PART%% PRODUCTS",
+        "------------------------------------ ----------- --------- ------------------------------------ ------------------------------------",
+        "PRODUCT                              KIT TYPE    STATE     MAINTENANCE                          REFERENCED BY",
+        "------------------------------------ ----------- --------- ------------------------------------ ------------------------------------",
+        "EXAMPLE X86VMS LONGPRODUCTNAME V11.4-13E3 Full LP     Installed",
+        "VSI X86VMS SSL3 V3.0-21              Full LP     Installed                                      EXAMPLE X86VMS WIDGET V1.2-3",
+        "                                                                                                VSI X86VMS TCPIP V6.0-31",
+        "VSI X86VMS VMS E9.2-3                Oper System Installed VSI X86VMS VMS923X_UPDATE V2.0",
+        "------------------------------------ ----------- --------- ------------------------------------ ------------------------------------",
+        "3 items found",
+        "%%STATUS%% 00000001",
+        "%%PART%% HISTORY",
+        "------------------------------------ ----------- ----------- --- -------------------- --- ------------ -----------------------------",
+        "PRODUCT                              KIT TYPE    OPERATION   VAL DATE AND TIME        ERR USER NAME    REMARK",
+        "------------------------------------ ----------- ----------- --- -------------------- --- ------------ -----------------------------",
+        "VSI X86VMS VMS923X_UPDATE V2.0       Patch       Install     Val 02-MAY-2026 14:40:11   0 SYSTEM       Patch for VMS E9.2-3",
+        "EXAMPLE X86VMS WIDGET V1.2-2         Full LP     Remove       -  12-OCT-2026 10:15:02   0 SYSTEM",
+        "------------------------------------ ----------- ----------- --- -------------------- --- ------------ -----------------------------",
+        "2 items found                      Validation codes: Val=kit passed test,   (M)=manifest not found, (U)=unsigned kit,",
+        "                                                       Sys=kit from OS media, (D)=disabled by user,   (C)=CDSA unavailable,",
+        "VMSINSTAL history file SYS$COMMON:[SYSUPD]VMSINSTAL.HISTORY;1 contains additional information",
+        "%%STATUS%% 00000001",
+        NULL };
+    static const char *const refused[] = { "%%PART%% PRODUCTS", "%PCSIUI-E-PRIVCLASS1, operation requires SYSLCK privilege",
+                                           "%%STATUS%% 1652800A", NULL };
+    st_product_parser p;
+    prod_got g;
+    st_vmsinstal v;
+    result b;
+    hdr t[3], adm[3];
+    char tc[100], tcsrf[65], ac[100], acsrf[65];
+    const char *body;
+
+    memset(&g, 0, sizeof g);
+    st_product_init(&p, prod_keep, &g);
+    prod_feed(&p, out);
+    CHECK(g.n[ST_PROD_PRODUCTS] == 3 && g.n[ST_PROD_HISTORY] == 2, "every row of both tables, nothing of the count or legend");
+    CHECK(!strcmp(g.r[0].producer, "EXAMPLE") && !strcmp(g.r[0].base, "X86VMS") && !strcmp(g.r[0].name, "LONGPRODUCTNAME") &&
+          !strcmp(g.r[0].version, "V11.4-13E3") && !strcmp(g.r[0].kit_type, "Full LP") && !strcmp(g.r[0].state, "Installed"),
+          "a product too long for its column: its four words, and the rest of the line shifted");
+    CHECK(!strcmp(g.r[1].referenced_by, "EXAMPLE X86VMS WIDGET V1.2-3, VSI X86VMS TCPIP V6.0-31") && !g.r[1].maintenance[0],
+          "an indented line continues REFERENCED BY");
+    CHECK(!strcmp(g.r[2].kit_type, "Oper System") && !strcmp(g.r[2].maintenance, "VSI X86VMS VMS923X_UPDATE V2.0"),
+          "a kit type that fills its column; maintenance");
+    CHECK(g.r[3].part == ST_PROD_HISTORY && !strcmp(g.r[3].kit_type, "Patch") && !strcmp(g.r[3].operation, "Install") &&
+          !strcmp(g.r[3].validation, "Val") && !strcmp(g.r[3].date, "02-MAY-2026 14:40:11") && !strcmp(g.r[3].error, "0") &&
+          !strcmp(g.r[3].user, "SYSTEM") && !strcmp(g.r[3].remark, "Patch for VMS E9.2-3"), "a history row, every column");
+    CHECK(!strcmp(g.r[4].operation, "Remove") && !strcmp(g.r[4].validation, "-") && !g.r[4].remark[0], "a removal");
+    CHECK(st_product_ok(&p, ST_PROD_PRODUCTS) && st_product_ok(&p, ST_PROD_HISTORY), "each part's status");
+
+    memset(&g, 0, sizeof g);
+    st_product_init(&p, prod_keep, &g);
+    prod_feed(&p, refused);
+    CHECK(!st_product_ok(&p, ST_PROD_PRODUCTS) && p.status[ST_PROD_PRODUCTS] == 0x0652800Au && p.seen[ST_PROD_PRODUCTS] &&
+          !st_product_ok(&p, ST_PROD_HISTORY) && !g.n[0] &&
+          !strcmp(p.message[ST_PROD_PRODUCTS], "%PCSIUI-E-PRIVCLASS1, operation requires SYSLCK privilege"),
+          "refused without SYSLCK (PRIVCLASS1), with PRODUCT's own message, and a part that never ran");
+
+    CHECK(st_vmsinstal_line("                         | VSIFMS           |  2.6    |  5-JUL-2024 | S     | S     | X86VMS | SYSTEM       | VSI         ", 121, &v) &&
+          !v.name[0] && !strcmp(v.mnemonic, "VSIFMS") && !strcmp(v.version, "2.6") && !strcmp(v.date, "5-JUL-2024") &&
+          !strcmp(v.status, "S") && !strcmp(v.ivp, "S") && !strcmp(v.node, "X86VMS") && !strcmp(v.installer, "SYSTEM") &&
+          !strcmp(v.signature, "VSI"), "a VMSINSTAL run: nine fields, a one-digit day");
+    CHECK(!st_vmsinstal_line("Name                     | Mnemonic         | Version | Date        | Status| IVP   | Node   | Installer    | VALSIGN     ", 121, &v) &&
+          !st_vmsinstal_line("--------------------------------------------------------------------|---------------------------------------------------", 120, &v) &&
+          !st_vmsinstal_line("VMSINSTAL Product Installation History File", 43, &v) &&
+          !st_vmsinstal_line("a|b|c|21-APR-2023|e|f|g|h|i|j", 29, &v), "the header, a rule, a title and ten fields are not runs");
+
+    sign_in("{\"username\":\"steward_test\",\"password\":\"test-pass\"}", tc, sizeof tc, tcsrf);
+    t[0].n = "HTTP_COOKIE"; t[0].v = tc; t[1].n = "HTTP_X_STEWARD_CSRF"; t[1].v = tcsrf; t[2].n = NULL;
+    call("GET", "/api/v1/products", t, NULL, &b);
+    body = b.resp.body.data;
+    CHECK(b.resp.status == 200 && strstr(body, "\"products\":[]") && strstr(body, "\"history\":[]") &&
+          strstr(body, "\"products\":{\"read\":false,\"vms_status\":\"%X0652800A\",\"vms_message\":\"%PCSIUI-E-PRIVCLASS1, operation requires SYSLCK privilege\"}"),
+          "without SYSLCK: PCSI's refusal, by name, and nothing of it");
+    CHECK(strstr(body, "\"vmsinstal\":[{\"name\":\"\",\"mnemonic\":\"EXAMPLEFMS\"") && strstr(body, "\"vmsinstal\":{\"read\":true}") &&
+          strstr(body, "\"mnemonic\":\"EXAMPLEPAS\""), "VMSINSTAL's history to anyone, oldest first");
+    st_resp_free(&b.resp);
+
+    sign_in("{\"username\":\"steward_adm\",\"password\":\"admin-pass\"}", ac, sizeof ac, acsrf);
+    adm[0].n = "HTTP_COOKIE"; adm[0].v = ac; adm[1].n = "HTTP_X_STEWARD_CSRF"; adm[1].v = acsrf; adm[2].n = NULL;
+    call("PUT", "/api/v1/session/privileges", adm, "{\"enabled\":[\"syslck\"]}", &b);
+    CHECK(b.resp.status == 200 && strstr(b.resp.body.data, "SYSLCK"), "SYSLCK switched on (authorized, not default)");
+    st_resp_free(&b.resp);
+    call("GET", "/api/v1/products", adm, NULL, &b);
+    body = b.resp.body.data;
+    CHECK(b.resp.status == 200 && !strstr(body, "\"read\":false") &&
+          strstr(body, "\"products\":[{\"producer\":\"EXAMPLE\",\"base\":\"X86VMS\",\"name\":\"WIDGET\",\"version\":\"V1.2-3\",\"kit_type\":\"Full LP\",\"state\":\"Installed\",\"maintenance\":[],\"referenced_by\":[]}"),
+          "with SYSLCK the installed products");
+    CHECK(strstr(body, "\"referenced_by\":[\"EXAMPLE X86VMS WIDGET V1.2-3\",\"VSI X86VMS TCPIP V6.0-31\"]") &&
+          strstr(body, "\"name\":\"LONGPRODUCTNAME\""), "lists as arrays; the long name");
+    CHECK(strstr(body, "\"history\":[{\"producer\":\"EXAMPLE\",\"base\":\"X86VMS\",\"name\":\"WIDGET\",\"version\":\"V1.2-3\",\"kit_type\":\"Full LP\",\"operation\":\"Install\",\"validation\":\"(U)\",\"date\":\"12-OCT-2026 10:15:02\"") &&
+          strstr(body, "\"truncated\":false"), "and the history, newest first as PCSI gives it");
+    st_resp_free(&b.resp);
+    CHECK(!st_plat_persona_active(), "no persona left active");
+}
+
 int main(void)
 {
     st_app_config cfg;
@@ -2011,6 +2127,7 @@ int main(void)
     test_queue_changes();
     test_sysgen();
     test_licenses();
+    test_products();
     test_create();
     test_gateway();
     printf("%d checks, %d failed\n", checks, failures);

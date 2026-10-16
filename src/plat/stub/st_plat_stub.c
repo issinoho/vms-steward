@@ -4,8 +4,9 @@
    (docs/PHASE0.md to PHASE3.md), including their refusals, their quirks and their
    condition values (from the node's SSDEF):
 
-     STEWARD_ADM    admin-pass     [362,2] defaults TMPMBX, NETMBX, OPER; SYSPRV and
-                                   GRPPRV authorized only (the habit D9 respects);
+     STEWARD_ADM    admin-pass     [362,2] defaults TMPMBX, NETMBX, OPER; SYSPRV,
+                                   GRPPRV and SYSLCK authorized only (the habit D9
+                                   respects; SYSLCK for PRODUCT SHOW, Phase 12);
                                    holds STEWARD_DEMO and STEWARD_OPS
      STEWARD_TEST   test-pass      [362,1] TMPMBX, NETMBX only; holds STEWARD_OPS
      DISABLED       disabled-pass  DISUSER: fails, reason "account is disabled"
@@ -33,6 +34,7 @@
 #include "st_queue.h"
 #include "st_sysgen.h"
 #include "st_license.h"
+#include "st_product.h"
 #include "st_route.h"
 
 #define BIT(n) (1u << (n))
@@ -158,7 +160,7 @@ static void seed(void)
     add_user("DEFAULT", NULL, "", "", 0x00800080u,
              BIT(15) | BIT(20), 0, BIT(15) | BIT(20), 0, 1u << ST_UF_DISUSER, -1);
     add_user("STEWARD_ADM", "admin-pass", "Steward administrator", "STEWARD", 0x00F20002u,
-             BIT(15) | BIT(20) | BIT(28) | BIT(18) | BIT(2) | BIT(8) | BIT(16), BIT(2), BIT(15) | BIT(20) | BIT(18), 0,
+             BIT(15) | BIT(20) | BIT(28) | BIT(18) | BIT(2) | BIT(8) | BIT(16) | BIT(30), BIT(2), BIT(15) | BIT(20) | BIT(18), 0,
              1u << ST_UF_DISCTLY, 1791000000LL);
     add_user("STEWARD_TEST", "test-pass", "Test account", "STEWARD", 0x00F20001u,
              BIT(15) | BIT(20), 0, BIT(15) | BIT(20), 0, 0, 1791000000LL);
@@ -1525,6 +1527,88 @@ int st_plat_license_list(const char *privs, st_license_parser *p, char text[ST_L
         st_copy(text[ST_LIC_DATABASE], 256, "insufficient privilege or file protection violation");
     }
     st_license_end(p);
+    return 0;
+}
+
+/* ================================================================ installed products (Phase 12, D20) */
+
+/* STEWARD_PRODUCT.COM's output in PCSI's own layout (x86, 2026-10-16), the products
+   made up; generated with exact column widths. */
+static const char *const stub_products[] = {
+    "%%PART%% PRODUCTS",
+    "------------------------------------ ----------- --------- ------------------------------------ ------------------------------------",
+    "PRODUCT                              KIT TYPE    STATE     MAINTENANCE                          REFERENCED BY",
+    "------------------------------------ ----------- --------- ------------------------------------ ------------------------------------",
+    "EXAMPLE X86VMS WIDGET V1.2-3         Full LP     Installed",
+    "EXAMPLE X86VMS LONGPRODUCTNAME V11.4-13E3 Full LP     Installed",
+    "VSI X86VMS C V7.7-3                  Full LP     Installed",
+    "VSI X86VMS SSL3 V3.0-21              Full LP     Installed                                      EXAMPLE X86VMS WIDGET V1.2-3",
+    "                                                                                                VSI X86VMS TCPIP V6.0-31",
+    "VSI X86VMS TCPIP V6.0-31             Full LP     Installed                                      VSI X86VMS VMS E9.2-3",
+    "VSI X86VMS VMS E9.2-3                Oper System Installed VSI X86VMS VMS923X_UPDATE V2.0",
+    "------------------------------------ ----------- --------- ------------------------------------ ------------------------------------",
+    "6 items found",
+    " ",
+    "%%STATUS%% 00000001",
+    "%%PART%% HISTORY",
+    "------------------------------------ ----------- ----------- --- -------------------- --- ------------ -----------------------------",
+    "PRODUCT                              KIT TYPE    OPERATION   VAL DATE AND TIME        ERR USER NAME    REMARK",
+    "------------------------------------ ----------- ----------- --- -------------------- --- ------------ -----------------------------",
+    "EXAMPLE X86VMS WIDGET V1.2-3         Full LP     Install     (U) 12-OCT-2026 10:15:02 0   SYSTEM",
+    "EXAMPLE X86VMS WIDGET V1.2-2         Full LP     Remove       -  12-OCT-2026 10:15:02 0   SYSTEM",
+    "VSI X86VMS VMS923X_UPDATE V2.0       Patch       Install     Val 02-MAY-2026 14:40:11 0   SYSTEM       Patch for VMS E9.2-3",
+    "VSI X86VMS VMS E9.2-3                Oper System Install     Sys 15-APR-2026 09:01:44 0   SYSTEM",
+    "------------------------------------ ----------- ----------- --- -------------------- --- ------------ -----------------------------",
+    "4 items found                      Validation codes: Val=kit passed test,   (M)=manifest not found, (U)=unsigned kit,",
+    "                                                       Sys=kit from OS media, (D)=disabled by user,   (C)=CDSA unavailable,",
+    " ",
+    "VMSINSTAL history file SYS$COMMON:[SYSUPD]VMSINSTAL.HISTORY;1 contains additional information",
+    "%%STATUS%% 00000001",
+    NULL };
+/* SYS$UPDATE:VMSINSTAL.HISTORY in its own layout (x86, 2026-10-16), the runs made up. */
+static const char *const stub_vmsinstal_file[] = {
+    "VMSINSTAL Product Installation History File",
+    "VMSINSTAL header format written on 15-APR-2026 ",
+    "S = Success  HPC = HP  Signed  NA = Not Applicable  U = Unsigned ",
+    "F = Failure  VSI = VSI Signed  NV = Not Validated",
+    "------------------------------------------------------------------------------------------------------------------------",
+    "Product Information                                                 | Installation Information                          ",
+    "--------------------------------------------------------------------|---------------------------------------------------",
+    "Name                     | Mnemonic         | Version | Date        | Status| IVP   | Node   | Installer    | VALSIGN     ",
+    "--------------------------------------------------------------------|---------------------------------------------------",
+    "                         | EXAMPLEFMS       |   2.6   | 21-APR-2026 | S     | S     | X86VMS | SYSTEM       | VSI         ",
+    "                         | EXAMPLEVCM       |   3.1   |  3-MAY-2026 | F     | NA    | X86VMS | SYSTEM       | VSI         ",
+    "Example Pascal           | EXAMPLEPAS       |   6.4   |  3-MAY-2026 | S     | S     | X86VMS | SYSTEM       | VSI         ",
+    NULL };
+
+int st_plat_product_list(const char *privs, st_product_parser *p, char text[ST_PROD_PARTS][256], st_err *e)
+{
+    /* PRODUCT SHOW with SYSLCK, as on x86; without it both parts are refused with
+       %PCSIUI-E-PRIVCLASS1 (NOTES.md). The stub asks for it switched on in the session. */
+    static const char *const refused[] = {
+        "%%PART%% PRODUCTS", "%PCSIUI-E-PRIVCLASS1, operation requires SYSLCK privilege", "%%STATUS%% 1652800A",
+        "%%PART%% HISTORY", "%PCSIUI-E-PRIVCLASS1, operation requires SYSLCK privilege", "%%STATUS%% 1652800A", NULL };
+    int may = privs && strstr(privs, "SYSLCK") != NULL, i;
+    const char *const *src = may ? stub_products : refused;
+    (void) e;
+    for (i = 0; i < ST_PROD_PARTS; i++) text[i][0] = '\0';
+    for (i = 0; src[i]; i++)
+        if (st_product_line(p, src[i], strlen(src[i]))) break;
+    st_product_end(p);
+    for (i = 0; i < ST_PROD_PARTS; i++)
+        if (p->seen[i] && !(p->status[i] & 1)) st_copy(text[i], 256, p->message[i]);
+    return 0;
+}
+
+int st_plat_vmsinstal(st_vmsinstal_cb fn, void *ctx, unsigned int *cond, char text[256], st_err *e)
+{
+    st_vmsinstal v;
+    int i;
+    (void) e;
+    *cond = 0;
+    text[0] = '\0';
+    for (i = 0; stub_vmsinstal_file[i]; i++)
+        if (st_vmsinstal_line(stub_vmsinstal_file[i], strlen(stub_vmsinstal_file[i]), &v) && fn(&v, ctx)) break;
     return 0;
 }
 

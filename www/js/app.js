@@ -15,6 +15,7 @@ import { processesView, processView } from './processes.js';
 import { queuesView, queueView } from './queues.js';
 import { sysgenView } from './sysgen.js';
 import { licensesView } from './licenses.js';
+import { productsView } from './products.js';
 
 const app = document.getElementById('app');
 let me = null;           // whoami, while signed in
@@ -32,6 +33,7 @@ const AREAS = [
   { hash: '#/queues', label: 'Queues', ready: true },
   { hash: '#/sysgen', label: 'System parameters', ready: true },
   { hash: '#/licenses', label: 'Licences', ready: true },
+  { hash: '#/products', label: 'Installed products', ready: true },
 ];
 
 // The theme switch (theme.js): Auto, Light, Dark in turn.
@@ -211,6 +213,7 @@ const VIEWS = {
   queues: (ctx, name) => (name ? queueView(ctx, name) : queuesView(ctx)),
   sysgen: (ctx) => sysgenView(ctx),
   licenses: (ctx) => licensesView(ctx),
+  products: (ctx) => productsView(ctx),
 };
 
 let routeSeq = 0;

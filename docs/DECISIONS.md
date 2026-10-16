@@ -559,9 +559,14 @@ Read-only: registering, enabling and loading licences are decided once this is i
 Alternatives not taken: reading LMF$LICENSE with RMS (its record layout is not
 documented); the commands run by the service (its view, not the viewer's, D2).
 
-## D20. Installed products: PCSI in the D14 helper, VMSINSTAL's history in-process (proposed)
+## D20. Installed products: PCSI in the D14 helper, VMSINSTAL's history in-process
 
-**Status:** proposed 2026-10-16, not approved; questions in PHASE12.md. Phase 12.
+**Status:** approved by the user 2026-10-16 ("go with your suggestions", PHASE12.md):
+SYSLCK authorized (not default) for STEWARD_ADM on x86 for testing, which the user
+does; viewers without SYSLCK see PCSI's refusal, as the licence database's (D10);
+VMSINSTAL's record shown as history, not as what is installed, since it never records
+a removal; PCSI's history included beside the installed list; changes (12b) decided
+later. Phase 12.
 
 PCSI's database has no documented interface, and `PRODUCT SHOW` needs SYSLCK (probe,
 NOTES.md). So the D14 helper, which is the viewer, would run a fourth fixed procedure,

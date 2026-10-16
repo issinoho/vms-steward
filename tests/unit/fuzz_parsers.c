@@ -17,6 +17,7 @@
 #include "st_lnm.h"
 #include "st_sysgen.h"
 #include "st_license.h"
+#include "st_product.h"
 #include "st_http.h"
 #include "st_route.h"
 
@@ -192,6 +193,45 @@ static void run_license(const unsigned char *in, size_t len)
     st_license_end(&p);
 }
 
+/* STEWARD_PRODUCT.COM's output, as x86 printed it, and VMSINSTAL.HISTORY lines
+   (st_product.h): every line goes to both parsers. */
+static const char product_seed[] =
+    "%%PART%% PRODUCTS\n------------------------------------ ----------- --------- ----------------- ---------------\n"
+    "PRODUCT                              KIT TYPE    STATE     MAINTENANCE       REFERENCED BY\n"
+    "------------------------------------ ----------- --------- ----------------- ---------------\n"
+    "EXAMPLE X86VMS LONGPRODUCTNAME V11.4-13E3 Full LP     Installed\n"
+    "VSI X86VMS SSL3 V3.0-21              Full LP     Installed                   VSI X86VMS A V1\n"
+    "                                                                             VSI X86VMS B V2\n"
+    "------------------------------------ ----------- --------- ----------------- ---------------\n"
+    "2 items found\n%%STATUS%% 00000001\n%%PART%% HISTORY\n"
+    "------------------------------------ ----------- ----------- --- -------------------- --- ------------ ------\n"
+    "PRODUCT                              KIT TYPE    OPERATION   VAL DATE AND TIME        ERR USER NAME    REMARK\n"
+    "------------------------------------ ----------- ----------- --- -------------------- --- ------------ ------\n"
+    "VSI X86VMS VMS923X_UPDATE V2.0       Patch       Install     Val 02-MAY-2026 14:40:11   0 SYSTEM       Patch\n"
+    "%%STATUS%% 1652800A\n"
+    "                         | VSIFMS           |  2.6    |  5-JUL-2024 | S     | S     | X86VMS | SYSTEM       | VSI\n";
+
+static int product_cb(const st_product *r, void *ctx) { (void) r; (void) ctx; return 0; }
+
+static void run_product(const unsigned char *in, size_t len)
+{
+    st_product_parser p;
+    st_vmsinstal v;
+    size_t start = 0, i;
+    st_product_init(&p, product_cb, NULL);
+    for (i = 0; i <= len; i++)
+        if (i == len || in[i] == '\n') {
+            char *line = malloc(i - start ? i - start : 1);   /* exactly its length, for ASan */
+            if (!line) return;
+            memcpy(line, in + start, i - start);
+            st_product_line(&p, line, i - start);
+            st_vmsinstal_line(line, i - start, &v);
+            free(line);
+            start = i + 1;
+        }
+    st_product_end(&p);
+}
+
 int main(int argc, char **argv)
 {
     long i, rounds = argc > 1 ? atol(argv[1]) : 100000;
@@ -202,7 +242,12 @@ int main(int argc, char **argv)
         size_t len;
         st_jdoc d;
         char err[80];
-        if (i % 5 == 4) {
+        if (i % 6 == 5) {
+            len = sizeof product_seed - 1;
+            memcpy(buf, product_seed, len);
+            len = mutate(buf, len, sizeof buf);
+            run_product(buf, len);
+        } else if (i % 5 == 4) {
             len = sizeof license_seed - 1;
             memcpy(buf, license_seed, len);
             len = mutate(buf, len, sizeof buf);

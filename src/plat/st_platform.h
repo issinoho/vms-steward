@@ -13,6 +13,7 @@
 #include "st_lnm.h"
 #include "st_sysgen.h"
 #include "st_license.h"
+#include "st_product.h"
 
 /* What went wrong, in terms the HTTP layer can map to a status. */
 enum {
@@ -548,6 +549,21 @@ int st_plat_sysgen_list(const char *privs, st_param_cb fn, void *ctx, st_err *e)
    condition is in p->status and its $GETMSG text in text[part]. privs as for
    st_plat_lnm_list. */
 int st_plat_license_list(const char *privs, st_license_parser *p, char text[ST_LIC_PARTS][256], st_err *e);
+
+/* ---- installed products (Phase 12, D20), as the current persona ----
+
+   PRODUCT SHOW PRODUCT/FULL and PRODUCT SHOW HISTORY/FULL, run in the D14 helper
+   process (the viewer) by the fixed procedure STEWARD_PRODUCT.COM, into p
+   (st_product_init'ed by the caller). PRODUCT needs SYSLCK: a part OpenVMS refused is
+   not an error, its condition is in p->status and its $GETMSG text in text[part].
+   privs as for st_plat_lnm_list. */
+int st_plat_product_list(const char *privs, st_product_parser *p, char text[ST_PROD_PARTS][256], st_err *e);
+
+/* VMSINSTAL's history, SYS$UPDATE:VMSINSTAL.HISTORY, read in-process as the persona:
+   fn for each run, oldest first, until it returns nonzero. *cond is 0 when the file
+   was read, else the condition that refused or failed it, with its text. */
+typedef int (*st_vmsinstal_cb)(const st_vmsinstal *v, void *ctx);
+int st_plat_vmsinstal(st_vmsinstal_cb fn, void *ctx, unsigned int *cond, char text[256], st_err *e);
 
 /* ---- audit and diagnostics ---- */
 void st_plat_audit(const char *line);    /* one record; the platform adds a timestamp */

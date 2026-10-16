@@ -258,6 +258,9 @@ static char sysgen_helper_path[256];
 /* The licences' procedure (Phase 11, D19), fixed and resolved the same way. */
 static char license_helper[256] = "STEWARD$ROOT:[COM]STEWARD_LICENSE.COM";
 static char license_helper_path[256];
+/* The installed products' procedure (Phase 12, D20), fixed and resolved the same way. */
+static char product_helper[256] = "STEWARD$ROOT:[COM]STEWARD_PRODUCT.COM";
+static char product_helper_path[256];
 
 /* spec to a physical path in out ("" if it cannot be): $PARSE and $SEARCH with
    NOCONCEAL, as the service, then the device's full name. */
@@ -313,6 +316,15 @@ static void lnm_resolve_helper(void)
     resolve_procedure(lnm_helper, lnm_helper_path, sizeof lnm_helper_path, "logical-name helper");
     resolve_procedure(sysgen_helper, sysgen_helper_path, sizeof sysgen_helper_path, "SYSGEN helper");
     resolve_procedure(license_helper, license_helper_path, sizeof license_helper_path, "licence helper");
+    resolve_procedure(product_helper, product_helper_path, sizeof product_helper_path, "products helper");
+}
+
+/* For tests/vms/api_probe.c only, to run an edited products procedure before it is
+   installed. STEWARD.EXE never calls it. */
+void st_plat_vms_test_product(const char *path)
+{
+    st_copy(product_helper, sizeof product_helper, path);
+    lnm_resolve_helper();
 }
 
 /* For tests/vms/api_probe.c only, to run an edited licence procedure before it is
@@ -3052,6 +3064,54 @@ int st_plat_license_list(const char *privs, st_license_parser *p, char text[ST_L
     /* A part OpenVMS refused (the database, to most viewers) is shown, not an error. */
     for (i = 0; i < ST_LIC_PARTS; i++)
         if (p->seen[i] && !(p->status[i] & 1)) msgtext(p->status[i], text[i], 256);
+    return 0;
+}
+
+/* ---- installed products (Phase 12, D20): PRODUCT SHOW in the same helper ---- */
+
+static void product_line(const char *line, size_t len, void *ctx)
+{
+    st_product_line((st_product_parser *) ctx, line, len);
+}
+
+int st_plat_product_list(const char *privs, st_product_parser *p, char text[ST_PROD_PARTS][256], st_err *e)
+{
+    const char *msgs[1];
+    unsigned int status = 0;
+    int i;
+    msgs[0] = privs;
+    for (i = 0; i < ST_PROD_PARTS; i++) text[i][0] = '\0';
+    if (helper_run(product_helper_path, msgs, 1, product_line, p, &status, e)) return -1;
+    st_product_end(p);
+    if (!(status & 1)) { set_cond(e, status); return -1; }   /* the procedure refused */
+    /* A part OpenVMS refused (without SYSLCK, both) is shown, not an error, with
+       PRODUCT's own message: $GETMSG does not know PCSI's (NOTES.md). */
+    for (i = 0; i < ST_PROD_PARTS; i++)
+        if (p->seen[i] && !(p->status[i] & 1)) {
+            if (p->message[i][0]) st_copy(text[i], 256, p->message[i]);
+            else msgtext(p->status[i], text[i], 256);
+        }
+    return 0;
+}
+
+/* VMSINSTAL's own record: a text file anyone may read on the nodes seen (W:RE), read
+   as the persona, as access history reads its files (D13). */
+int st_plat_vmsinstal(st_vmsinstal_cb fn, void *ctx, unsigned int *cond, char text[256], st_err *e)
+{
+    static unsigned char line[1024];
+    struct FAB fab;
+    struct RAB rab;
+    st_vmsinstal v;
+    unsigned int st;
+    (void) e;
+    *cond = 0;
+    text[0] = '\0';
+    st = ax_open(&fab, &rab, 0, "SYS$UPDATE:VMSINSTAL.HISTORY", 0, line, sizeof line - 1);
+    if (!(st & 1)) { *cond = st; msgtext(st, text, 256); return 0; }
+    while ((st = ax_get(&rab)) & 1)
+        if (st_vmsinstal_line((const char *) line, rab.rab$w_rsz, &v) && fn(&v, ctx)) break;
+    sys$close(&fab);
+    if (!(st & 1) && st != RMS$_EOF) { *cond = st; msgtext(st, text, 256); }
     return 0;
 }
 

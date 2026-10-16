@@ -456,3 +456,20 @@ in under a second; a 26 KB static file through lighttpd is complete. The DNS nam
 new and briefly cached as nonexistent by public resolvers (negative TTL 1,800 s),
 which first showed as "server not found". lighttpd's error and access logs could not
 be read while it ran (TYPE and CONVERT/SHARE: RMS-F-ORG; sftp: not a regular file).
+
+**PRODUCT SHOW may need SYSLCK *authorized*, not switched on** (Phase 12, 2026-10-16,
+corrects the entry above in part). From the work account, interactively over ssh, with
+`SET PROCESS/PRIVILEGE=(NOALL,TMPMBX,NETMBX)` and `F$GETJPI("","CURPRIV")` showing
+just those two: `PRODUCT SHOW PRODUCT` and `PRODUCT SHOW HISTORY` both ran (78 and 527
+items, $STATUS 1). STEWARD_TEST, not authorized for SYSLCK, was refused (PRIVCLASS1).
+The earlier "nothing on" run used `SET PROCESS/PRIVILEGE=('p1')`, which only adds
+privileges, so it did not show this. To be settled with STEWARD_ADM, authorized for
+SYSLCK but not by default.
+
+**PCSI's messages are in the PRODUCT image, not a message file** (Phase 12,
+2026-10-16). `$GETMSG` in the pool, and `F$MESSAGE(%X1652800A)` in DCL, both give
+`%NONAME-E-NOMSG, Message number 1652800A`; there is no `SYS$MESSAGE:*PCSI*` to `SET
+MESSAGE`. PRODUCT prints its own text, `%PCSIUI-E-PRIVCLASS1, operation requires SYSLCK
+privilege`, so STEWARD_PRODUCT.COM sends PRODUCT's SYS$ERROR to the reply mailbox too
+and the parser keeps each part's first message. Seen through `api_probe` as
+STEWARD_TEST on x86 (`phase12_live.py`).
