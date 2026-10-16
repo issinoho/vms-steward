@@ -51,8 +51,8 @@ dcl_logged() {
       echo '$ close vmsrun_done'; } > "$com"
     sftp_batch "cd $SFTPDIR" "put $com $tag.com"
     start_ssh() {
-        ssh -p "$PORT" "${ssh_opts[@]}" "$USER@$HOST" \
-            "@${WORKDIR}${tag}.COM/OUTPUT=${WORKDIR}${tag}.LOG" >"$sshlog" 2>&1 &
+        { ssh -p "$PORT" "${ssh_opts[@]}" "$USER@$HOST" \
+              "@${WORKDIR}${tag}.COM/OUTPUT=${WORKDIR}${tag}.LOG"; echo "(ssh exit $?)"; } >"$sshlog" 2>&1 &
         pid=$!
     }
     local pid waited=0 limit=${VMS_TIMEOUT:-600} starts=1
