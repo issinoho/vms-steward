@@ -417,3 +417,21 @@ ACCOUNTING comparison has nothing to compare after a quiet half hour.
 Seen about six times over the live tests, ssh printing nothing; a restart usually
 worked, but in one call all three starts failed. The cause is not known; vms.sh now
 records ssh's exit status in its message.
+
+**Sign-in on IA64 works as on x86** (2026-10-16, STEWARD_TEST with a password the user
+gave for testing). `probe_acm`: all three non-dialogue `$ACMW` forms succeed, and
+ACQUIRE_CREDENTIALS returns a persona handle. Through Steward's own code (`api_probe`
+POST /api/v1/session, as the privileged work account): the right password 201 with a
+session; a wrong one Steward's generic 401, `%LOGIN-F-INVPWD` only in the audit log,
+and an intrusion record `127.0.0.1::STEWARD` (the client, as designed in Phase 1).
+
+**IA64's `$SETUAI` refuses a password over 32 characters** (`probes/probe_pwdset.c`):
+32 SS$_NORMAL, 33 and 64 `%SYSTEM-F-BADPARAM`. So the limit in the header is the
+system's, and Steward's own check (`st_plat_password_max`) only gives a clearer
+message first. **`$SETUAI` also enforces the account's minimum length, where
+AUTHORIZE only warns** (`%UAF-I-PWDLESSMIN`): putting back a 7-character test
+password with `$SETUAI` failed with INVPWDLEN and left the probe's 32-character one in
+place; `AUTHORIZE MODIFY /PASSWORD= /NOPWDEXPIRED` restored it. A probe that changes a
+password must restore it the way it was set, or check the minimum first. The failed
+sign-ins while it was wrong left an intrusion record (count 3) against the work
+account's ssh client, below the break-in limit.
