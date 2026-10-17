@@ -2425,8 +2425,8 @@ static void test_errlog_api(void)
     sign_in("{\"username\":\"steward_test\",\"password\":\"test-pass\"}", tc, sizeof tc, tcsrf);
     t[0].n = "HTTP_COOKIE"; t[0].v = tc; t[1].n = "HTTP_X_STEWARD_CSRF"; t[1].v = tcsrf; t[2].n = NULL;
     call("GET", "/api/v1/errorlog", t, NULL, &b);
-    CHECK(b.resp.status == 403 && strstr(b.resp.body.data, "That is also what it says to a viewer without access") &&
-          strstr(b.resp.body.data, "-RMS-E-FNF, file not found"), "without SYSPRV, the error log refused, with why OpenVMS says not found");
+    CHECK(b.resp.status == 403 && strstr(b.resp.body.data, "%ELV-E-FILOPNERR") &&
+          strstr(b.resp.body.data, "-RMS-E-PRV, insufficient privilege"), "without SYSPRV, the error log refused with ELV's words: PRV");
     st_resp_free(&b.resp);
     call("GET", "/api/v1/crashes", t, NULL, &b);
     CHECK(b.resp.status == 403, "the crash listings refused");
@@ -2524,7 +2524,7 @@ static void test_errlog_changes(void)
     sign_in("{\"username\":\"steward_test\",\"password\":\"test-pass\"}", tc, sizeof tc, tcsrf);
     t[0].n = "HTTP_COOKIE"; t[0].v = tc; t[1].n = "HTTP_X_STEWARD_CSRF"; t[1].v = tcsrf; t[2].n = NULL;
     call("GET", "/api/v1/errorlog/files", t, NULL, &b);
-    CHECK(b.resp.status == 403 && strstr(b.resp.body.data, "also what it says to a viewer without access"), "the files: refused without SYSPRV");
+    CHECK(b.resp.status == 403, "the files: refused without SYSPRV");
     st_resp_free(&b.resp);
     call("POST", "/api/v1/errorlog/new", t, "{}", &b);
     CHECK(b.resp.status == 403, "a new error log: refused without SYSPRV");

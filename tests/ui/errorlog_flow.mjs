@@ -55,9 +55,9 @@ try {
   say(root.textContent.includes('DKA100:') && root.textContent.includes('1 device with errors, of 3.'),
     'device errors: anyone\'s, the device with errors listed', root.textContent.slice(0, 400));
   const refusals = [...root.querySelectorAll('.refusal')];
-  say(refusals.length === 3 && refusals[0].textContent.includes('-RMS-E-FNF, file not found') &&
-    refusals[0].textContent.includes('That is also what it says to a viewer without access'),
-    'the events refused, with ELV\'s words and why they say not found', refusals.map((r) => r.textContent.slice(0, 120)));
+  say(refusals.length === 3 && refusals[0].textContent.includes('%ELV-E-FILOPNERR') &&
+    refusals[0].textContent.includes('-RMS-E-PRV, insufficient privilege'),
+    'the events refused, with ELV\'s words: PRV', refusals.map((r) => r.textContent.slice(0, 120)));
   say(refusals.every((r) => r.textContent.includes('needs SYSPRV (or the SYSTEM group), which your account does not have')),
     'each refusal says what would let you read it');
   await api.signOut();

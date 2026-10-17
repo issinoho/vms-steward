@@ -577,3 +577,11 @@ single scratch directory and missed it; reproduced with a process search list of
 scratch directories (404 FNF), fixed by finding the file first and acting on its full
 physical name (`phys_spec`, as the helper procedures are resolved), then 204. The live
 test now uses such a search list.
+
+**Found first, a protected file gives PRV, not FNF** (Phase 14b, 2026-10-17,
+`tests/vms/phase14_live.py`). The "file not found" for ERRLOG.SYS and OPERATOR.LOG
+(above) came from opening them through the search list. `$SEARCH` finds them as
+STEWARD_TEST, which needs only the directory (W:RE); opened by the physical name it
+returns (`_X86VMS$DKA0:[SYS0.][SYSERR]ERRLOG.SYS`), ELV says `%ELV-E-FILOPNERR ...
+-RMS-E-PRV`. So Steward resolves first (`phys_spec`), and "not found" now means the
+file is not there (ERRLOG.SYS after a new log, until ERRFMT's next record).

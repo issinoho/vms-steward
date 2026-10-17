@@ -53,29 +53,16 @@ static int uint_query(st_ctx *c, const char *name, unsigned int hi, unsigned int
     return 1;
 }
 
-/* Has the viewer SYSPRV switched on (privs as svc_session_privs gives them)? */
-static int has_sysprv(const char *privs)
-{
-    const char *s = strstr(privs, "SYSPRV");
-    return s && (s == privs || s[-1] == ',') && (s[6] == '\0' || s[6] == ',');
-}
-
-/* OpenVMS said the file is not there. To a viewer with SYSPRV switched on that is the
-   truth: after a new log is started, ERRLOG.SYS is created at the next record. To
-   anyone else it is also what OpenVMS says for "you may not read it" (the search
-   list, NOTES.md), so both are said. */
+/* The file is not there: found by name as the viewer, which needs no access to the
+   file itself, so this is the truth (a refusal is PRV, NOTES.md). ERRLOG.SYS is
+   missing after a new log is started, until ERRFMT's next record. */
 static void not_found(st_ctx *c, const char *privs, const char *file, const char *vms)
 {
     char d[480];
-    if (has_sysprv(privs)) {
-        snprintf(d, sizeof d, "%s%s%s does not exist.%s", vms, *vms ? ". " : "", file,
-                 strcmp(file, "ERRLOG.SYS") ? "" : " After a new error log is started, ERRFMT creates it at its next record.");
-        st_resp_problem(c->resp, 404, "not-found", "Not found", d, 0, NULL);
-    } else {
-        snprintf(d, sizeof d, "%s%sOpenVMS reports %s as not found. That is also what it says to a viewer "
-                 "without access: it needs SYSPRV or the SYSTEM group.", vms, *vms ? ". " : "", file);
-        st_resp_problem(c->resp, 403, "no-privilege", "Not permitted by OpenVMS", d, 0, NULL);
-    }
+    (void) privs;
+    snprintf(d, sizeof d, "%s%s%s does not exist.%s", vms, *vms ? ". " : "", file,
+             strcmp(file, "ERRLOG.SYS") ? "" : " After a new error log is started, ERRFMT creates it at its next record.");
+    st_resp_problem(c->resp, 404, "not-found", "Not found", d, 0, NULL);
 }
 
 /* ELV refused the file: OpenVMS's words, and what they may mean. */
@@ -142,7 +129,11 @@ void svc_errorlog(st_ctx *c)
     lc.w = &w;
     st_elv_init(&p, list_one, NULL, &lc);
     svc_session_privs(c, privs, sizeof privs);
-    if (st_plat_errlog(privs, ST_ELV_LIST, days, file, &p, &e)) { st_app_error(c, &e); return; }
+    if (st_plat_errlog(privs, ST_ELV_LIST, days, file, &p, &e)) {
+        if (e.kind == ST_E_NOTFOUND) not_found(c, privs, file, e.text);
+        else st_app_error(c, &e);
+        return;
+    }
     if (st_elv_refused(&p)) { elv_refusal(c, privs, file, &p); return; }
     st_jw_arr_end(&w);
     st_jw_kbool(&w, "truncated", lc.truncated);
@@ -205,7 +196,11 @@ void svc_errorlog_event(st_ctx *c)
     ec.w = &w;
     st_elv_init(&p, entry_event, entry_field, &ec);
     svc_session_privs(c, privs, sizeof privs);
-    if (st_plat_errlog(privs, ST_ELV_ENTRY, (unsigned int) n, file, &p, &e)) { st_app_error(c, &e); return; }
+    if (st_plat_errlog(privs, ST_ELV_ENTRY, (unsigned int) n, file, &p, &e)) {
+        if (e.kind == ST_E_NOTFOUND) not_found(c, privs, file, e.text);
+        else st_app_error(c, &e);
+        return;
+    }
     if (st_elv_refused(&p)) { elv_refusal(c, privs, file, &p); return; }
     if (!ec.events) {
         st_resp_problem(c->resp, 404, "not-found", "Not found", "No such event in the error log.", 0, NULL);

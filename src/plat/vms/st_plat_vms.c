@@ -3405,9 +3405,17 @@ int st_plat_errlog(const char *privs, int op, unsigned int arg, const char *file
     snprintf(a, sizeof a, "%u", arg);
     /* The file as it really is, found as the persona: the helper then translates no
        logical name the viewer's group could shadow (as for the helper procedures).
-       If the viewer cannot find it, the name as given: ELV then says why. */
-    if (!(phys_spec(file && *file ? file : "ERRLOG.SYS", errlog_dir, spec, sizeof spec, NULL) & 1))
-        snprintf(spec, sizeof spec, "%s%s", errlog_dir, file && *file ? file : "ERRLOG.SYS");
+       Finding it needs no access to the file, only to the directory, so not found is
+       the truth (after a new log, until ERRFMT's next record); a viewer who may not
+       read it gets ELV's refusal, now with the real PRV (NOTES.md). */
+    {
+        unsigned int st = phys_spec(file && *file ? file : "ERRLOG.SYS", errlog_dir, spec, sizeof spec, NULL);
+        if (!(st & 1)) {
+            set_cond(e, st);
+            if (st == RMS$_FNF) e->kind = ST_E_NOTFOUND;
+            return -1;
+        }
+    }
     msgs[0] = privs;
     msgs[1] = op == ST_ELV_ENTRY ? "ENTRY" : "LIST";
     msgs[2] = a;
@@ -3601,23 +3609,25 @@ int st_plat_opcom(st_opcom_parser *p, char file[96], st_err *e)
     struct RAB rab = cc$rms_rab;
     struct NAM nam = cc$rms_nam;
     unsigned int st;
+    char full[240];
     file[0] = '\0';
-    fab.fab$l_fna = "SYS$MANAGER:OPERATOR.LOG";
-    fab.fab$b_fns = 24;
+    /* Found first, then opened by its physical name: opened through SYS$MANAGER, a
+       search list, a version the viewer may not read is reported as not found
+       (NOTES.md); opened where it is, OpenVMS says PRV. */
+    st = phys_spec("OPERATOR.LOG", "SYS$MANAGER:", full, sizeof full, NULL);
+    if (!(st & 1)) {
+        set_cond(e, st);
+        if (st == RMS$_FNF) e->kind = ST_E_NOTFOUND;
+        return -1;
+    }
+    fab.fab$l_fna = full;
+    fab.fab$b_fns = (unsigned char) strlen(full);
     fab.fab$l_nam = &nam;
     nam.nam$l_rsa = rsa;
     nam.nam$b_rss = NAM$C_MAXRSS;
     fab.fab$b_fac = FAB$M_GET;
     fab.fab$b_shr = FAB$M_SHRGET | FAB$M_SHRPUT | FAB$M_SHRUPD | FAB$M_UPI;
     st = sys$open(&fab);
-    if (st == RMS$_FNF) {
-        /* SYS$MANAGER is a search list: a version the viewer may not read in the first
-           directory is reported as not found in the last (NOTES.md). */
-        set_cond(e, st);
-        e->kind = ST_E_NOPRIV;
-        st_append(e->text, sizeof e->text, " (OpenVMS reports a file you may not read here as not found)");
-        return -1;
-    }
     if (!(st & 1)) { set_cond(e, st); return -1; }
     if (nam.nam$b_rsl < 96) { memcpy(file, rsa, nam.nam$b_rsl); file[nam.nam$b_rsl] = '\0'; }
     rab.rab$l_fab = &fab;

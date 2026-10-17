@@ -1883,10 +1883,17 @@ int st_plat_errlog(const char *privs, int op, unsigned int arg, const char *file
     int k;
     (void) privs;
     (void) e;
+    /* As on x86: a file not there is answered before ELV runs; one the viewer may not
+       read, by ELV, with the PRV it gets opening it where it is. */
+    if (!stub_errlog_exists(file)) {
+        set_err(e, ST_E_NOTFOUND, "%RMS-E-FNF, file not found");
+        e->cond = 0x00018292u;
+        return -1;
+    }
     elv_feed(p, op == ST_ELV_ENTRY ? "%%PART%% ENTRY" : "%%PART%% EVENTS");
-    if (!stub_sysprv() || !stub_errlog_exists(file)) {
-        elv_feed(p, "%ELV-E-FILOPNERR, error opening SYS$SYSROOT:[SYSERR]ERRLOG.SYS;1");
-        elv_feed(p, "-RMS-E-FNF, file not found");
+    if (!stub_sysprv()) {
+        elv_feed(p, "%ELV-E-FILOPNERR, error opening _STUB01$DKA0:[SYS0.][SYSERR]ERRLOG.SYS;1");
+        elv_feed(p, "-RMS-E-PRV, insufficient privilege or file protection violation");
         elv_feed(p, "%%STATUS%% 00000001");
         return 0;
     }
@@ -1946,7 +1953,7 @@ static int stub_no_sysprv(st_err *e)
 int st_plat_errlog_files(st_errlog_file_cb fn, void *ctx, st_err *e)
 {
     int i;
-    if (!stub_sysprv()) { set_err(e, ST_E_NOTFOUND, "file not found"); e->cond = 0x00018292u; return -1; }
+    if (!stub_sysprv()) return stub_no_sysprv(e);
     if (stub_errlog_current && fn("ERRLOG.SYS", 1440, "2023-04-20T13:16:52", ctx)) return 0;
     for (i = 0; i < stub_errlog_nold; i++)
         if (fn(stub_errlog_old[i], 300, "2025-04-20T13:16:52", ctx)) break;
@@ -1958,11 +1965,8 @@ int st_plat_errlog_rename(char newname[32], st_err *e)
     time_t t = time(NULL);
     struct tm tm = *localtime(&t);
     newname[0] = '\0';
-    if (!stub_sysprv() || !stub_errlog_current) {   /* as on x86: "not found" either way */
-        set_err(e, ST_E_NOTFOUND, "file not found");
-        e->cond = 0x00018292u;
-        return -1;
-    }
+    if (!stub_errlog_current) { set_err(e, ST_E_NOTFOUND, "%RMS-E-FNF, file not found"); e->cond = 0x00018292u; return -1; }
+    if (!stub_sysprv()) return stub_no_sysprv(e);
     st_errlog_renamed(tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday, tm.tm_hour, tm.tm_min, newname);
     if (stub_errlog_nold < 8) st_copy(stub_errlog_old[stub_errlog_nold++], 32, newname);
     stub_errlog_current = 0;   /* until ERRFMT's next record, which never comes here */
@@ -2024,11 +2028,7 @@ int st_plat_opcom(st_opcom_parser *p, char file[96], st_err *e)
 {
     int i;
     file[0] = '\0';
-    if (!stub_sysprv()) {   /* as on x86: the search list makes it "not found" */
-        set_err(e, ST_E_NOPRIV, "file not found (OpenVMS reports a file you may not read here as not found)");
-        e->cond = 0x00018292u;   /* RMS$_FNF */
-        return -1;
-    }
+    if (!stub_sysprv()) return stub_no_sysprv(e);   /* PRV, opened where it is, as on x86 */
     st_copy(file, 96, "SYS$SYSROOT:[SYSMGR]OPERATOR.LOG;12");
     for (i = 0; stub_opcom_file[i]; i++) st_opcom_line(p, stub_opcom_file[i], strlen(stub_opcom_file[i]));
     st_opcom_end(p);
