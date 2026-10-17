@@ -182,3 +182,7 @@ listed it with TMPMBX and NETMBX, recorded into its MONITOR.DAT (protection
 S:RWED,O:RWED,G,W), stopped it, and did not start it with STEWARD_RECORD_SECS "0".
 Linux: 447 unit checks (with the record format and ring), 56 API checks, the UI tests
 (the ranges on the stub's made-up week, with its gap) and `make audit`.
+
+Kit T0.13-0 (0.13.0), built by `tools/kit.sh x86` (447 native checks), SHA-256
+`046fbaedeef3b06a0d9265f0e14d726240109c8f3b64db950e88de82392e8f33`, for the browser
+checks.
