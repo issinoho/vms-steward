@@ -672,3 +672,20 @@ version of each and nothing removed them (46 of each on x86 by 2026-10-17).
 Alternatives not taken: a version limit on the files (`SET FILE/VERSION_LIMIT`: set
 per file, and lost if a file is recreated); purging in STEWARD$CONTROL (the pool
 procedure also runs without it, from a test pool).
+
+## D26. Installing and removing products: PRODUCT in a batch job as the viewer
+
+**Status:** proposed 2026-10-17 (PHASE12.md, 12b).
+
+An install or removal runs for minutes and may need privileges the kit's procedures
+decide, so the D14 helper, as the viewer, submits a fixed procedure
+(`STEWARD_PCSI_JOB.COM`) to SYS$BATCH under the viewer's username; the job switches on
+the privileges switched on in the session (D9) and runs `PRODUCT INSTALL ...
+/CONFIGURATION=CURRENT|PRODUCER /OPTIONS=NOCONFIRM` or `PRODUCT REMOVE ...
+/OPTIONS=NOCONFIRM`, logging to the viewer's SYS$LOGIN; the page follows the job and
+its log. Kits come from a directory on the node (`PRODUCT FIND`, no privilege). Steward
+refuses its own product and the operating system.
+
+Alternatives not taken: PRODUCT in the helper itself (30 s deadline, a request held for
+minutes); run by the service (its privileges, D2); uploaded kits (256 KB bodies,
+hundreds of MB kits).

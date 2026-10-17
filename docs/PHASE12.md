@@ -1,8 +1,9 @@
 # Phase 12: installed products
 
 **Status: 12a closed (2026-10-17)** on the user's browser checks of 0.11.0. The user
-approved D20 and the suggested answers below ("go with your suggestions"). 12b
-(install and remove) not yet decided.
+approved D20 and the suggested answers below ("go with your suggestions").
+**12b: install and remove, being planned (2026-10-17)**; D26 proposed, questions at the
+end.
 
 Read-only first (12a), as for the earlier areas. The user asked (2026-10-16) that
 products installed by VMSINSTAL be reported too, not only PCSI's.
@@ -61,3 +62,70 @@ checks.
 
 Closed 2026-10-17 on the user's browser checks of 0.11.0 ("kit installed, pool
 restarted, looks good"). 12b, installing and removing products, is to be decided.
+
+## 12b: install and remove (D26, proposed)
+
+### What the probes found (read-only, x86, 2026-10-17)
+
+- **Unattended**: `PRODUCT INSTALL` takes `/CONFIGURATION=PRODUCER` (the kit's own
+  answers to its questions), `CURRENT` (the answers recorded when it was installed:
+  the default, for an upgrade) or `INPUT=pcf`; `/OPTIONS=NOCONFIRM` drops the "are
+  these the products" confirmation. Whether anything else prompts (an unsigned kit,
+  a licence text, a product's own procedure) is not known without installing.
+- **Finding kits**: `PRODUCT FIND * /SOURCE=<dir>` lists the kits in a directory, in
+  the table PRODUCT SHOW uses (product, kit type, format), and needs no privilege; on
+  a directory without kits, `%PCSIUI-I-NOMATCH`.
+- **Privileges**: not stated by HELP. An install writes to the destination
+  (SYS$COMMON by default), the PCSI database and SYSLCK-protected locks, and runs the
+  kit's own procedures, which may need more (CMKRNL to INSTALL images, SYSNAM for
+  system logical names). Known only by trying.
+- **Time**: an install or removal can take minutes: far beyond the D14 helper's 30 s.
+
+### Design
+
+- **A batch job as the viewer.** The D14 helper (the viewer, short-lived) submits a
+  fixed procedure, `STEWARD$ROOT:[COM]STEWARD_PCSI_JOB.COM`, to SYS$BATCH under the
+  viewer's own username (no privilege needed to submit for oneself), with the
+  operation, the product, the source directory and the privileges switched on in the
+  session as parameters. The job switches those on (OpenVMS grants only what the
+  account is authorized for, D9) and runs `PRODUCT INSTALL <product> /SOURCE=<dir>
+  /CONFIGURATION=<CURRENT for an upgrade, PRODUCER otherwise> /OPTIONS=NOCONFIRM /LOG`
+  or `PRODUCT REMOVE <product> /OPTIONS=NOCONFIRM /LOG`, logging to the viewer's
+  SYS$LOGIN. The page follows the job (Phase 9's job view) and shows its log as it
+  grows; the list of products is refreshed when it ends.
+- **Kits from a directory on the node**, typed in the page: `PRODUCT FIND` lists what
+  it holds, through the helper as the viewer, parsed as the product list is
+  (`st_product.c`). No upload: request bodies stop at 256 KB, and kits run to hundreds
+  of megabytes.
+- **Refused by Steward**: Steward's own product (installing or removing it would stop
+  or replace the pool running the request; do it at a terminal, as now), and the
+  operating system (VSI ... VMS). Everything else is the manager's call, with what
+  references it shown before a removal.
+- **Validated twice**: names and the directory checked in core and again, character by
+  character, in both procedures; nothing typed reaches DCL except as checked data.
+- **API**: `GET api/v1/products/kits?source=`, `POST api/v1/products/install`
+  (`{"product", "source"}`), `POST api/v1/products/remove` (`{"product"}`), each
+  answering the job's entry; `GET api/v1/products/jobs/{entry}/log`. Audited.
+- **Tests**: a kit of Steward's own making, `ISSINOHO <base> STWDEMO V1.0`, one text
+  file, installed and removed through Steward as STEWARD_ADM with its destination in
+  the work directory: it still adds an entry to the PCSI database and takes it away,
+  a system-wide change only the user can allow (question 4).
+
+Alternatives considered:
+- **PRODUCT in the D14 helper directly**: no job to follow, but the 30 s deadline, and
+  a request held for minutes.
+- **The service runs PRODUCT**: its privileges, not the viewer's (D2).
+- **Uploading kits**: the body limit, and a new path for large writes to the node.
+
+## Questions for the user (12b)
+
+1. **A batch job as the viewer**, followed in the page, as above?
+2. **Kits from a directory typed in the page** (no upload)?
+3. **Refuse Steward's own product and the operating system**, allow the rest?
+4. **Testing**: may I build the demo kit and, through Steward as STEWARD_ADM, install
+   and remove it on x86 (files in the work directory; an entry added to and removed
+   from the PCSI database)? STEWARD_ADM may need more privileges authorized than it
+   has (SYSPRV, SYSLCK); the first try will say which, and I would give you the
+   AUTHORIZE command to run.
+
+Suggested answers: 1 yes; 2 yes; 3 yes; 4 yes.

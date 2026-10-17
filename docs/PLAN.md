@@ -188,8 +188,8 @@ and Phase 10's shared helper (0.10.1). See `docs/PHASE11.md`.
 **Phase 12: installed products** (D20). 12a, read-only, closed 2026-10-17 on the
 user's browser checks (0.11.0): PRODUCT SHOW PRODUCT/FULL and HISTORY/FULL in the D14
 helper (the account needs SYSLCK authorized; PRODUCT switches it on), and VMSINSTAL's
-history read in-process. 12b (install and remove) not yet decided. See
-`docs/PHASE12.md`.
+history read in-process. 12b (install and remove, D26 proposed) being planned:
+questions in `docs/PHASE12.md`.
 
 **Phase 13: monitoring** (D21). 13a, read-only, closed 2026-10-17 on the user's
 browser checks (0.12.0): `$GETRMI` counters, readable by anyone, polled by the page
