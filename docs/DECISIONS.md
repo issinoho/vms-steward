@@ -579,3 +579,22 @@ read in-process under the persona (as D13 reads its files) and parsed in core.
 
 Alternatives not taken: reading the PCSI$*.PCSI$DATABASE files directly (format not
 documented); the commands run by the service (its view, and its privileges, D2).
+
+## D21. Monitoring: raw counters from the service, history in the browser
+
+**Status:** proposed 2026-10-17, questions in PHASE13.md. Phase 13.
+
+`$GETRMI` gives anyone the system-wide counters MONITOR shows (CPU modes, process
+states, memory lists, paging, I/O), and `$GETDVI` each disk's operation count, without
+privilege (probe, NOTES.md); nothing on the node records history. So `GET
+api/v1/monitor` returns one reading of the raw counters, in-process under the persona,
+with each process the viewer may see (as Phase 8); it keeps no state, so any pool
+process answers it. The page polls while open, works out rates from consecutive
+readings in a unit-tested JS module, keeps the last 30 minutes in memory and draws
+MONITOR's classes as SVG charts.
+
+Alternatives not taken (for now): a Steward sampler process on the node recording to a
+file (history that survives, but a new long-running process; a possible 13b); MONITOR
+/RECORD (system-wide, undocumented format); MONITOR in the D14 helper (a process a
+reading, for counters open in-process anyway); per-CPU figures (`RMI$_MODES` layout
+unsettled).
