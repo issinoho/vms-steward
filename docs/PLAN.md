@@ -191,9 +191,10 @@ helper (the account needs SYSLCK authorized; PRODUCT switches it on), and VMSINS
 history read in-process. 12b (install and remove) not yet decided. See
 `docs/PHASE12.md`.
 
-**Phase 13: monitoring** (D21, approved 2026-10-17): 13a being built. `$GETRMI` counters, readable by
-anyone, polled by the page, history kept in the browser. Probes done; questions for
-the user in `docs/PHASE13.md`, which is where to pick up.
+**Phase 13: monitoring** (D21). 13a, read-only, closed 2026-10-17 on the user's
+browser checks (0.12.0): `$GETRMI` counters, readable by anyone, polled by the page
+(5 s by default), history kept in the browser for 30 minutes, and the busiest
+processes among those the viewer may see. 13b not yet decided. See `docs/PHASE13.md`.
 
 **Later areas, one at a time and each with the same read-only → modify split:** licences, installed products,
 CPU/memory monitoring, error log, and a WebSocket terminal (lighttpd `mod_wstunnel`); licences are Phase 11.

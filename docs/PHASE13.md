@@ -1,7 +1,7 @@
 # Phase 13: monitoring
 
-**Status: 13a being built (2026-10-17).** The user approved D21 and the suggested
-answers below ("go").
+**Status: 13a closed (2026-10-17)** on the user's browser checks of the 0.12.0 kit.
+The user approved D21 and the suggested answers below ("go"). 13b not yet decided.
 
 CPU, memory, paging and I/O over time, as MONITOR shows them, in the browser. The
 dashboard (Phase 5) already shows one snapshot: CPU busy between two polls, memory,
@@ -85,3 +85,6 @@ MODES,SYSTEM,IO/SUMMARY over the same 21 s: idle 46.5 vs 48.8, buffered I/O 2,57
 Kit T0.12-0 (0.12.0), built by `tools/kit.sh x86` (417 native checks), SHA-256
 `cb3379ea64b0ae5815a4dd8d27125d857d6322f574ff2490182244ea6deb1101`, for the browser
 checks. It also carries the `item_u64` return-length fix (NOTES.md).
+
+Browser checks: the user installed the kit on x86, restarted the pool and confirmed
+the Monitoring page (2026-10-17). 13a closed.
