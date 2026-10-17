@@ -217,3 +217,11 @@ SYSPRV switched on; a listing deleted, the other two purged before a day; every 
 and refusal in the audit log; a test pool's START purged 15 versions of each to 5;
 the system's SYS$ERRORLOG unchanged (ERRLOG.SYS and 37 listings). Linux: 509 unit
 checks, 56 API checks, the UI tests (the new controls included), `make audit`.
+
+Regression: `tests/vms/phase14_live.py x86` with the edited helper (the file as a
+fourth message): 19 ok, 0 failed.
+
+Kit T0.15-0 (0.15.0), built by `tools/kit.sh x86` (509 native checks), SHA-256
+`aab2e0f65e840471ff32a4c94c669ce2cb0554c9ef5cd72af45dee3ec35e6ef7`, for the browser
+checks. Its RESTART uses the new pool procedure, so the first START with it purges
+`[.RUN.LOGS]` to 10 of each.
