@@ -1,7 +1,9 @@
 # Phase 13: monitoring
 
 **Status: 13a closed (2026-10-17)** on the user's browser checks of the 0.12.0 kit.
-The user approved D21 and the suggested answers below ("go"). 13b not yet decided.
+The user approved D21 and the suggested answers below ("go").
+**13b: history on the node, being planned (2026-10-17)**; D22 proposed, questions at
+the end.
 
 CPU, memory, paging and I/O over time, as MONITOR shows them, in the browser. The
 dashboard (Phase 5) already shows one snapshot: CPU busy between two polls, memory,
@@ -88,3 +90,78 @@ checks. It also carries the `item_u64` return-length fix (NOTES.md).
 
 Browser checks: the user installed the kit on x86, restarted the pool and confirmed
 the Monitoring page (2026-10-17). 13a closed.
+
+## 13b: history recorded on the node (D22, proposed)
+
+13a's history lasts while the page is open. 13b records the system-wide counters on
+the node, so the page can show the last hours or days whoever looks and whenever.
+
+- **A recorder process, `STEWARD_RECORDER`**, started and stopped with the pool by
+  `STEWARD_POOL.COM` (same DCL restart loop and stop file), running the same image as
+  `STEWARD -r`. It is the service account but switches IMPERSONATE and SYSPRV off for
+  good at start (`$SETPRV` permanent): it never assumes a persona, and `$GETRMI` and
+  `$GETDVI` need no privilege. Every interval (60 s by default, on the clock's
+  boundaries) it takes one reading, the same `st_plat_monitor` the page uses, and
+  writes it.
+- **System-wide figures only; no processes.** The recorder sees every process, but
+  what a viewer may see of one is decided by `$GETJPI` as the viewer (D10, D16), and a
+  process that has ended can no longer be asked. So per-process history is not kept;
+  the busiest-processes tables stay live-only.
+- **A fixed-size ring, `[.RUN]MONITOR.DAT`**: an RMS indexed file of fixed records
+  (as the session store), keyed by slot, slot = (time / interval) mod slots; a header
+  record (key 0) holds the interval and the number of slots. It never grows: 7 days
+  at 60 s is 10,080 slots of about 1.5 KB, some 15 MB. Each record carries its own
+  time, so a stale slot (the recorder was stopped, the interval changed) is simply
+  skipped. Records are encoded with explicit offsets and byte order in core (as the
+  FastCGI records), unit-tested; private to the service account, like the rest of
+  `[.RUN]`.
+- **`GET api/v1/monitor/history?minutes=N&points=P`**: up to P readings spread over
+  the last N minutes (keyed reads, one per point), each the same raw counters as
+  `GET api/v1/monitor` without the processes. Because the counters are cumulative,
+  every *k*th reading still gives exact averages between them, so a week fits in 300
+  points and `rates.js` works on it unchanged; gauges (memory, process states) are the
+  values at each point. The pool opens the file at start, as the service account (as
+  it opens the session store and the audit log), and reads it under the persona: it
+  holds only what `$GETRMI` gives anyone, so any signed-in user may see it (D10).
+- **The page**: a range choice beside the interval: *Live* (13a: 30 minutes from the
+  browser, the busiest processes) or *6 hours*, *24 hours*, *7 days* from the
+  recording, the same charts, refreshed each minute. Gaps (the recorder stopped, a
+  reboot) show as gaps. Without a recording (recorder off, file not there yet) the
+  ranges say so and Live works as now.
+- **Settings** (`STEWARD_SETTINGS.COM`): `STEWARD_RECORD_SECS` (60; 0 turns the
+  recorder off), `STEWARD_RECORD_DAYS` (7). `STEWARD$CONTROL STATUS` lists the
+  recorder with the pool.
+
+Alternatives considered:
+- **Recording inside a pool process** (a timer AST): no extra process, but the AST
+  could fire while a request's persona is assumed and write the file as the viewer;
+  and each pool process would record, or they would have to agree which one does.
+- **Daily sequential files**: simple appends, but they grow and need pruning, and
+  finding a time means reading from the start.
+- **MONITOR /RECORD**: system-wide, needs the user to run it, format undocumented.
+- **Keeping rates rather than counters**: smaller, but the averages over a longer
+  range then need weighting, and a reboot inside an interval is lost; counters let
+  `rates.js` do all of it.
+
+## Questions for the user (13b)
+
+1. **On by default?** The recorder starts with the pool unless `STEWARD_RECORD_SECS`
+   is 0; or off until the setting is made.
+2. **Interval and retention.** 60 s for 7 days (about 15 MB, fixed)? Or e.g. 30 s for
+   7 days (30 MB), or 60 s for 30 days (65 MB).
+3. **Ranges on the page.** Live, 6 hours, 24 hours, 7 days?
+4. **No per-process history** (as above): the busiest processes stay live-only.
+
+Suggested answers: 1 on by default; 2 60 s for 7 days; 3 yes; 4 agreed.
+
+## Exit (13b)
+
+- The record encoding and slot arithmetic in core, unit-tested (wraps of the ring,
+  stale slots, an interval change).
+- On x86, in the work directory: a recorder run with a short interval writes a file
+  that `api_probe` reads back through `GET api/v1/monitor/history`, the readings
+  agreeing with `GET api/v1/monitor` taken alongside; the recorder holds no
+  IMPERSONATE or SYSPRV (`F$GETJPI`); STEWARD_TEST reads the history.
+- The pool procedure starts, lists and stops the recorder (in the work directory's
+  test pool, not the user's).
+- A UI test on the stub for the ranges; a kit and the user's browser checks.

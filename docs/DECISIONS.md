@@ -600,3 +600,24 @@ file (history that survives, but a new long-running process; a possible 13b); MO
 /RECORD (system-wide, undocumented format); MONITOR in the D14 helper (a process a
 reading, for counters open in-process anyway); per-CPU figures (`RMI$_MODES` layout
 unsettled).
+
+## D22. Monitoring history: a recorder process writing a fixed ring of raw counters
+
+**Status:** proposed 2026-10-17 (PHASE13.md, 13b). Amends D21's "history in the
+browser" for ranges beyond the live 30 minutes.
+
+A detached `STEWARD_RECORDER` (the image as `STEWARD -r`), started and stopped with the
+pool, running as the service account with IMPERSONATE and SYSPRV permanently off, takes
+one `st_plat_monitor` reading each interval (60 s) and writes the system-wide raw
+counters, no processes, into `[.RUN]MONITOR.DAT`: an RMS indexed file of fixed records
+keyed by slot, a ring of fixed size (7 days). `GET api/v1/monitor/history` returns up to
+P readings spread over a range by keyed reads; since the counters are cumulative, the
+browser's `rates.js` gives exact averages between any two. The pool opens the file at
+start as the service account, like the session store; anyone signed in may read it, as
+anyone may call `$GETRMI` (D10). Processes are not recorded: what a viewer may see of a
+process is `$GETJPI`'s answer as the viewer, which cannot be asked of one that ended.
+
+Alternatives not taken: recording in a pool process by timer AST (could write under a
+viewer's persona; every process would record); daily sequential files (grow, need
+pruning, slow to seek); MONITOR /RECORD (system-wide, undocumented); recording rates
+instead of counters (weighted averages, reboots inside an interval lost).
