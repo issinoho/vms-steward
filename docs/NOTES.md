@@ -550,3 +550,11 @@ the search list goes on to `SYS$COMMON`, where it is not, so the PRV is lost (as
 ACCOUNTNG, above). A CLUE listing in `SYS$COMMON:[SYSERR]` gives PRV properly.
 Timings with SYSPRV, 1,807 events: `/ONE_LINE` 4 s, one `/ENTRY` 5 s, `/FULL` 10 s
 (6 MB).
+
+**ELV ignores a SYS$OUTPUT defined for it; OPERATOR.LOG is "not found" too** (Phase 14,
+2026-10-17). With `DEFINE/USER SYS$OUTPUT <file>` (or the reply mailbox) ELV wrote an
+empty file and nothing else, so `STEWARD_ERRLOG.COM` gives it `/OUTPUT=<mailbox>`;
+its refusal then arrives twice, on SYS$OUTPUT and SYS$ERROR, and Steward keeps it
+once. Unprivileged, opening `SYS$MANAGER:OPERATOR.LOG` gives RMS-E-FNF, not PRV:
+`SYS$MANAGER` is `SYS$SYSROOT:[SYSMGR]`, a search list, as for ERRLOG.SYS above;
+Steward reports it as a refusal and says why. (`tests/vms/phase14_live.py`.)

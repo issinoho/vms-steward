@@ -359,6 +359,9 @@ static char license_helper_path[256];
 /* The installed products' procedure (Phase 12, D20), fixed and resolved the same way. */
 static char product_helper[256] = "STEWARD$ROOT:[COM]STEWARD_PRODUCT.COM";
 static char product_helper_path[256];
+/* The error log's procedure (Phase 14, D23), fixed and resolved the same way. */
+static char errlog_helper[256] = "STEWARD$ROOT:[COM]STEWARD_ERRLOG.COM";
+static char errlog_helper_path[256];
 
 /* spec to a physical path in out ("" if it cannot be): $PARSE and $SEARCH with
    NOCONCEAL, as the service, then the device's full name. */
@@ -415,6 +418,15 @@ static void lnm_resolve_helper(void)
     resolve_procedure(sysgen_helper, sysgen_helper_path, sizeof sysgen_helper_path, "SYSGEN helper");
     resolve_procedure(license_helper, license_helper_path, sizeof license_helper_path, "licence helper");
     resolve_procedure(product_helper, product_helper_path, sizeof product_helper_path, "products helper");
+    resolve_procedure(errlog_helper, errlog_helper_path, sizeof errlog_helper_path, "error log helper");
+}
+
+/* For tests/vms/api_probe.c only, to run an edited error log procedure before it is
+   installed. STEWARD.EXE never calls it. */
+void st_plat_vms_test_errlog(const char *path)
+{
+    st_copy(errlog_helper, sizeof errlog_helper, path);
+    lnm_resolve_helper();
 }
 
 /* For tests/vms/api_probe.c only, to run an edited products procedure before it is
@@ -3349,6 +3361,160 @@ int st_plat_vmsinstal(st_vmsinstal_cb fn, void *ctx, unsigned int *cond, char te
         if (st_vmsinstal_line((const char *) line, rab.rab$w_rsz, &v) && fn(&v, ctx)) break;
     sys$close(&fab);
     if (!(st & 1) && st != RMS$_EOF) { *cond = st; msgtext(st, text, 256); }
+    return 0;
+}
+
+/* ---- the error log (Phase 14, D23) ---- */
+
+static void errlog_line(const char *line, size_t len, void *ctx)
+{
+    st_elv_line((st_elv_parser *) ctx, line, len);
+}
+
+int st_plat_errlog(const char *privs, int op, unsigned int arg, st_elv_parser *p, st_err *e)
+{
+    const char *msgs[3];
+    char a[16];
+    unsigned int status = 0;
+    snprintf(a, sizeof a, "%u", arg);
+    msgs[0] = privs;
+    msgs[1] = op == ST_ELV_ENTRY ? "ENTRY" : "LIST";
+    msgs[2] = a;
+    if (helper_run(errlog_helper_path, msgs, 3, errlog_line, p, &status, e)) return -1;
+    if (!(status & 1)) { set_cond(e, status); return -1; }   /* the procedure refused */
+    return 0;
+}
+
+/* CLUE's listings: SYS$ERRORLOG:CLUE$*.LIS as the persona, each opened for its first
+   page. A listing it may not open refuses the lot: they share their protection. */
+int st_plat_crashes(st_crash_cb fn, void *ctx, st_err *e)
+{
+    static unsigned char line[1024];
+    static char esa[NAM$C_MAXRSS + 1], rsa[NAM$C_MAXRSS + 1];
+    static st_clue_summary s;
+    struct FAB sfab = cc$rms_fab, fab;
+    struct NAM nam = cc$rms_nam;
+    struct RAB rab;
+    char name[64], full[NAM$C_MAXRSS + 1];
+    unsigned int st;
+    int n = 0;
+
+    sfab.fab$l_fna = "SYS$ERRORLOG:CLUE$*.LIS";
+    sfab.fab$b_fns = 23;
+    sfab.fab$l_nam = &nam;
+    nam.nam$l_esa = esa;
+    nam.nam$b_ess = NAM$C_MAXRSS;
+    nam.nam$l_rsa = rsa;
+    nam.nam$b_rss = NAM$C_MAXRSS;
+    st = sys$parse(&sfab);
+    if (!(st & 1)) { set_cond(e, st); return -1; }
+    while ((st = sys$search(&sfab)) & 1) {
+        size_t nl = (size_t) nam.nam$b_name + nam.nam$b_type;
+        if (nl >= sizeof name || ++n > 5000) continue;
+        memcpy(name, nam.nam$l_name, nl);
+        name[nl] = '\0';
+        if (!st_valid_clue_name(name)) continue;
+        memcpy(full, rsa, nam.nam$b_rsl);
+        full[nam.nam$b_rsl] = '\0';
+        st = ax_open(&fab, &rab, 0, full, 0, line, sizeof line - 1);
+        if (!(st & 1)) { set_cond(e, st); return -1; }
+        st_clue_init(&s);
+        while (!s.done && (ax_get(&rab) & 1)) st_clue_line(&s, (const char *) line, rab.rab$w_rsz);
+        sys$close(&fab);
+        if (fn(name, &s, ctx)) break;
+    }
+    if (!(st & 1) && st != RMS$_NMF && st != RMS$_FNF) { set_cond(e, st); return -1; }
+    return 0;
+}
+
+int st_plat_crash_text(const char *name, st_text_cb fn, void *ctx, st_err *e)
+{
+    static unsigned char line[1024];
+    struct FAB fab;
+    struct RAB rab;
+    unsigned int st = ax_open(&fab, &rab, 0, name, "SYS$ERRORLOG:", line, sizeof line - 1);
+    if (!(st & 1)) {
+        set_cond(e, st);
+        if (st == RMS$_FNF) e->kind = ST_E_NOTFOUND;
+        return -1;
+    }
+    while ((st = ax_get(&rab)) & 1)
+        if (fn((const char *) line, rab.rab$w_rsz, ctx)) break;
+    sys$close(&fab);
+    if (!(st & 1) && st != RMS$_EOF) { set_cond(e, st); return -1; }
+    return 0;
+}
+
+/* OPCOM's log: the newest SYS$MANAGER:OPERATOR.LOG, shared with OPCOM, which has it
+   open for writing. */
+int st_plat_opcom(st_opcom_parser *p, char file[96], st_err *e)
+{
+    static unsigned char line[4096];
+    static char rsa[NAM$C_MAXRSS + 1];
+    struct FAB fab = cc$rms_fab;
+    struct RAB rab = cc$rms_rab;
+    struct NAM nam = cc$rms_nam;
+    unsigned int st;
+    file[0] = '\0';
+    fab.fab$l_fna = "SYS$MANAGER:OPERATOR.LOG";
+    fab.fab$b_fns = 24;
+    fab.fab$l_nam = &nam;
+    nam.nam$l_rsa = rsa;
+    nam.nam$b_rss = NAM$C_MAXRSS;
+    fab.fab$b_fac = FAB$M_GET;
+    fab.fab$b_shr = FAB$M_SHRGET | FAB$M_SHRPUT | FAB$M_SHRUPD | FAB$M_UPI;
+    st = sys$open(&fab);
+    if (st == RMS$_FNF) {
+        /* SYS$MANAGER is a search list: a version the viewer may not read in the first
+           directory is reported as not found in the last (NOTES.md). */
+        set_cond(e, st);
+        e->kind = ST_E_NOPRIV;
+        st_append(e->text, sizeof e->text, " (OpenVMS reports a file you may not read here as not found)");
+        return -1;
+    }
+    if (!(st & 1)) { set_cond(e, st); return -1; }
+    if (nam.nam$b_rsl < 96) { memcpy(file, rsa, nam.nam$b_rsl); file[nam.nam$b_rsl] = '\0'; }
+    rab.rab$l_fab = &fab;
+    rab.rab$l_ubf = (char *) line;
+    rab.rab$w_usz = sizeof line - 1;
+    rab.rab$l_rop = RAB$M_RRL | RAB$M_NLK;
+    st = sys$connect(&rab);
+    if (!(st & 1)) { sys$close(&fab); set_cond(e, st); return -1; }
+    while ((st = ax_get(&rab)) & 1) st_opcom_line(p, (const char *) line, rab.rab$w_rsz);
+    sys$close(&fab);
+    st_opcom_end(p);
+    if (!(st & 1) && st != RMS$_EOF) { set_cond(e, st); return -1; }
+    return 0;
+}
+
+/* Every device's error count ($DEVICE_SCAN, $GETDVI ERRCNT: no privilege); those with
+   any. Named as the dashboard names disks ("DKA0:"). */
+int st_plat_device_errors(st_deverr_cb fn, void *ctx, int *scanned, st_err *e)
+{
+    unsigned int dctx[2] = { 0, 0 }, st, errs;
+    char name[65], full[65];
+    unsigned short len;
+    struct dsc$descriptor_s nd;
+    st_dev_errors d;
+    const char *q;
+    (void) e;
+    *scanned = 0;
+    for (;;) {
+        len = 0;
+        desc(&nd, name, 64);
+        st = sys$device_scan(&nd, &len, 0, 0, (void *) dctx);
+        if (!(st & 1)) break;
+        name[len] = '\0';
+        if (++*scanned > 100000) break;
+        errs = dvi_u32(name, DVI$_ERRCNT);
+        if (!errs) continue;
+        dvi_str(name, DVI$_FULLDEVNAM, full, sizeof full);
+        q = strchr(full, '$');
+        q = q ? q + 1 : (full[0] == '_' ? full + 1 : full);
+        st_copy(d.device, sizeof d.device, q[0] ? q : name);
+        d.errors = errs;
+        if (fn(&d, ctx)) break;
+    }
     return 0;
 }
 

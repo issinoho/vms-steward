@@ -1814,6 +1814,185 @@ int st_plat_vmsinstal(st_vmsinstal_cb fn, void *ctx, unsigned int *cond, char te
     return 0;
 }
 
+/* ================================================================ the error log (D23)
+
+   As on x86: ERRLOG.SYS, the CLUE listings and OPERATOR.LOG need SYSPRV switched on
+   (no stub user is in the SYSTEM group); ELV says "file not found" and success without
+   it (NOTES.md). The events are made up, relative to now, newest a day old; their node
+   is STUB01. Device error counts are anyone's. */
+static int stub_sysprv(void) { return persona && (persona_cur[0] & BIT(28)); }
+
+typedef struct { int days; int hour; const char *type, *cls; } stub_event;
+static const stub_event stub_events[] = {   /* oldest first, as ELV lists them */
+    { 400, 9, "New File Created", "CONTROL_ENTRIES" },
+    { 200, 3, "System Bugcheck", "BUGCHECKS" },
+    { 200, 3, "Crash Restart", "BUGCHECKS" },
+    { 45, 14, "Volume Mount", "VOLUME_CHANGES" },
+    { 40, 11, "Time Stamp", "CONTROL_ENTRIES" },
+    { 10, 16, "Volume Dismount", "VOLUME_CHANGES" },
+    { 5, 8, "System Service Message", "CONTROL_ENTRIES" },
+    { 3, 15, "System Bugcheck", "BUGCHECKS" },
+    { 3, 15, "Crash Restart", "BUGCHECKS" },
+    { 2, 10, "Volume Mount", "VOLUME_CHANGES" },
+    { 1, 14, "Time Stamp", "CONTROL_ENTRIES" },
+};
+#define STUB_NEVENTS (int) (sizeof stub_events / sizeof stub_events[0])
+
+static void stub_vms_time(int days, int hour, int k, char out[40])
+{
+    static const char *const mon[] = { "JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC" };
+    time_t t = time(NULL) - (time_t) days * 86400;
+    struct tm tm = *localtime(&t);
+    snprintf(out, 40, "%02d-%s-%04d %02d:%02d:%02d.%02d", tm.tm_mday % 32, mon[tm.tm_mon % 12], (tm.tm_year + 1900) % 10000,
+             hour % 24, (7 + k) % 60, (12 + k) % 60, 11 * k % 100);
+}
+
+static void elv_feed(st_elv_parser *p, const char *s) { st_elv_line(p, s, strlen(s)); }
+
+static void stub_event_row(st_elv_parser *p, int k)
+{
+    char when[40], row[160];
+    stub_vms_time(stub_events[k].days, stub_events[k].hour, k, when);
+    snprintf(row, sizeof row, "%-7d%-41s%-25s%-8s%s", 1000 + k, stub_events[k].type, when, "STUB01", stub_events[k].cls);
+    elv_feed(p, row);
+}
+
+static void stub_field(st_elv_parser *p, const char *d, const char *range, const char *v, const char *t)
+{
+    char row[200];
+    snprintf(row, sizeof row, "%-48s%-11s%-21s%s", d, range, v, t);
+    elv_feed(p, row);
+}
+
+int st_plat_errlog(const char *privs, int op, unsigned int arg, st_elv_parser *p, st_err *e)
+{
+    int k;
+    (void) privs;
+    (void) e;
+    elv_feed(p, op == ST_ELV_ENTRY ? "%%PART%% ENTRY" : "%%PART%% EVENTS");
+    if (!stub_sysprv()) {
+        elv_feed(p, "%ELV-E-FILOPNERR, error opening SYS$SYSROOT:[SYSERR]ERRLOG.SYS;1");
+        elv_feed(p, "-RMS-E-FNF, file not found");
+        elv_feed(p, "%%STATUS%% 00000001");
+        return 0;
+    }
+    elv_feed(p, "Output for SYS$SYSROOT:[SYSERR]ERRLOG.SYS;1");
+    elv_feed(p, "");
+    elv_feed(p, "EVENT  EVENT_TYPE_____________________________  TIMESTAMP______________  NODE__  EVENT_CLASS____________________________");
+    for (k = 0; k < STUB_NEVENTS; k++) {
+        if (op == ST_ELV_LIST && arg && (unsigned int) stub_events[k].days > arg) continue;
+        if (op == ST_ELV_ENTRY && (unsigned int) (1000 + k) != arg) continue;
+        stub_event_row(p, k);
+        if (op != ST_ELV_ENTRY) continue;
+        elv_feed(p, "");
+        elv_feed(p, "DESCRIPTION__________________________________   RANGE___   VALUE_____________   TRANSLATED_VALUE_______________________");
+        stub_field(p, "   Hardware Architecture", "", "5", "Intel X86");
+        stub_field(p, "   Number of CPU's in Active Set", "", "4", "");
+        stub_field(p, "   Operating System Version", "", "E9.2-4", "");
+        elv_feed(p, "");
+        if (!strcmp(stub_events[k].cls, "BUGCHECKS")) {
+            stub_field(p, "   Program Counter", "", "0xFFFF830006EB4930", "");
+            stub_field(p, "   Processor Status", "<63:00>:", "0x0000000000000000", "");
+            stub_field(p, "      Current Mode", "<04:03>:", "0x0", "Kernel");
+        } else if (!strcmp(stub_events[k].type, "System Service Message")) {
+            stub_field(p, "   Message", "", "", "");
+            elv_feed(p, "   CPU   0 LID: 0x00000000  Die: 0xFFFF Package:  0 Core:  0 Thread  0 ACPI:    0");
+        } else {
+            stub_field(p, "   Device Generic Name", "", "DKA", "");
+            stub_field(p, "   Volume Label", "", "STUBSYS", "");
+        }
+    }
+    elv_feed(p, "%%STATUS%% 00000001");
+    return 0;
+}
+
+static const char *const stub_clue_names[] = { "CLUE$STUB01_130926_1517.LIS", "CLUE$STUB01_020426_0310.LIS" };
+static const char *const stub_clue_text[][14] = {
+    { "OpenVMS Operating System, Version E9.2-4   -- System Dump Analysis   13-SEP-2026 15:17:29.80     Page     1",
+      "Crashdump Summary Information:", "", "Crash Time:        13-SEP-2026 15:17:29.80",
+      "Bugcheck Type:     PGFIPLHI, Pagefault with IPL too high", "Node:              STUB01  (Standalone)",
+      "Current Process:   USB$UCM_SERVER", "Current Image:     DKA0:[SYS0.SYSCOMMON.][SYSEXE]USB$UCM_SERVER.EXE;1",
+      "Failing PC:        FFFF8300.06EB4930    SYS$HUBDRIVER+80001330", "Module:            SYS$HUBDRIVER    (Link Date/Time: 27-JUL-2026 11:28:12.75)",
+      "System Uptime:               0 00:00:26.19", "", "Stack Pointers:", "KSP = FFFFFFFF.8C04D860   ESP = 00000000.7FF8BE00" },
+    { "OpenVMS Operating System, Version E9.2-4   -- System Dump Analysis    2-APR-2026 03:10:02.10     Page     1",
+      "Crashdump Summary Information:", "", "Crash Time:         2-APR-2026 03:10:02.10",
+      "Bugcheck Type:     INCONSTATE, Inconsistent I/O data base", "Node:              STUB01  (Standalone)",
+      "Current Process:   NULL", "Current Image:     ", "Failing PC:        FFFF8300.0612AB00    EXE$BUGCHECK+00000120",
+      "Module:            SYS$BASE_IMAGE", "System Uptime:               2 04:51:10.33", "", "Stack Pointers:",
+      "KSP = FFFFFFFF.8C04D860   ESP = 00000000.7FF8BE00" },
+};
+
+static int stub_no_sysprv(st_err *e)
+{
+    set_err(e, ST_E_NOPRIV, "insufficient privilege or file protection violation");
+    e->cond = 0x1001829Au;   /* RMS$_PRV */
+    return -1;
+}
+
+int st_plat_crashes(st_crash_cb fn, void *ctx, st_err *e)
+{
+    st_clue_summary s;
+    int i, k;
+    if (!stub_sysprv()) return stub_no_sysprv(e);
+    for (i = 0; i < 2; i++) {
+        st_clue_init(&s);
+        for (k = 0; k < 14 && !s.done; k++) st_clue_line(&s, stub_clue_text[i][k], strlen(stub_clue_text[i][k]));
+        if (fn(stub_clue_names[i], &s, ctx)) break;
+    }
+    return 0;
+}
+
+int st_plat_crash_text(const char *name, st_text_cb fn, void *ctx, st_err *e)
+{
+    int i, k;
+    if (!stub_sysprv()) return stub_no_sysprv(e);
+    for (i = 0; i < 2; i++) {
+        if (strcmp(name, stub_clue_names[i])) continue;
+        for (k = 0; k < 14; k++) if (fn(stub_clue_text[i][k], strlen(stub_clue_text[i][k]), ctx)) break;
+        return 0;
+    }
+    set_err(e, ST_E_NOTFOUND, "file not found");
+    return -1;
+}
+
+static const char *const stub_opcom_file[] = {
+    "", "%%%%%%%%%%%  OPCOM  15-OCT-2026 16:05:50.49  %%%%%%%%%%%",
+    "Logfile has been initialized by operator _STUB01$OPA0:", "Logfile is STUB01::SYS$SYSROOT:[SYSMGR]OPERATOR.LOG;12", "",
+    "%%%%%%%%%%%  OPCOM  15-OCT-2026 16:06:09.11  %%%%%%%%%%%", "Message from user STEWARD_TEST on STUB01",
+    "FTA12:, Steward test: OPCOM check", "",
+    "%%%%%%%%%%%  OPCOM  15-OCT-2026 16:10:50.51  %%%%%%%%%%%", "Logfile time stamp", "",
+    "%%%%%%%%%%%  OPCOM  16-OCT-2026 12:06:03.53  %%%%%%%%%%%", "Message from user SYSTEM on STUB01",
+    "%TCPIP-F-LPD_BADPORT, error getting a port", "-SYSTEM-F-TIMEOUT, device timeout", "",
+    "%%%%%%%%%%%  OPCOM  16-OCT-2026 13:10:50.78  %%%%%%%%%%%", "Logfile time stamp", "",
+    "%%%%%%%%%%%  OPCOM  17-OCT-2026 08:00:01.02  %%%%%%%%%%%", "Message from user SYSTEM on STUB01",
+    "Batch queue SYS$BATCH started", "", NULL };
+
+int st_plat_opcom(st_opcom_parser *p, char file[96], st_err *e)
+{
+    int i;
+    file[0] = '\0';
+    if (!stub_sysprv()) {   /* as on x86: the search list makes it "not found" */
+        set_err(e, ST_E_NOPRIV, "file not found (OpenVMS reports a file you may not read here as not found)");
+        e->cond = 0x00018292u;   /* RMS$_FNF */
+        return -1;
+    }
+    st_copy(file, 96, "SYS$SYSROOT:[SYSMGR]OPERATOR.LOG;12");
+    for (i = 0; stub_opcom_file[i]; i++) st_opcom_line(p, stub_opcom_file[i], strlen(stub_opcom_file[i]));
+    st_opcom_end(p);
+    return 0;
+}
+
+int st_plat_device_errors(st_deverr_cb fn, void *ctx, int *scanned, st_err *e)
+{
+    st_dev_errors d;
+    (void) e;
+    *scanned = 3;   /* DKA0:, DKA100:, DKB0:; only DKA100: has errors */
+    st_copy(d.device, sizeof d.device, "DKA100:");
+    d.errors = 2;
+    fn(&d, ctx);
+    return 0;
+}
+
 /* ================================================================ misc */
 
 long long st_plat_time(void) { return (long long) time(NULL); }

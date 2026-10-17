@@ -96,6 +96,13 @@ export const api = {
   products: () => call('GET', 'products'),
   // Phase 13: one reading of the counters MONITOR shows (D21); background as for system.
   monitor: (background) => call('GET', 'monitor', undefined, background ? { 'X-Steward-Background': '1' } : undefined),
+  // Phase 14: the error log (D23). The first three need SYSPRV, as OpenVMS sets them.
+  errorlog: (days) => call('GET', `errorlog${query({ days })}`),
+  errorlogEvent: (n) => call('GET', `errorlog/${encodeURIComponent(n)}`),
+  crashes: () => call('GET', 'crashes'),
+  crash: (name) => call('GET', `crashes/${encodeURIComponent(name)}`),
+  operatorLog: (stamps) => call('GET', `operator-log${query({ stamps: stamps ? 1 : 0 })}`),
+  deviceErrors: () => call('GET', 'device-errors'),
   // Phase 13b: readings from the recording on the node (D22), up to points of them
   // over the last minutes.
   monitorHistory: (minutes, points, background) => call('GET', `monitor/history${query({ minutes, points })}`,

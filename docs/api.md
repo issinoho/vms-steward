@@ -893,6 +893,77 @@ may read it, as anyone may read the counters. Background polls as above.
 Without a recording (the recorder off, or not started yet): `{"recording": false,
 "readings": []}`.
 
+## Error log (Phase 14, D23): read-only
+
+The error log, the crash listings and OPCOM's log are protected (S:RWED,O:RWED,G:RE,W:):
+a viewer needs SYSPRV switched on (D9), or a UIC in the SYSTEM group. Otherwise each
+answers 403 with OpenVMS's refusal. The device error counts are open to anyone.
+
+### `GET api/v1/errorlog?days=`
+
+The events in `ERRLOG.SYS` over the last `days` (0 to 9999, default 30; 0 for the
+whole file), oldest first, as `ANALYZE/ERROR_LOG/ELV TRANSLATE/ONE_LINE` lists them,
+run in the D14 helper as you. `time` is the node's local time.
+
+```json
+{"days": 30, "events": [{"number": 1801, "type": "Crash Restart", "time": "2026-10-13T15:33:12",
+                         "node": "X86VMS", "class": "BUGCHECKS"}], "truncated": false}
+```
+
+Without access, ELV says `%ELV-E-FILOPNERR ... -RMS-E-FNF, file not found` and exits
+with success; Steward answers 403 with that text in `detail`, and why it says "not
+found" (NOTES.md).
+
+### `GET api/v1/errorlog/{n}`
+
+One event in full (`/ENTRY=(START:n,END:n)`; ELV reads the whole file, some 5 s): the
+event, and its fields in order. A field has `description` and `value`, and maybe a bit
+`range`, a `translated` meaning, an `indent` (a bit field under the one above), and
+`group` (it starts a new group). A line of free text (a message's) is `{"text": ...}`.
+404 if the file has no such event.
+
+```json
+{"event": {"number": 1801, "type": "Crash Restart", "time": "2026-10-13T15:33:12",
+           "node": "X86VMS", "class": "BUGCHECKS"},
+ "fields": [{"description": "Hardware Architecture", "value": "5", "translated": "Intel X86"},
+            {"description": "Processor Status", "range": "<63:00>:", "value": "0x0000000000000000", "group": true},
+            {"description": "Current Mode", "range": "<04:03>:", "value": "0x0", "translated": "Kernel", "indent": 1}]}
+```
+
+### `GET api/v1/crashes`, `GET api/v1/crashes/{name}`
+
+CLUE's listing of each crash, `SYS$ERRORLOG:CLUE$<node>_<ddmmyy>_<hhmm>.LIS`, read as
+you, with its first page's summary. One listing adds every `summary` line in order and
+its whole `text` (cut at 512 KB: `truncated`). Only such names are accepted (400
+otherwise).
+
+```json
+{"crashes": [{"name": "CLUE$X86VMS_131026_1517.LIS", "time": "2026-10-13T15:17:29",
+              "bugcheck": "PGFIPLHI, Pagefault with IPL too high", "process": "USB$UCM_SERVER",
+              "image": "X86VMS$DKA0:[SYS0.SYSCOMMON.][SYSEXE]USB$UCM_SERVER.EXE;1",
+              "pc": "FFFF8300.06EB4930    SYS$HUBDRIVER+80001330 ...",
+              "module": "SYS$HUBDRIVER    (Link Date/Time: 27-JUL-2026 11:28:12.75)",
+              "uptime": "0 00:00:26.19"}]}
+```
+
+### `GET api/v1/operator-log?stamps=`
+
+OPCOM's log, the newest `SYS$MANAGER:OPERATOR.LOG`, read as you, shared with OPCOM:
+its messages newest first, at most 2,000, without OPCOM's hourly "Logfile time stamp"
+unless `stamps=1`.
+
+```json
+{"file": "X86VMS$DKA0:[SYS0.SYSMGR]OPERATOR.LOG;243",
+ "messages": [{"time": "2026-10-16T12:06:03", "from": "SYSTEM", "node": "X86VMS",
+               "text": "%TCPIP-F-LPD_BADPORT, error getting a port\n-SYSTEM-F-TIMEOUT, device timeout"}],
+ "truncated": false}
+```
+
+### `GET api/v1/device-errors`
+
+Each device whose `DVI$_ERRCNT` is not 0, and how many devices were looked at:
+`{"devices": [{"device": "DKA100:", "errors": 2}], "scanned": 7}`.
+
 ## Coming
 
-The error log and a terminal (`docs/PLAN.md`).
+A terminal (`docs/PLAN.md`).

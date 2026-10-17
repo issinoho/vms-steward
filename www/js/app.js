@@ -17,6 +17,7 @@ import { sysgenView } from './sysgen.js';
 import { licensesView } from './licenses.js';
 import { productsView } from './products.js';
 import { monitorView, stopMonitor } from './monitor.js';
+import { errorlogView } from './errorlog.js';
 
 const app = document.getElementById('app');
 let me = null;           // whoami, while signed in
@@ -36,6 +37,7 @@ const AREAS = [
   { hash: '#/licenses', label: 'Licences', ready: true },
   { hash: '#/products', label: 'Installed products', ready: true },
   { hash: '#/monitor', label: 'Monitoring', ready: true },
+  { hash: '#/errorlog', label: 'Error log', ready: true },
 ];
 
 // The theme switch (theme.js): Auto, Light, Dark in turn.
@@ -217,6 +219,7 @@ const VIEWS = {
   licenses: (ctx) => licensesView(ctx),
   products: (ctx) => productsView(ctx),
   monitor: (ctx) => monitorView(ctx),
+  errorlog: (ctx) => errorlogView(ctx),
 };
 
 let routeSeq = 0;

@@ -15,6 +15,7 @@
 #include "st_license.h"
 #include "st_product.h"
 #include "st_mrec.h"
+#include "st_errlog.h"
 
 /* What went wrong, in terms the HTTP layer can map to a status. */
 enum {
@@ -596,6 +597,36 @@ int  st_plat_history_put(const unsigned char rec[ST_MREC_SIZE], st_err *e);
 int  st_plat_recorder_init(const char *history_file, st_err *e);
 long long st_plat_now_ms(void);           /* milliseconds since 1970 UTC */
 void st_plat_sleep_ms(long long ms);
+
+/* ---- the error log (Phase 14, D23), as the current persona ----
+
+   ERRLOG.SYS, the CLUE listings and OPERATOR.LOG are (S:RWED,O:RWED,G:RE,W:): SYSPRV,
+   or the SYSTEM group, as OpenVMS decides. A refusal is -1 with e (ST_E_NOPRIV and
+   OpenVMS's text); for ELV, which reports one as "file not found" and success, the
+   caller asks st_elv_refused. */
+
+/* ELV TRANSLATE in the D14 helper (STEWARD_ERRLOG.COM): op ST_ELV_LIST, arg the days
+   back (0 for the whole file), or ST_ELV_ENTRY, arg the event number. Lines to p. privs
+   as for st_plat_lnm_list. */
+int st_plat_errlog(const char *privs, int op, unsigned int arg, st_elv_parser *p, st_err *e);
+
+/* The CLUE listings in SYS$ERRORLOG, each with its first page's summary, in directory
+   order, until fn returns nonzero. */
+typedef int (*st_crash_cb)(const char *name, const st_clue_summary *s, void *ctx);
+int st_plat_crashes(st_crash_cb fn, void *ctx, st_err *e);
+/* One listing's lines (name already st_valid_clue_name). */
+typedef int (*st_text_cb)(const char *line, size_t len, void *ctx);
+int st_plat_crash_text(const char *name, st_text_cb fn, void *ctx, st_err *e);
+
+/* SYS$MANAGER:OPERATOR.LOG, the newest version, read shared with OPCOM: its lines to
+   p, and its name with version in file. */
+int st_plat_opcom(st_opcom_parser *p, char file[96], st_err *e);
+
+/* Each device with errors ($GETDVI DVI$_ERRCNT, open to anyone); *scanned the devices
+   looked at. */
+typedef struct { char device[64]; unsigned int errors; } st_dev_errors;
+typedef int (*st_deverr_cb)(const st_dev_errors *d, void *ctx);
+int st_plat_device_errors(st_deverr_cb fn, void *ctx, int *scanned, st_err *e);
 
 /* ---- audit and diagnostics ---- */
 void st_plat_audit(const char *line);    /* one record; the platform adds a timestamp */

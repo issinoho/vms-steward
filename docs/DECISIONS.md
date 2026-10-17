@@ -626,7 +626,9 @@ instead of counters (weighted averages, reboots inside an interval lost).
 
 ## D23. Error log: ELV in the D14 helper; crash listings and device counts in-process
 
-**Status:** proposed 2026-10-17 (PHASE14.md).
+**Status:** approved by the user 2026-10-17 ("Agreed", PHASE14.md): OPERATOR.LOG included
+(read in-process, newest first), events default to the last 30 days, SYSPRV (or the
+SYSTEM group) as OpenVMS requires, changes (14b) decided later.
 
 ERRLOG.SYS needs SYSPRV (or the SYSTEM group), its format is not documented, and the
 classic `ANALYZE/ERROR_LOG` is not on x86 (probe, NOTES.md). So the D14 helper, which

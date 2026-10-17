@@ -1,6 +1,7 @@
 # Phase 14: error log
 
-**Status: being planned (2026-10-17).** D23 proposed; questions at the end.
+**Status: 14a being built (2026-10-17).** The user approved D23 and the suggested
+answers below ("Agreed").
 
 What OpenVMS records about the hardware and the system itself: the error log
 (`ERRLOG.SYS`, written by ERRFMT), the crash history (CLUE's summary of each crash
@@ -65,6 +66,8 @@ Alternatives considered:
 
 Suggested answers: 1 include OPERATOR.LOG; 2 yes; 3 yes; 4 yes, later.
 
+Answers (2026-10-17, "Agreed"): the suggestions, all four.
+
 ## Exit (14a)
 
 - On x86, through `api_probe`: the event list and an event against ELV run by the
@@ -72,3 +75,26 @@ Suggested answers: 1 include OPERATOR.LOG; 2 yes; 3 yes; 4 yes, later.
   with SYSPRV served, without it refused (D9).
 - Core parsers unit-tested on captured ELV and CLUE output (with node details
   replaced); a UI test on the stub; a kit and the user's browser checks.
+
+## Built (14a)
+
+- `STEWARD_ERRLOG.COM`, the fifth D14 procedure: ELV TRANSLATE `/ONE_LINE` (with
+  `/SINCE=-<days>-`) or `/ENTRY`, given the reply mailbox with `/OUTPUT=` (ELV ignores
+  a SYS$OUTPUT defined for it, NOTES.md). Parsed in core (`st_errlog.c`), by the
+  underscored headings' columns; a refusal told by ELV's message.
+- CLUE's listings, OPERATOR.LOG and the device counts in-process as the viewer.
+  OPERATOR.LOG, like ERRLOG.SYS, says "not found" to a viewer without access (the
+  `SYS$SYSROOT` search list); both are reported as refusals, with why.
+- `GET api/v1/errorlog`, `errorlog/{n}`, `crashes`, `crashes/{name}`, `operator-log`,
+  `device-errors` (api.md); the page "Error log".
+
+Live test: `tests/vms/phase14_live.py x86` 19 ok, 0 failed. Against ELV run by the
+work account: the same 160 events of the last 30 days in order, 1,807 for the whole
+file; event 1801 (the latest crash restart) field by field, bit fields indented; 404
+for an event not there. The 37 CLUE listings, the newest's bugcheck as in its file,
+its whole listing. OPERATOR.LOG;243, newest message first, as the file ends.
+Device errors: none of 556, as `F$GETDVI ERRCNT` says. STEWARD_TEST refused all three
+protected sources; STEWARD_ADM refused without SYSPRV switched on (D9), served with it.
+Linux: 490 unit checks (the parsers on lines captured from x86, node renamed, and the
+endpoints on the stub), the UI tests (14 for this page) and `make audit`. x86: 490
+native checks, no compiler messages.

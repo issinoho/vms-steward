@@ -203,8 +203,8 @@ CPU/memory monitoring, error log, and a WebSocket terminal (lighttpd `mod_wstunn
 order on 2026-10-11. Licences (Phase 11), installed products (12) and monitoring (13) are done; the error log and
 the terminal remain, and 12b (installing and removing products) is undecided.
 
-**Phase 14: error log** (D23 proposed, 2026-10-17): probes done; questions for the user in
-`docs/PHASE14.md`, which is where to pick up.
+**Phase 14: error log** (D23 approved, 2026-10-17): 14a being built; see `docs/PHASE14.md`,
+which is where to pick up.
 
 **Wish list (not scheduled):** a layout made for phones (`docs/ideas/mobile.md`,
 asked for by the user 2026-10-11).

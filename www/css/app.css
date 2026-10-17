@@ -483,3 +483,14 @@ tr.detail td { background: var(--panel-2); }
 table.busiest caption { text-align: left; font: 500 .68rem/1.2 var(--mono); text-transform: uppercase; letter-spacing: .12em; color: var(--muted); padding: 0 0 6px; }
 .live select { margin-right: .8em; }
 @media (max-width: 900px) { .busiest-pair { grid-template-columns: 1fr; } }
+
+/* Error log (Phase 14) */
+table.fields td.ind1 { padding-left: 1.6em; }
+table.fields td.ind2 { padding-left: 2.8em; }
+table.fields td.ind3 { padding-left: 4em; }
+table.fields tr.gap td { padding: .3em; border: 0; }
+table.fields td.pre { white-space: pre-wrap; }
+pre.listing { max-height: 32em; overflow: auto; font-size: .78rem; }
+ul.opcom { list-style: none; margin: 0; padding: 0; }
+ul.opcom li { padding: .45em 0; border-bottom: 1px solid var(--line); }
+ul.opcom pre { margin: .2em 0 0; white-space: pre-wrap; font-size: .82rem; }

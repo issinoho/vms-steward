@@ -17,6 +17,7 @@
 #include "st_license.h"
 #include "st_product.h"
 #include "st_mrec.h"
+#include "st_errlog.h"
 #include "st_app.h"
 
 static int checks, failures;
@@ -2266,6 +2267,244 @@ static void test_monitor_history(void)
     CHECK(!st_plat_persona_active(), "no persona left active");
 }
 
+/* ELV's translation, CLUE's summary and OPCOM's log, from lines as x86 wrote them
+   (the node renamed). */
+typedef struct { st_elv_event ev[8]; st_elv_field f[24]; int nev, nf; } elv_got;
+static int got_event(const st_elv_event *ev, void *ctx)
+{ elv_got *g = ctx; if (g->nev < 8) g->ev[g->nev++] = *ev; return 0; }
+static int got_field(const st_elv_field *f, void *ctx)
+{ elv_got *g = ctx; if (g->nf < 24) g->f[g->nf++] = *f; return 0; }
+static void elv_feed_all(st_elv_parser *p, const char *const *lines)
+{ int i; for (i = 0; lines[i]; i++) st_elv_line(p, lines[i], strlen(lines[i])); }
+
+typedef struct { st_opcom_msg m[8]; int n; } opcom_got;
+static int got_opcom(const st_opcom_msg *m, void *ctx)
+{ opcom_got *g = ctx; if (g->n < 8) g->m[g->n++] = *m; return 0; }
+
+static void test_errlog_parsers(void)
+{
+    static const char *const list[] = {
+        "%%PART%% EVENTS",
+        "Output file DISK$X:[U]PE_ONE.LIS;1 created at 17-OCT-2026 09:44:52.97", "",
+        "Output for SYS$SYSROOT:[SYSERR]ERRLOG.SYS;1", "",
+        "EVENT  EVENT_TYPE_____________________________  TIMESTAMP______________  NODE__  EVENT_CLASS____________________________",
+        "1      New File Created                         20-APR-2023 13:16:52.12  NODE1   CONTROL_ENTRIES                        ",
+        "1801   Crash Restart                            13-OCT-2026 15:33:12.11  NODE1   BUGCHECKS                              ",
+        "1807   Volume Mount                              7-OCT-2026 09:43:36.42  NODE1   VOLUME_CHANGES",
+        "Number of events by event class:       ",
+        "%%STATUS%% 00000001", NULL };
+    static const char *const entry[] = {
+        "%%PART%% ENTRY", "Output for SYS$SYSROOT:[SYSERR]ERRLOG.SYS;1", "",
+        "EVENT  EVENT_TYPE_____________________________  TIMESTAMP______________  NODE__  EVENT_CLASS____________________________",
+        "1769   System Service Message                   10-OCT-2026 14:07:35.24  NODE1   CONTROL_ENTRIES                        ", "",
+        "DESCRIPTION__________________________________   RANGE___   VALUE_____________   TRANSLATED_VALUE_______________________",
+        "   Hardware Architecture                                   5                    Intel X86                              ",
+        "   DSR String                                              QEMU Standard PC (Q35 + ICH9, *",
+        "",
+        "   Processor Status                             <63:00>:   0x0000000000000000                                          ",
+        "      Current Mode                              <04:03>:   0x0                  Kernel                                 ",
+        "   Message                                                 ",
+        "   CPU   0 LID: 0x00000000  Die: 0xFFFF Package:  0 Core:  0 Thread  0 ACPI:    0",
+        "%%STATUS%% 00000001", NULL };
+    static const char *const refused[] = {
+        "%%PART%% EVENTS", "%ELV-E-FILOPNERR, error opening SYS$SYSROOT:[SYSERR]ERRLOG.SYS;1",
+        "-RMS-E-FNF, file not found", "-RMS-E-FNF, file not found", "%%STATUS%% 00000001", NULL };
+    static const char *const clue[] = {
+        "OpenVMS Operating System, Version E9.2-4   -- System Dump Analysis   13-OCT-2026 15:17:29.80     Page     1",
+        "Crashdump Summary Information:", "", "",
+        "Crash Time:        13-OCT-2026 15:17:29.80",
+        "Bugcheck Type:     PGFIPLHI, Pagefault with IPL too high",
+        "Node:              NODE1  (Standalone)",
+        "Current Process:   USB$UCM_SERVER",
+        "Failing PC:        FFFF8300.06EB4930    SYS$HUBDRIVER+80001330   (HUBDRIVER + 00001330 / line 57539)",
+        "Crash/Primary CPU: 0./0.",
+        "EXE$GL_FLAGS:      init,fatal_bug,bugdump",
+        "System Uptime:               0 00:00:26.19", "",
+        "Stack Pointers:", "KSP = FFFFFFFF.8C04D860   ESP = 00000000.7FF8BE00", "Bugcheck Type:     NOT_THIS_ONE", NULL };
+    static const char *const opcom[] = {
+        "", "%%%%%%%%%%%  OPCOM  15-OCT-2026 16:05:50.50  %%%%%%%%%%%",
+        "Operator status for operator NODE1::SYS$SYSROOT:[SYSMGR]OPERATOR.LOG;243",
+        "CENTRAL, PRINTER, TAPES,", "OPER11, OPER12", "",
+        "%%%%%%%%%%%  OPCOM  15-OCT-2026 16:06:09.11  %%%%%%%%%%%", "Message from user IAIN on NODE1",
+        "FTA1123_IAIN, Steward test: OPCOM check after restart", "",
+        "%%%%%%%%%%%  OPCOM  15-OCT-2026 16:10:50.51  %%%%%%%%%%%", "Logfile time stamp", "",
+        "%%%%%%%%%%%  OPCOM  16-OCT-2026 12:06:03.53  %%%%%%%%%%%", "Message from user SYSTEM on NODE1",
+        "%TCPIP-F-LPD_BADPORT, error getting a port", "-SYSTEM-F-TIMEOUT, device timeout", NULL };
+    static elv_got g;
+    static st_elv_parser p;
+    static st_clue_summary cs;
+    static st_opcom_parser op;
+    static opcom_got og;
+    char iso[20];
+    int i;
+
+    memset(&g, 0, sizeof g);
+    st_elv_init(&p, got_event, got_field, &g);
+    elv_feed_all(&p, list);
+    CHECK(g.nev == 3 && g.ev[0].number == 1 && !strcmp(g.ev[0].type, "New File Created") &&
+          !strcmp(g.ev[0].node, "NODE1") && !strcmp(g.ev[0].cls, "CONTROL_ENTRIES"), "ELV one-line: each event's columns");
+    CHECK(g.ev[1].number == 1801 && !strcmp(g.ev[1].type, "Crash Restart") && !strcmp(g.ev[1].iso, "2026-10-13T15:33:12") &&
+          !strcmp(g.ev[1].when, "13-OCT-2026 15:33:12.11") && !strcmp(g.ev[1].cls, "BUGCHECKS"), "times as ELV gives them, and ISO");
+    CHECK(!strcmp(g.ev[2].iso, "2026-10-07T09:43:36") && !strcmp(g.ev[2].cls, "VOLUME_CHANGES"),
+          "a day of one digit; the last column without its padding");
+    CHECK(p.status_seen && p.status == 1 && !st_elv_refused(&p) && g.nf == 0, "the part's status; no refusal; no fields in a list");
+
+    memset(&g, 0, sizeof g);
+    st_elv_init(&p, got_event, got_field, &g);
+    elv_feed_all(&p, entry);
+    CHECK(g.nev == 1 && g.ev[0].number == 1769 && g.nf == 6, "ELV entry: the event, then its fields");
+    CHECK(!strcmp(g.f[0].description, "Hardware Architecture") && !strcmp(g.f[0].value, "5") &&
+          !strcmp(g.f[0].translated, "Intel X86") && !g.f[0].indent && !g.f[0].text && !g.f[0].group,
+          "a field: description, value, translation");
+    CHECK(!strcmp(g.f[1].value, "QEMU Standard PC (Q35 + ICH9, *") && !g.f[1].translated[0],
+          "a value longer than its column runs on, whole");
+    CHECK(g.f[2].group && !strcmp(g.f[2].range, "<63:00>:") && !strcmp(g.f[2].value, "0x0000000000000000"),
+          "after a blank line, a new group; a bit range");
+    CHECK(g.f[3].indent == 1 && !strcmp(g.f[3].description, "Current Mode") && !strcmp(g.f[3].translated, "Kernel"),
+          "a bit field under it, indented");
+    CHECK(!strcmp(g.f[4].description, "Message") && g.f[5].text &&
+          !strcmp(g.f[5].description, "CPU   0 LID: 0x00000000  Die: 0xFFFF Package:  0 Core:  0 Thread  0 ACPI:    0"),
+          "a message's line across the columns: free text, whole");
+
+    memset(&g, 0, sizeof g);
+    st_elv_init(&p, got_event, got_field, &g);
+    elv_feed_all(&p, refused);
+    CHECK(st_elv_refused(&p) && p.status == 1 && g.nev == 0 &&
+          !strcmp(p.message, "%ELV-E-FILOPNERR, error opening SYS$SYSROOT:[SYSERR]ERRLOG.SYS;1 / -RMS-E-FNF, file not found"),
+          "ELV's refusal told by its message, although its status is success; its repeat kept once");
+
+    st_vms_time_iso("13-OCT-2026 15:33:12.11", iso);
+    CHECK(!strcmp(iso, "2026-10-13T15:33:12"), "VMS time to ISO");
+    st_vms_time_iso("13-OCX-2026 15:33:12.11", iso);
+    CHECK(!iso[0], "not a month: none");
+    st_vms_time_iso("32-OCT-2026 15:33:12.11", iso);
+    CHECK(!iso[0], "not a day: none");
+
+    st_clue_init(&cs);
+    for (i = 0; clue[i] && !cs.done; i++) st_clue_line(&cs, clue[i], strlen(clue[i]));
+    CHECK(cs.done && !strcmp(st_clue_get(&cs, "Bugcheck Type"), "PGFIPLHI, Pagefault with IPL too high") &&
+          !strcmp(st_clue_get(&cs, "Crash Time"), "13-OCT-2026 15:17:29.80") &&
+          !strcmp(st_clue_get(&cs, "System Uptime"), "0 00:00:26.19"), "CLUE: the summary's values");
+    CHECK(!strcmp(st_clue_get(&cs, "Crash/Primary CPU"), "0./0.") && !strcmp(st_clue_get(&cs, "EXE$GL_FLAGS"), "init,fatal_bug,bugdump") &&
+          !strcmp(st_clue_get(&cs, "Failing PC"), "FFFF8300.06EB4930    SYS$HUBDRIVER+80001330   (HUBDRIVER + 00001330 / line 57539)"),
+          "keys with slashes and dollars; a value with colons in it");
+    CHECK(cs.nitems == 8 && !st_clue_get(&cs, "Crashdump Summary Information")[0] && !st_clue_get(&cs, "KSP = FFFFFFFF.8C04D860   ESP = 00000000.7FF8BE00")[0],
+          "headings and the registers left out; nothing after Stack Pointers");
+    CHECK(st_valid_clue_name("CLUE$X86VMS_131026_1517.LIS") && st_valid_clue_name("CLUE$NODE_1_010101_0000.LIS"),
+          "CLUE listing names");
+    CHECK(!st_valid_clue_name("clue$x86vms_131026_1517.lis") && !st_valid_clue_name("CLUE$X86VMS_131026_1517.LIS;1") &&
+          !st_valid_clue_name("CLUE$[-]X_131026_1517.LIS") && !st_valid_clue_name("CLUE$X86VMS_13102_1517.LIS") &&
+          !st_valid_clue_name("CLUE$HISTORY.DAT") && !st_valid_clue_name("SYSUAF.DAT"),
+          "nothing else: no version, path, lower case or other file");
+
+    memset(&og, 0, sizeof og);
+    st_opcom_init(&op, got_opcom, &og);
+    for (i = 0; opcom[i]; i++) st_opcom_line(&op, opcom[i], strlen(opcom[i]));
+    CHECK(og.n == 3, "OPCOM: a message is emitted when the next begins");
+    st_opcom_end(&op);
+    CHECK(og.n == 4, "and the last at the end");
+    CHECK(!strcmp(og.m[0].iso, "2026-10-15T16:05:50") && !og.m[0].from[0] &&
+          !strcmp(og.m[0].text, "Operator status for operator NODE1::SYS$SYSROOT:[SYSMGR]OPERATOR.LOG;243\nCENTRAL, PRINTER, TAPES,\nOPER11, OPER12"),
+          "a message of several lines, not from a user");
+    CHECK(!strcmp(og.m[1].from, "IAIN") && !strcmp(og.m[1].node, "NODE1") &&
+          !strcmp(og.m[1].text, "FTA1123_IAIN, Steward test: OPCOM check after restart") && !og.m[1].stamp,
+          "from a user, on a node, with its text");
+    CHECK(og.m[2].stamp && !og.m[3].stamp && !strcmp(og.m[3].text, "%TCPIP-F-LPD_BADPORT, error getting a port\n-SYSTEM-F-TIMEOUT, device timeout"),
+          "the hourly time stamp marked; a message's own % lines are its text");
+}
+
+/* The error log's endpoints on the stub: refused without SYSPRV, as on x86. */
+static void test_errlog_api(void)
+{
+    result b;
+    hdr t[3], adm[3];
+    char tc[100], tcsrf[65], ac[100], acsrf[65];
+    const char *body, *q;
+    int n;
+
+    sign_in("{\"username\":\"steward_test\",\"password\":\"test-pass\"}", tc, sizeof tc, tcsrf);
+    t[0].n = "HTTP_COOKIE"; t[0].v = tc; t[1].n = "HTTP_X_STEWARD_CSRF"; t[1].v = tcsrf; t[2].n = NULL;
+    call("GET", "/api/v1/errorlog", t, NULL, &b);
+    CHECK(b.resp.status == 403 && strstr(b.resp.body.data, "ELV reports a file it may not read as not found") &&
+          strstr(b.resp.body.data, "-RMS-E-FNF, file not found"), "without SYSPRV, the error log refused, with why OpenVMS says not found");
+    st_resp_free(&b.resp);
+    call("GET", "/api/v1/crashes", t, NULL, &b);
+    CHECK(b.resp.status == 403, "the crash listings refused");
+    st_resp_free(&b.resp);
+    call("GET", "/api/v1/operator-log", t, NULL, &b);
+    CHECK(b.resp.status == 403, "OPCOM's log refused");
+    st_resp_free(&b.resp);
+    call("GET", "/api/v1/device-errors", t, NULL, &b);
+    CHECK(b.resp.status == 200 && strstr(b.resp.body.data, "{\"devices\":[{\"device\":\"DKA100:\",\"errors\":2}],\"scanned\":3}"),
+          "device error counts: anyone's");
+    st_resp_free(&b.resp);
+
+    sign_in("{\"username\":\"steward_adm\",\"password\":\"admin-pass\"}", ac, sizeof ac, acsrf);
+    adm[0].n = "HTTP_COOKIE"; adm[0].v = ac; adm[1].n = "HTTP_X_STEWARD_CSRF"; adm[1].v = acsrf; adm[2].n = NULL;
+    call("GET", "/api/v1/errorlog", adm, NULL, &b);
+    CHECK(b.resp.status == 403, "SYSPRV authorized but not switched on: refused (D9)");
+    st_resp_free(&b.resp);
+    call("PUT", "/api/v1/session/privileges", adm, "{\"enabled\":[\"sysprv\"]}", &b);
+    st_resp_free(&b.resp);
+    call("GET", "/api/v1/errorlog", adm, NULL, &b);
+    body = b.resp.body.data;
+    for (n = 0, q = body; (q = strstr(q, "\"number\":")); q++) n++;
+    CHECK(b.resp.status == 200 && strstr(body, "{\"days\":30,\"events\":[{\"number\":1005,\"type\":\"Volume Dismount\",\"time\":\"") &&
+          n == 6 && strstr(body, "\"node\":\"STUB01\",\"class\":\"BUGCHECKS\"") && strstr(body, "\"truncated\":false"),
+          "with SYSPRV: the last 30 days, oldest first");
+    st_resp_free(&b.resp);
+    call("GET", "/api/v1/errorlog?days=0", adm, NULL, &b);
+    for (n = 0, q = b.resp.body.data; (q = strstr(q, "\"number\":")); q++) n++;
+    CHECK(b.resp.status == 200 && n == 11, "days=0: the whole file");
+    st_resp_free(&b.resp);
+    call("GET", "/api/v1/errorlog?days=x", adm, NULL, &b);
+    CHECK(b.resp.status == 400, "days a number");
+    st_resp_free(&b.resp);
+    call("GET", "/api/v1/errorlog/1008", adm, NULL, &b);
+    body = b.resp.body.data;
+    CHECK(b.resp.status == 200 && strstr(body, "\"event\":{\"number\":1008,\"type\":\"Crash Restart\"") &&
+          strstr(body, "{\"description\":\"Hardware Architecture\",\"value\":\"5\",\"translated\":\"Intel X86\"}") &&
+          strstr(body, "{\"description\":\"Current Mode\",\"range\":\"\\u003c04:03\\u003e:\",\"value\":\"0x0\",\"translated\":\"Kernel\",\"indent\":1}") &&
+          strstr(body, "\"group\":true"), "one event, field by field");
+    st_resp_free(&b.resp);
+    call("GET", "/api/v1/errorlog/1006", adm, NULL, &b);
+    CHECK(b.resp.status == 200 && strstr(b.resp.body.data, "{\"text\":\"CPU   0 LID:"), "a message's line as text");
+    st_resp_free(&b.resp);
+    call("GET", "/api/v1/errorlog/99999", adm, NULL, &b);
+    CHECK(b.resp.status == 404, "no such event: 404");
+    st_resp_free(&b.resp);
+    call("GET", "/api/v1/errorlog/1;2", adm, NULL, &b);
+    CHECK(b.resp.status == 400, "an event number is digits only");
+    st_resp_free(&b.resp);
+    call("GET", "/api/v1/crashes", adm, NULL, &b);
+    body = b.resp.body.data;
+    CHECK(b.resp.status == 200 && strstr(body, "{\"name\":\"CLUE$STUB01_130926_1517.LIS\",\"time\":\"2026-09-13T15:17:29\",\"bugcheck\":\"PGFIPLHI, Pagefault with IPL too high\",\"process\":\"USB$UCM_SERVER\"") &&
+          strstr(body, "\"bugcheck\":\"INCONSTATE, Inconsistent I/O data base\""), "the crashes, each with its summary");
+    st_resp_free(&b.resp);
+    call("GET", "/api/v1/crashes/CLUE$STUB01_130926_1517.LIS", adm, NULL, &b);
+    body = b.resp.body.data;
+    CHECK(b.resp.status == 200 && strstr(body, "{\"key\":\"Module\",\"value\":\"SYS$HUBDRIVER    (Link Date/Time: 27-JUL-2026 11:28:12.75)\"}") &&
+          strstr(body, "\"text\":\"OpenVMS Operating System") && strstr(body, "Stack Pointers:\\nKSP = "), "one listing: summary and text");
+    st_resp_free(&b.resp);
+    call("GET", "/api/v1/crashes/SYSUAF.DAT", adm, NULL, &b);
+    CHECK(b.resp.status == 400, "only CLUE listings by name");
+    st_resp_free(&b.resp);
+    call("GET", "/api/v1/crashes/CLUE$STUB01_010101_0000.LIS", adm, NULL, &b);
+    CHECK(b.resp.status == 404, "a listing that is not there: 404");
+    st_resp_free(&b.resp);
+    call("GET", "/api/v1/operator-log", adm, NULL, &b);
+    body = b.resp.body.data;
+    for (n = 0, q = body; (q = strstr(q, "\"time\":")); q++) n++;
+    CHECK(b.resp.status == 200 && n == 4 && strstr(body, "\"file\":\"SYS$SYSROOT:[SYSMGR]OPERATOR.LOG;12\",\"messages\":[{\"time\":\"2026-10-17T08:00:01\",\"from\":\"SYSTEM\"") &&
+          !strstr(body, "time stamp"), "OPCOM's log: newest first, the time stamps left out");
+    st_resp_free(&b.resp);
+    call("GET", "/api/v1/operator-log?stamps=1", adm, NULL, &b);
+    for (n = 0, q = b.resp.body.data; (q = strstr(q, "\"time\":")); q++) n++;
+    CHECK(b.resp.status == 200 && n == 6 && strstr(b.resp.body.data, "\"stamp\":true"), "with stamps=1, those too");
+    st_resp_free(&b.resp);
+    CHECK(!st_plat_persona_active(), "no persona left active");
+}
+
 int main(void)
 {
     st_app_config cfg;
@@ -2306,6 +2545,8 @@ int main(void)
     test_monitor();
     test_mrec();
     test_monitor_history();
+    test_errlog_parsers();
+    test_errlog_api();
     test_create();
     test_gateway();
     printf("%d checks, %d failed\n", checks, failures);
