@@ -21,7 +21,7 @@ globalThis.fetch = async (url, init = {}) => {
 let failed = 0;
 const say = (ok, what, extra = '') => { if (!ok) failed++; console.log(ok ? 'ok  ' : 'FAIL', what, ok ? '' : extra); };
 const { api } = await import(process.env.STEWARD_UI_JS + '/api.js');
-const { productsView } = await import(process.env.STEWARD_UI_JS + '/products.js');
+const { productsView, stopProductJob } = await import(process.env.STEWARD_UI_JS + '/products.js');
 
 async function view() {
   const me = await api.whoami();
@@ -62,6 +62,50 @@ try {
   input.dispatchEvent(new W.Event('input'));
   tables = root.querySelectorAll('table.products');
   say(firstCells(tables[0]).join() === 'SSL3', 'filtered by name', firstCells(tables[0]));
+  input.value = '';
+  input.dispatchEvent(new W.Event('input'));
+
+  // 12b (D26): Remove beside each product but the operating system; kits found in a
+  // directory, Steward's own not offered; an install followed through its log.
+  W.HTMLDialogElement.prototype.showModal = function () { this.open = true; };
+  W.HTMLDialogElement.prototype.close = function () { this.open = false; this.dispatchEvent(new W.Event('close')); };
+  const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+  async function until(cond, ms = 6000) { for (let t = 0; t < ms; t += 50) { if (cond()) return true; await wait(50); } return false; }
+  document.body.append(root);
+  tables = root.querySelectorAll('table.products');
+  const rows = [...tables[0].querySelectorAll('tbody tr')];
+  const vms = rows.find((r) => r.querySelector('td').textContent === 'VMS');
+  say(vms && !vms.querySelector('button') && vms.textContent.includes('not here') &&
+    rows.filter((r) => r.querySelector('button')).length === 5, 'Remove beside every product but the operating system');
+  const src = root.querySelector('input[aria-label="Kit directory"]');
+  src.value = 'dka0:[kits]';
+  src.closest('form').dispatchEvent(new W.Event('submit', { cancelable: true }));
+  await until(() => root.querySelector('table.kits'));
+  const kits = [...root.querySelectorAll('table.kits tbody tr')];
+  say(kits.length === 3 && kits[2].textContent.includes('STEWARD') && !kits[2].querySelector('button') &&
+    kits.filter((r) => r.querySelector('button')).length === 2, 'the kits in a directory; Steward\'s own not offered');
+  kits[0].querySelector('button').click();
+  let dlg = document.querySelector('dialog');
+  dlg.querySelector('input').value = 'widget';
+  dlg.querySelector('form').dispatchEvent(new W.Event('submit', { cancelable: true }));
+  await wait(200);
+  say(dlg.querySelector('pre.vmsmsg:not([hidden])') && dlg.textContent.includes('Type GADGET to confirm'), 'the product\'s name typed first');
+  dlg.querySelector('input').value = 'gadget';
+  dlg.querySelector('form').dispatchEvent(new W.Event('submit', { cancelable: true }));
+  await until(() => root.textContent.includes('Finished: %X00000001'));
+  const log = root.querySelector('pre.listing');
+  say(root.textContent.includes('Installing GADGET V2.0') && log && log.textContent.includes('Steward: INSTALL EXAMPLE X86VMS GADGET V2.0') &&
+    root.textContent.includes('Finished: %X00000001'), 'the job followed through its log to its end', log && log.textContent);
+  await until(() => root.querySelectorAll('table.products').length === 3);   // the list read again after the job
+  const ssl = [...root.querySelectorAll('table.products')[0].querySelectorAll('tbody tr')].find((r) => r.querySelector('td').textContent === 'SSL3');
+  ssl.querySelector('button').click();
+  dlg = document.querySelector('dialog');
+  say(dlg && dlg.textContent.includes('Referenced by: EXAMPLE X86VMS WIDGET V1.2-3'), 'a removal names what references the product');
+  dlg.querySelector('input').value = 'SSL3';
+  dlg.querySelector('form').dispatchEvent(new W.Event('submit', { cancelable: true }));
+  await until(() => root.textContent.includes('Removing SSL3') && root.textContent.includes('Finished'));
+  say(root.textContent.includes('Removing SSL3'), 'a removal followed the same way');
+  stopProductJob();
 } catch (e) {
   say(false, 'no exception', e.stack);
 }

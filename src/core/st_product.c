@@ -47,6 +47,7 @@ typedef struct { const char *heading; size_t off, size; int list; } column_map;
 static const column_map columns[] = {
     { "PRODUCT", 0, 0, 0 },          /* C_PRODUCT: split into its four words */
     C("KIT TYPE",      kit_type,      0),
+    C("KIT FORMAT",    kit_format,    0),
     C("STATE",         state,         0),
     C("MAINTENANCE",   maintenance,   1),
     C("REFERENCED BY", referenced_by, 1),
@@ -185,7 +186,7 @@ static void table_line(st_product_parser *p, const char *s, size_t n)
     else row(p, s, n);
 }
 
-static const char *const part_names[ST_PROD_PARTS] = { "PRODUCTS", "HISTORY" };
+static const char *const part_names[ST_PROD_PARTS] = { "PRODUCTS", "HISTORY", "KITS" };
 
 int st_product_line(st_product_parser *p, const char *line, size_t len)
 {
@@ -271,5 +272,51 @@ int st_vmsinstal_line(const char *line, size_t len, st_vmsinstal *v)
             a = i + 1;
         }
     if (f != 9 || !is_date(v->date) || !v->mnemonic[0]) { memset(v, 0, sizeof *v); return 0; }
+    return 1;
+}
+
+/* ---- installing and removing (12b, D26) ---- */
+
+static int in_set(char c, const char *set) { return c && strchr(set, c) != NULL; }
+
+int st_valid_pcsi_word(const char *s, size_t max)
+{
+    size_t n = strlen(s), i;
+    if (n < 1 || n > max) return 0;
+    for (i = 0; i < n; i++)
+        if (!in_set(s[i], "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789$_-.")) return 0;
+    return 1;
+}
+
+int st_valid_kit_dir(const char *s)
+{
+    size_t n = strlen(s), i;
+    int opens = 0, closes = 0;
+    if (n < 3 || n > 200 || s[n - 1] != ']' || !strchr(s, '[')) return 0;
+    for (i = 0; i < n; i++) {
+        if (!in_set(s[i], "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789$_-.:[]")) return 0;
+        if (s[i] == '[') opens++;
+        if (s[i] == ']') closes++;
+    }
+    /* "DEV:[A.B]", or rooted "DEV:[A.][B]": no more. */
+    return opens == closes && opens <= 2 && !strstr(s, "..");
+}
+
+const char *st_product_refused(const char *producer, const char *base, const char *name)
+{
+    (void) producer;
+    (void) base;
+    if (!strcmp(name, "STEWARD"))
+        return "Steward's own product: installing or removing it would replace or stop the pool serving "
+               "this request. Use PRODUCT and STEWARD$CONTROL at a terminal.";
+    if (!strcmp(name, "VMS")) return "the operating system";
+    return NULL;
+}
+
+int st_valid_pcsi_log(const char *s)
+{
+    size_t i;
+    if (strlen(s) != 31 || strncmp(s, "STEWARD_PCSI_", 13) || strcmp(s + 27, ".LOG")) return 0;
+    for (i = 13; i < 27; i++) if (s[i] < '0' || s[i] > '9') return 0;
     return 1;
 }

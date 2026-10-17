@@ -2588,6 +2588,96 @@ static void test_errlog_changes(void)
     CHECK(!st_plat_persona_active(), "no persona left active");
 }
 
+/* 12b (D26): installing and removing products on the stub. */
+static void test_pcsi(void)
+{
+    result b;
+    hdr t[3];
+    char tc[100], tcsrf[65];
+    const char *body;
+    char logname[40] = "";
+    int i;
+
+    CHECK(st_valid_pcsi_word("T0.15-2", 31) && st_valid_pcsi_word("X86VMS", 15) && st_valid_pcsi_word("VMSMARIADB", 47) &&
+          !st_valid_pcsi_word("", 31) && !st_valid_pcsi_word("a", 31) && !st_valid_pcsi_word("A B", 31) &&
+          !st_valid_pcsi_word("A/LOG", 31) && !st_valid_pcsi_word("SIXTEENCHARSXXXX", 15), "PCSI name words");
+    CHECK(st_valid_kit_dir("DKA0:[KITS]") && st_valid_kit_dir("DISK$X:[A.B_C-1]") && st_valid_kit_dir("_X86VMS$DKA0:[SYS0.][SYSERR]") &&
+          st_valid_kit_dir("[KITS]") && !st_valid_kit_dir("DKA0:[KITS") && !st_valid_kit_dir("dka0:[kits]") &&
+          !st_valid_kit_dir("DKA0:[KITS]/LOG") && !st_valid_kit_dir("DKA0:[A...]") && !st_valid_kit_dir("DKA0:[A][B][C]") &&
+          !st_valid_kit_dir("DKA0:[KITS]X.PCSI") && !st_valid_kit_dir("DKA0:[\"]"), "kit directories");
+    CHECK(st_product_refused("ISSINOHO", "X86VMS", "STEWARD") && st_product_refused("VSI", "X86VMS", "VMS") &&
+          !st_product_refused("VSI", "X86VMS", "TCPIP"), "refused: Steward's own product and the operating system");
+    CHECK(st_valid_pcsi_log("STEWARD_PCSI_20261017120000.LOG") && !st_valid_pcsi_log("STEWARD_PCSI_2026101712000.LOG") &&
+          !st_valid_pcsi_log("STEWARD_PCSI_20261017120000.LOG;1") && !st_valid_pcsi_log("LOGIN.COM"), "job log names");
+
+    sign_in("{\"username\":\"steward_adm\",\"password\":\"admin-pass\"}", tc, sizeof tc, tcsrf);
+    t[0].n = "HTTP_COOKIE"; t[0].v = tc; t[1].n = "HTTP_X_STEWARD_CSRF"; t[1].v = tcsrf; t[2].n = NULL;
+    call("GET", "/api/v1/products/kits?source=DKA0:%5BKITS%5D", t, NULL, &b);
+    body = b.resp.body.data;
+    CHECK(b.resp.status == 200 && strstr(body, "{\"source\":\"DKA0:[KITS]\",\"kits\":[{\"producer\":\"EXAMPLE\",\"base\":\"X86VMS\",\"name\":\"GADGET\",\"version\":\"V2.0\",\"kit_type\":\"Full LP\",\"kit_format\":\"Sequential\"}") &&
+          strstr(body, "\"name\":\"STEWARD\",\"version\":\"T0.16-0\",\"kit_type\":\"Full LP\",\"kit_format\":\"Sequential\",\"refused\":\"Steward's own product"),
+          "the kits in a directory, Steward's own marked refused");
+    st_resp_free(&b.resp);
+    call("GET", "/api/v1/products/kits?source=DKA0:%5BEMPTY%5D", t, NULL, &b);
+    CHECK(b.resp.status == 200 && strstr(b.resp.body.data, "\"kits\":[],\"message\":\"%PCSIUI-I-NOMATCH, no products were found matching: *\""),
+          "none found: PRODUCT's message, although its status is success");
+    st_resp_free(&b.resp);
+    call("GET", "/api/v1/products/kits?source=DKA0:%5BKITS%5D/LOG", t, NULL, &b);
+    CHECK(b.resp.status == 400, "a directory and nothing more");
+    st_resp_free(&b.resp);
+    call("GET", "/api/v1/products", t, NULL, &b);
+    CHECK(b.resp.status == 200 && !strstr(b.resp.body.data, "\"kits\""), "the product list is unchanged: no kits part in it");
+    st_resp_free(&b.resp);
+
+    call("POST", "/api/v1/products/install", t, "{\"producer\":\"EXAMPLE\",\"base\":\"X86VMS\",\"name\":\"GADGET\",\"source\":\"DKA0:[KITS]\"}", &b);
+    CHECK(b.resp.status == 422 && strstr(b.resp.body.data, "version is required"), "an install names the version");
+    st_resp_free(&b.resp);
+    call("POST", "/api/v1/products/install", t, "{\"producer\":\"EXAMPLE\",\"base\":\"X86VMS\",\"name\":\"GADGET /LOG\",\"version\":\"V2.0\",\"source\":\"DKA0:[KITS]\"}", &b);
+    CHECK(b.resp.status == 422, "a name with anything but PCSI's characters refused");
+    st_resp_free(&b.resp);
+    call("POST", "/api/v1/products/install", t, "{\"producer\":\"ISSINOHO\",\"base\":\"X86VMS\",\"name\":\"STEWARD\",\"version\":\"T0.16-0\",\"source\":\"DKA0:[KITS]\"}", &b);
+    CHECK(b.resp.status == 409 && strstr(b.resp.body.data, "refused-product"), "Steward's own product: refused by Steward");
+    st_resp_free(&b.resp);
+    call("POST", "/api/v1/products/remove", t, "{\"producer\":\"VSI\",\"base\":\"X86VMS\",\"name\":\"VMS\"}", &b);
+    CHECK(b.resp.status == 409, "the operating system: refused by Steward");
+    st_resp_free(&b.resp);
+    call("POST", "/api/v1/products/install", t, "{\"producer\":\"EXAMPLE\",\"base\":\"X86VMS\",\"name\":\"GADGET\",\"version\":\"V2.0\",\"source\":\"DKA0:[KITS]\",\"destination\":\"DKA100:[APPS]\"}", &b);
+    body = b.resp.body.data;
+    CHECK(b.resp.status == 202 && strstr(body, "{\"entry\":4001,\"log\":\"STEWARD_PCSI_"), "an install: the job's entry and log (202)");
+    if (strstr(body, "\"log\":\"")) { strncpy(logname, strstr(body, "\"log\":\"") + 7, 31); logname[31] = '\0'; }
+    st_resp_free(&b.resp);
+    {
+        char uri[120];
+        snprintf(uri, sizeof uri, "/api/v1/products/log?name=%s", logname);
+        call("GET", uri, t, NULL, &b);
+        CHECK(b.resp.status == 200 && strstr(b.resp.body.data, "\"lines\":[\"Steward: INSTALL EXAMPLE X86VMS GADGET V2.0\"") &&
+              strstr(b.resp.body.data, "\"done\":false"), "its log as it starts");
+        st_resp_free(&b.resp);
+        {   /* the stub's job ends after 1.4 s: asked again until then, for at most 5 */
+            long long until = st_plat_now_ms() + 5000;
+            for (i = 0; ; i++) {
+                call("GET", uri, t, NULL, &b);
+                if (strstr(b.resp.body.data, "\"done\":true") || st_plat_now_ms() > until) break;
+                st_resp_free(&b.resp);
+                st_plat_sleep_ms(100);
+            }
+        }
+        CHECK(strstr(b.resp.body.data, "\"done\":true,\"status\":\"%X00000001\",\"success\":true") &&
+              !strstr(b.resp.body.data, "PCSI-END"), "and as it ends: its status, the end marker not shown");
+        st_resp_free(&b.resp);
+    }
+    call("GET", "/api/v1/products/log?name=LOGIN.COM", t, NULL, &b);
+    CHECK(b.resp.status == 400, "only a job's log, by name");
+    st_resp_free(&b.resp);
+    call("GET", "/api/v1/products/log?name=STEWARD_PCSI_19990101000000.LOG", t, NULL, &b);
+    CHECK(b.resp.status == 200 && strstr(b.resp.body.data, "\"started\":false"), "a log not there yet: the job has not started");
+    st_resp_free(&b.resp);
+    call("POST", "/api/v1/products/remove", t, "{\"producer\":\"EXAMPLE\",\"base\":\"X86VMS\",\"name\":\"WIDGET\"}", &b);
+    CHECK(b.resp.status == 202 && strstr(b.resp.body.data, "{\"entry\":4002,"), "a removal: no version or source needed");
+    st_resp_free(&b.resp);
+    CHECK(!st_plat_persona_active(), "no persona left active");
+}
+
 int main(void)
 {
     st_app_config cfg;
@@ -2631,6 +2721,7 @@ int main(void)
     test_errlog_parsers();
     test_errlog_api();
     test_errlog_changes();
+    test_pcsi();
     test_create();
     test_gateway();
     printf("%d checks, %d failed\n", checks, failures);

@@ -43,6 +43,7 @@ void st_plat_vms_test_license(const char *path);
 void st_plat_vms_test_product(const char *path);
 void st_plat_vms_test_errlog(const char *path);
 void st_plat_vms_test_errlog_dir(const char *dir);
+void st_plat_vms_test_pcsi(const char *helper, const char *job);
 
 static void nv(st_buf *b, const char *n, const char *v)
 {
@@ -200,6 +201,9 @@ int main(int argc, char **argv)
     /* Copies of ERRLOG.SYS and CLUE listings to rename and delete (Phase 14b), never
        the system's. */
     if (getenv("API_PROBE_ERRLOG_DIR")) st_plat_vms_test_errlog_dir(getenv("API_PROBE_ERRLOG_DIR"));
+    /* Edited PCSI procedures (Phase 12b), both or neither. */
+    if (getenv("API_PROBE_PCSI_HELPER") && getenv("API_PROBE_PCSI_JOB"))
+        st_plat_vms_test_pcsi(getenv("API_PROBE_PCSI_HELPER"), getenv("API_PROBE_PCSI_JOB"));
     /* The account whose processes count as Steward's own (D16): by default this
        process's, the work account's, never the real pool's. */
     if (getenv("API_PROBE_SERVICE_ACCOUNT")) st_plat_vms_test_svc_acct(getenv("API_PROBE_SERVICE_ACCOUNT"));

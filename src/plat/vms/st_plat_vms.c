@@ -362,6 +362,12 @@ static char product_helper_path[256];
 /* The error log's procedure (Phase 14, D23), fixed and resolved the same way. */
 static char errlog_helper[256] = "STEWARD$ROOT:[COM]STEWARD_ERRLOG.COM";
 static char errlog_helper_path[256];
+/* Installing and removing products (Phase 12b, D26): the helper and the batch job's
+   procedure, fixed and resolved the same way. */
+static char pcsi_helper[256] = "STEWARD$ROOT:[COM]STEWARD_PCSI.COM";
+static char pcsi_helper_path[256];
+static char pcsi_job[256] = "STEWARD$ROOT:[COM]STEWARD_PCSI_JOB.COM";
+static char pcsi_job_path[256];
 /* Where the error log and CLUE's listings are: SYS$ERRORLOG, but for the live test's
    scratch copies (st_plat_vms_test_errlog_dir). */
 static char errlog_dir[200] = "SYS$ERRORLOG:";
@@ -438,6 +444,17 @@ static void lnm_resolve_helper(void)
     resolve_procedure(license_helper, license_helper_path, sizeof license_helper_path, "licence helper");
     resolve_procedure(product_helper, product_helper_path, sizeof product_helper_path, "products helper");
     resolve_procedure(errlog_helper, errlog_helper_path, sizeof errlog_helper_path, "error log helper");
+    resolve_procedure(pcsi_helper, pcsi_helper_path, sizeof pcsi_helper_path, "PCSI helper");
+    resolve_procedure(pcsi_job, pcsi_job_path, sizeof pcsi_job_path, "PCSI job");
+}
+
+/* For tests/vms/api_probe.c only, to run edited PCSI procedures before they are
+   installed. STEWARD.EXE never calls it. */
+void st_plat_vms_test_pcsi(const char *helper, const char *job)
+{
+    st_copy(pcsi_helper, sizeof pcsi_helper, helper);
+    st_copy(pcsi_job, sizeof pcsi_job, job);
+    lnm_resolve_helper();
 }
 
 /* For tests/vms/api_probe.c only, to run an edited error log procedure before it is
@@ -3671,6 +3688,93 @@ int st_plat_device_errors(st_deverr_cb fn, void *ctx, int *scanned, st_err *e)
         d.errors = errs;
         if (fn(&d, ctx)) break;
     }
+    return 0;
+}
+
+/* ---- installing and removing products (Phase 12b, D26) ---- */
+
+static void pcsi_find_line(const char *line, size_t len, void *ctx)
+{
+    st_product_line((st_product_parser *) ctx, line, len);
+}
+
+int st_plat_product_find(const char *privs, const char *source, st_product_parser *p, char text[256], st_err *e)
+{
+    const char *msgs[9];
+    unsigned int status = 0;
+    text[0] = '\0';
+    msgs[0] = privs; msgs[1] = "FIND"; msgs[2] = source;
+    msgs[3] = msgs[4] = msgs[5] = msgs[6] = msgs[7] = msgs[8] = "-";
+    if (helper_run(pcsi_helper_path, msgs, 9, pcsi_find_line, p, &status, e)) return -1;
+    st_product_end(p);
+    if (!(status & 1)) { set_cond(e, status); return -1; }   /* the procedure refused */
+    /* PRODUCT's message whenever it gave one: "%PCSIUI-I-NOMATCH, no products were
+       found" has a success status (%X0652A043). */
+    if (p->message[ST_PROD_KITS][0]) st_copy(text, 256, p->message[ST_PROD_KITS]);
+    else if (!st_product_ok(p, ST_PROD_KITS)) msgtext(p->status[ST_PROD_KITS], text, 256);
+    return 0;
+}
+
+typedef struct { unsigned int entry, submit; int have_submit; char log[40], message[256]; } pcsi_job_ctx;
+
+static void pcsi_job_line(const char *line, size_t len, void *ctx)
+{
+    pcsi_job_ctx *jc = ctx;
+    char buf[300];
+    if (len >= sizeof buf) len = sizeof buf - 1;
+    memcpy(buf, line, len);
+    buf[len] = '\0';
+    if (!strncmp(buf, "%%ENTRY%% ", 10)) jc->entry = (unsigned int) strtoul(buf + 10, NULL, 10);
+    else if (!strncmp(buf, "%%LOG%% ", 8)) st_copy(jc->log, sizeof jc->log, buf + 8);
+    else if (!strncmp(buf, "%%SUBMIT%% ", 11)) { jc->submit = (unsigned int) strtoul(buf + 11, NULL, 16); jc->have_submit = 1; }
+    else if (buf[0] == '%' && !jc->message[0]) st_copy(jc->message, sizeof jc->message, buf);   /* SUBMIT's own message */
+}
+
+int st_plat_product_job(const char *privs, int remove, const st_pcsi_id *id, const char *source,
+                        const char *destination, unsigned int *entry, char logname[40], st_err *e)
+{
+    const char *msgs[9];
+    pcsi_job_ctx jc;
+    unsigned int status = 0;
+    *entry = 0;
+    logname[0] = '\0';
+    if (!pcsi_job_path[0]) { set_text(e, ST_E_INTERNAL, "the PCSI job procedure was not found when Steward started"); return -1; }
+    memset(&jc, 0, sizeof jc);
+    msgs[0] = privs;
+    msgs[1] = remove ? "REMOVE" : "INSTALL";
+    msgs[2] = remove || !source || !*source ? "-" : source;
+    msgs[3] = id->producer; msgs[4] = id->base; msgs[5] = id->name;
+    msgs[6] = remove || !id->version[0] ? "-" : id->version;
+    msgs[7] = remove || !destination || !*destination ? "-" : destination;
+    msgs[8] = pcsi_job_path;
+    if (helper_run(pcsi_helper_path, msgs, 9, pcsi_job_line, &jc, &status, e)) return -1;
+    if (!(status & 1)) { set_cond(e, status); return -1; }   /* the procedure refused */
+    if (!jc.have_submit || !(jc.submit & 1) || !jc.entry || !st_valid_pcsi_log(jc.log)) {
+        set_cond(e, jc.have_submit && !(jc.submit & 1) ? (jc.submit & 0x0FFFFFFFu) : SS$_ABORT);
+        if (e->cond == RMS$_DNF) e->kind = ST_E_CONFLICT;   /* no login directory: the account's state */
+        if (jc.message[0]) st_copy(e->text, sizeof e->text, jc.message);
+        return -1;
+    }
+    *entry = jc.entry;
+    st_copy(logname, 40, jc.log);
+    return 0;
+}
+
+int st_plat_text_file(const char *spec, st_text_cb fn, void *ctx, st_err *e)
+{
+    static unsigned char line[4096];
+    struct FAB fab;
+    struct RAB rab;
+    unsigned int st = ax_open(&fab, &rab, 0, spec, 0, line, sizeof line - 1);
+    if (!(st & 1)) {
+        set_cond(e, st);
+        if (st == RMS$_FNF) e->kind = ST_E_NOTFOUND;
+        return -1;
+    }
+    while ((st = ax_get(&rab)) & 1)
+        if (fn((const char *) line, rab.rab$w_rsz, ctx)) break;
+    sys$close(&fab);
+    if (!(st & 1) && st != RMS$_EOF) { set_cond(e, st); return -1; }
     return 0;
 }
 

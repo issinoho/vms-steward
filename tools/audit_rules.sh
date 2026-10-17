@@ -41,8 +41,8 @@ rule env-only-in-main "getenv outside steward_main.c" \
 
 # The D14 helper procedure is fixed in the server. Only the test probe may swap it,
 # to run an edited procedure before it is installed.
-rule lnm-helper-test-only "st_plat_vms_test_helper, _sysgen, _license, _product, _errlog or _errlog_dir called outside tests/" \
-    --include='*.c' 'st_plat_vms_test_(helper|sysgen|license|product|errlog|errlog_dir)\(' src/ --exclude=st_plat_vms.c
+rule lnm-helper-test-only "st_plat_vms_test_helper, _sysgen, _license, _product, _errlog, _errlog_dir or _pcsi called outside tests/" \
+    --include='*.c' 'st_plat_vms_test_(helper|sysgen|license|product|errlog|errlog_dir|pcsi)\(' src/ --exclude=st_plat_vms.c
 rule service-account-test-only "st_plat_vms_test_svc_* called outside tests/" \
     --include='*.c' 'st_plat_vms_test_svc_[a-z]+\(' src/ --exclude=st_plat_vms.c
 

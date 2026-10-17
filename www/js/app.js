@@ -15,7 +15,7 @@ import { processesView, processView } from './processes.js';
 import { queuesView, queueView } from './queues.js';
 import { sysgenView } from './sysgen.js';
 import { licensesView } from './licenses.js';
-import { productsView } from './products.js';
+import { productsView, stopProductJob } from './products.js';
 import { monitorView, stopMonitor } from './monitor.js';
 import { errorlogView } from './errorlog.js';
 
@@ -233,6 +233,7 @@ async function route() {
   if (!view || !AREAS.find((a) => a.hash === `#/${area}` && a.ready)) { location.hash = '#/dashboard'; return; }
   stopDashboard();   // its refresh belongs to its page
   stopMonitor();     // and monitoring's to its
+  stopProductJob();  // and a followed install's log to its
   const seq = ++routeSeq;
   const ctx = { me, touched: armIdle, refresh: () => route(), authLost: () => expired('Your session has ended. Sign in again.') };
   let content;
@@ -262,6 +263,7 @@ function armIdle() {
 function expired(note) {
   stopDashboard();
   stopMonitor();
+  stopProductJob();
   me = null;
   clearTimeout(idleTimer);
   signInView(note);
@@ -270,6 +272,7 @@ function expired(note) {
 async function signOut() {
   stopDashboard();
   stopMonitor();
+  stopProductJob();
   const me0 = me?.username || '';
   try { await api.signOut(); } catch { /* ending anyway */ }
   me = null;

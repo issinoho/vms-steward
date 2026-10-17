@@ -2,8 +2,8 @@
 
 **Status: 12a closed (2026-10-17)** on the user's browser checks of 0.11.0. The user
 approved D20 and the suggested answers below ("go with your suggestions").
-**12b: install and remove, being planned (2026-10-17)**; D26 proposed, questions at the
-end.
+**12b: install and remove, being built (2026-10-17)**: the user approved D26 and the
+suggested answers ("Yes to all four"), the demo kit's install and removal on x86 among them.
 
 Read-only first (12a), as for the earlier areas. The user asked (2026-10-16) that
 products installed by VMSINSTAL be reported too, not only PCSI's.
@@ -129,3 +129,5 @@ Alternatives considered:
    AUTHORIZE command to run.
 
 Suggested answers: 1 yes; 2 yes; 3 yes; 4 yes.
+
+Answers (2026-10-17, "Yes to all four"): the suggestions, all four.

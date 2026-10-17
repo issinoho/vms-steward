@@ -675,7 +675,8 @@ procedure also runs without it, from a test pool).
 
 ## D26. Installing and removing products: PRODUCT in a batch job as the viewer
 
-**Status:** proposed 2026-10-17 (PHASE12.md, 12b).
+**Status:** approved by the user 2026-10-17 ("Yes to all four", PHASE12.md, 12b), with
+the demo kit's install and removal on x86 for testing.
 
 An install or removal runs for minutes and may need privileges the kit's procedures
 decide, so the D14 helper, as the viewer, submits a fixed procedure

@@ -36,7 +36,9 @@
 
 #include <stddef.h>
 
-enum { ST_PROD_PRODUCTS = 0, ST_PROD_HISTORY, ST_PROD_PARTS };
+/* KITS: PRODUCT FIND * /SOURCE=<dir> (12b), the kits a directory holds, columns PRODUCT,
+   KIT TYPE and KIT FORMAT. */
+enum { ST_PROD_PRODUCTS = 0, ST_PROD_HISTORY, ST_PROD_KITS, ST_PROD_PARTS };
 
 #define ST_PROD_COLS 12
 
@@ -44,6 +46,7 @@ typedef struct {
     int  part;                                      /* ST_PROD_PRODUCTS or _HISTORY */
     char producer[32], base[16], name[48], version[32];
     char kit_type[16];
+    char kit_format[16];                            /* kits */
     char state[16];                                 /* products */
     char maintenance[256], referenced_by[640];      /* products: ", " between items */
     char operation[16], validation[8], date[24], error[8], user[16], remark[128];   /* history */
@@ -81,5 +84,19 @@ typedef struct {
 /* One line of VMSINSTAL.HISTORY into v: 1 if it is a run, 0 for the header and
    anything else. */
 int st_vmsinstal_line(const char *line, size_t len, st_vmsinstal *v);
+
+/* ---- installing and removing (12b, D26) ---- */
+
+/* A word of a product's name (producer, base, name, version): 1 to max characters
+   from A-Z, 0-9, $, _, - and . (as PCSI writes them). */
+int st_valid_pcsi_word(const char *s, size_t max);
+/* A directory to find kits in, or to install into: DEV:[DIR...] in capitals, from
+   A-Z, 0-9, $, _, -, ., : and [ ], at most 200 characters. */
+int st_valid_kit_dir(const char *s);
+/* Why Steward will not install or remove it, or NULL: its own product (which runs
+   the request) and the operating system. */
+const char *st_product_refused(const char *producer, const char *base, const char *name);
+/* STEWARD_PCSI_<yyyymmddhhmmss>.LOG: the job's log, in the viewer's login directory. */
+int st_valid_pcsi_log(const char *s);
 
 #endif

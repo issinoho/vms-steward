@@ -94,6 +94,11 @@ export const api = {
   // Phase 11: licences, as SHOW LICENSE and LICENSE LIST (D19).
   licenses: () => call('GET', 'licenses'),
   products: () => call('GET', 'products'),
+  // Phase 12b: installing and removing (D26): a batch job as you; its log as it grows.
+  productKits: (source) => call('GET', `products/kits${query({ source })}`),
+  installProduct: (body) => call('POST', 'products/install', body),
+  removeProduct: (body) => call('POST', 'products/remove', body),
+  productLog: (name) => call('GET', `products/log${query({ name })}`),
   // Phase 13: one reading of the counters MONITOR shows (D21); background as for system.
   monitor: (background) => call('GET', 'monitor', undefined, background ? { 'X-Steward-Background': '1' } : undefined),
   // Phase 14: the error log (D23). The first three need SYSPRV, as OpenVMS sets them.

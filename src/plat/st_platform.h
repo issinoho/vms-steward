@@ -639,6 +639,26 @@ typedef struct { char device[64]; unsigned int errors; } st_dev_errors;
 typedef int (*st_deverr_cb)(const st_dev_errors *d, void *ctx);
 int st_plat_device_errors(st_deverr_cb fn, void *ctx, int *scanned, st_err *e);
 
+/* ---- installing and removing products (Phase 12b, D26), as the current persona ----
+
+   Through the D14 helper (STEWARD_PCSI.COM): PRODUCT FIND, or a SUBMIT of the fixed
+   STEWARD_PCSI_JOB.COM to SYS$BATCH under the viewer's own username, which then runs
+   PRODUCT INSTALL or REMOVE with the privileges switched on in the session (D9). */
+
+/* The kits in source (st_valid_kit_dir): PRODUCT FIND * /SOURCE=, into p's KITS part.
+   text gets PRODUCT's message if it found none or refused. */
+int st_plat_product_find(const char *privs, const char *source, st_product_parser *p, char text[256], st_err *e);
+
+typedef struct { char producer[32], base[16], name[48], version[32]; } st_pcsi_id;
+/* Submit the job: install id (version required) from source, into destination ("" for
+   PCSI's own), or remove id. *entry gets the job's entry number and logname its log's
+   name (st_valid_pcsi_log), in the viewer's login directory. */
+int st_plat_product_job(const char *privs, int remove, const st_pcsi_id *id, const char *source,
+                        const char *destination, unsigned int *entry, char logname[40], st_err *e);
+
+/* A text file's lines, read in-process as the persona (shared with its writer). */
+int st_plat_text_file(const char *spec, st_text_cb fn, void *ctx, st_err *e);
+
 /* ---- audit and diagnostics ---- */
 void st_plat_audit(const char *line);    /* one record; the platform adds a timestamp */
 void st_plat_log(const char *line);      /* operational log (SYS$ERROR / stderr) */

@@ -1631,6 +1631,82 @@ int st_plat_product_list(const char *privs, st_product_parser *p, char text[ST_P
     return 0;
 }
 
+/* ---- installing and removing (12b, D26): kits in DKA0:[KITS] (one of them Steward's,
+   refused), and jobs whose logs grow over two seconds and end in success. */
+static const char *const stub_kits[] = {
+    "%%PART%% KITS",
+    "----------------------------------- ----------- ----------",
+    "PRODUCT                             KIT TYPE    KIT FORMAT",
+    "----------------------------------- ----------- ----------",
+    "EXAMPLE X86VMS GADGET V2.0          Full LP     Sequential",
+    "EXAMPLE X86VMS WIDGET V1.3          Full LP     Compressed",
+    "ISSINOHO X86VMS STEWARD T0.16-0     Full LP     Sequential",
+    "----------------------------------- ----------- ----------",
+    "3 products found",
+    "%%STATUS%% 00000001", NULL };
+
+int st_plat_product_find(const char *privs, const char *source, st_product_parser *p, char text[256], st_err *e)
+{
+    static const char *const none[] = { "%%PART%% KITS", "%PCSIUI-I-NOMATCH, no products were found matching: *",
+                                        "%%STATUS%% 0652A043", NULL };
+    const char *const *src = !strcmp(source, "DKA0:[KITS]") ? stub_kits : none;
+    int i;
+    (void) privs;
+    (void) e;
+    text[0] = '\0';
+    for (i = 0; src[i]; i++) if (st_product_line(p, src[i], strlen(src[i]))) break;
+    st_product_end(p);
+    if (p->message[ST_PROD_KITS][0]) st_copy(text, 256, p->message[ST_PROD_KITS]);
+    return 0;
+}
+
+#define STUB_PCSI 16
+static struct { char log[48]; char what[160]; long long started; } stub_pcsi[STUB_PCSI];
+static int stub_npcsi;
+
+int st_plat_product_job(const char *privs, int remove, const st_pcsi_id *id, const char *source,
+                        const char *destination, unsigned int *entry, char logname[40], st_err *e)
+{
+    int k = stub_npcsi % STUB_PCSI;
+    (void) privs;
+    (void) source;
+    (void) destination;
+    if (stub_npcsi >= 99) { set_err(e, ST_E_INTERNAL, "too many stub jobs"); return -1; }
+    snprintf(stub_pcsi[k].log, sizeof stub_pcsi[k].log, "STEWARD_PCSI_202610171200%02d.LOG", stub_npcsi % 100);
+    snprintf(stub_pcsi[k].what, sizeof stub_pcsi[k].what, "%s %s %s %s %s", remove ? "REMOVE" : "INSTALL",
+             id->producer, id->base, id->name, remove ? "-" : id->version);
+    stub_pcsi[k].started = stub_ms();
+    stub_npcsi++;
+    *entry = 4000u + (unsigned int) stub_npcsi;
+    st_copy(logname, 40, stub_pcsi[k].log);
+    return 0;
+}
+
+int st_plat_text_file(const char *spec, st_text_cb fn, void *ctx, st_err *e)
+{
+    char line[200];
+    long long age;
+    int k;
+    for (k = 0; k < STUB_PCSI; k++) {
+        size_t n = strlen(spec), m = strlen(stub_pcsi[k].log);
+        if (!m || n < m || strcmp(spec + n - m, stub_pcsi[k].log)) continue;
+        age = stub_ms() - stub_pcsi[k].started;
+        snprintf(line, sizeof line, "Steward: %s", stub_pcsi[k].what);
+        if (fn(line, strlen(line), ctx)) return 0;
+        if (age >= 700) {
+            const char *l = "%PCSI-I-PRCOUTPUT, output from subprocess follows ...";
+            if (fn(l, strlen(l), ctx)) return 0;
+        }
+        if (age >= 1400) {
+            const char *l = "%%PCSI-END%% 00000001";
+            fn(l, strlen(l), ctx);
+        }
+        return 0;
+    }
+    set_err(e, ST_E_NOTFOUND, "%RMS-E-FNF, file not found");
+    return -1;
+}
+
 /* ================================================================ monitoring (D21)
 
    Counters that move with the clock, a little unevenly, so the page's charts move on
