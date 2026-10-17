@@ -131,3 +131,27 @@ Alternatives considered:
 Suggested answers: 1 yes; 2 yes; 3 yes; 4 yes.
 
 Answers (2026-10-17, "Yes to all four"): the suggestions, all four.
+
+## Built (12b)
+
+- `STEWARD_PCSI.COM` (the D14 helper: PRODUCT FIND, or SUBMIT) and
+  `STEWARD_PCSI_JOB.COM` (the batch job: PRODUCT INSTALL or REMOVE, unattended); both
+  check every value again. `GET api/v1/products/kits`, `POST .../install`, `POST
+  .../remove`, `GET .../log` (api.md); the product list marks what Steward refuses.
+- The page: Remove beside each product Steward allows, "Install from a kit directory"
+  (PRODUCT FIND, then Install on a kit), the job's log followed every 2 s to its end;
+  the name typed to confirm.
+- What the first runs on x86 showed, each now handled (NOTES.md): STEWARD_ADM had no
+  login directory (SUBMIT's status for it has no message text: the helper checks first,
+  409) and no batch access (the job is refused at login, no log: Steward checks the
+  UAF first, 409; the page explains a job gone without a log). PCSI needs CMKRNL,
+  SYSLCK, SYSPRV and TMPMBX (PRIVCLASS3). The user created STEWARD_ADM's directory and
+  gave it batch access and CMKRNL (authorized, not default) for the test.
+
+Live test: `tests/vms/phase12b_live.py x86 SYSPRV,SYSLCK,CMKRNL` 12 ok, 0 failed: the
+demo kit ISSINOHO X86VMS STWDEMO V1.0 found through Steward, NOMATCH for a directory
+without kits, the operating system refused; the install submitted as STEWARD_ADM ran
+to %X00000001 in about 13 s (PRODUCT SHOW lists it, its file in the destination), the
+removal likewise (PRODUCT SHOW no longer lists it); staging, destination and job logs
+removed after. Linux: 528 unit checks, the UI tests (Remove, kits, a job followed to its
+end), `make audit`.

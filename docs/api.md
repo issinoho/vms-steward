@@ -834,6 +834,31 @@ shown.
 - Dates are as OpenVMS prints them, in the node's local time.
 - `truncated`: more than 5,000 entries in a part.
 
+### Installing and removing (Phase 12b, D26)
+
+PRODUCT runs as a batch job under **your** name, submitted for you by a short-lived
+process that is you (the D14 helper), with the privileges you switched on (D9). PCSI
+needs CMKRNL, SYSLCK, SYSPRV and TMPMBX switched on, your account needs batch access,
+and the job logs to your login directory. Steward refuses its own product and the
+operating system (409, `refused-product`). Each request is in the audit log.
+
+- **`GET api/v1/products/kits?source=DKA100:[KITS]`**: what `PRODUCT FIND *
+  /SOURCE=` sees there (no privilege needed): `{"source", "kits": [{"producer",
+  "base", "name", "version", "kit_type", "kit_format", "refused"?}], "message"?}`;
+  `message` is PRODUCT's when it found none (`%PCSIUI-I-NOMATCH`).
+- **`POST api/v1/products/install`** `{"producer", "base", "name", "version",
+  "source", "destination"?}` and **`POST api/v1/products/remove`** `{"producer",
+  "base", "name"}`: 202 `{"entry": 530, "log": "STEWARD_PCSI_20261017161848.LOG"}`.
+  The job runs `PRODUCT INSTALL ... /CONFIGURATION=CURRENT` for an upgrade (PRODUCER
+  for a new product) `/OPTIONS=NOCONFIRM`, or `PRODUCT REMOVE ... /OPTIONS=NOCONFIRM`,
+  with nothing to answer PCSI's questions but the configuration. 409
+  `no-batch-access` if your account may not run batch jobs at any hour; 409 if your
+  login directory does not exist.
+- **`GET api/v1/products/log?name=STEWARD_PCSI_<yyyymmddhhmmss>.LOG`**: the job's log
+  from your login directory: `{"name", "lines": [...], "started", "done", "status"?,
+  "success"?, "truncated"}`; `started: false` until the job has begun. Follow the job
+  itself with `GET api/v1/jobs/{entry}` (Phase 9).
+
 ## Monitoring (Phase 13, D21, D22): read-only
 
 ### `GET api/v1/monitor`
