@@ -566,3 +566,14 @@ message OPCDEF documents (type 2, target classes 0, a request id) was accepted b
 to OPERATOR.LOG and did not start a new one (still ;243). `REPLY/LOG` itself needs an
 operator terminal. So Steward does not start a new OPERATOR.LOG (D24); OPCDEF's newer
 `OPC$_X_LOGFILE` form, which names an operator, was not tried.
+
+**`$ERASE` and `$RENAME` act on a search list's first directory only** (Phase 14b,
+2026-10-17, found by the user in the browser). `SYS$ERRORLOG` is `SYS$SYSROOT:[SYSERR]`,
+a search list: ERRLOG.SYS is in `SYS$SPECIFIC:[SYSERR]`, the first directory, but CLUE's
+listings are in `SYS$COMMON:[SYSERR]`, the second. Listing and opening them worked
+(`$SEARCH` and `$OPEN` go through the list), but deleting one by `SYS$ERRORLOG:<name>`
+gave RMS-E-FNF: `$ERASE` looked in the first directory only. The live test had used a
+single scratch directory and missed it; reproduced with a process search list of two
+scratch directories (404 FNF), fixed by finding the file first and acting on its full
+physical name (`phys_spec`, as the helper procedures are resolved), then 204. The live
+test now uses such a search list.

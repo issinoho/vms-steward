@@ -366,21 +366,28 @@ static char errlog_helper_path[256];
    scratch copies (st_plat_vms_test_errlog_dir). */
 static char errlog_dir[200] = "SYS$ERRORLOG:";
 
-/* spec to a physical path in out ("" if it cannot be): $PARSE and $SEARCH with
-   NOCONCEAL, as the service, then the device's full name. */
-static void resolve_procedure(const char *spec, char *out, size_t outlen, const char *what)
+/* spec (with dflt, if not NULL, for what it leaves out) to a physical path in out:
+   $PARSE and $SEARCH with NOCONCEAL, then the device's full name ("_DEV:", never
+   translated), the directory, name and type, without the version. *dirlen, if not
+   NULL, gets the length of the device and directory. A search list is searched, so
+   out names the directory the file is really in: $ERASE and $RENAME act on a search
+   list's first directory only (SYS$ERRORLOG, NOTES.md). The RMS status, or
+   SS$_IVDEVNAM if the device has no physical name; out is "" unless it succeeded. */
+static unsigned int phys_spec(const char *spec, const char *dflt, char *out, size_t outlen, size_t *dirlen)
 {
     struct FAB fab = cc$rms_fab;
     struct NAM nam = cc$rms_nam;
-    char esa[NAM$C_MAXRSS + 1], rsa[NAM$C_MAXRSS + 1], dev[64], devname[65], msg[120];
+    char esa[NAM$C_MAXRSS + 1], rsa[NAM$C_MAXRSS + 1], dev[64], devname[65];
     struct dsc$descriptor_s dd;
     unsigned short devlen = 0;
     unsigned int st, iosb[2];
     st_ile3 it[2];
+    int n;
 
     out[0] = '\0';
     fab.fab$l_fna = (char *) spec;
     fab.fab$b_fns = (unsigned char) strlen(spec);
+    if (dflt) { fab.fab$l_dna = (char *) dflt; fab.fab$b_dns = (unsigned char) strlen(dflt); }
     fab.fab$l_nam = &nam;
     nam.nam$l_esa = esa;
     nam.nam$b_ess = NAM$C_MAXRSS;
@@ -389,11 +396,8 @@ static void resolve_procedure(const char *spec, char *out, size_t outlen, const 
     nam.nam$b_nop = NAM$M_NOCONCEAL;
     st = sys$parse(&fab);
     if (st & 1) st = sys$search(&fab);
-    if (!(st & 1) || nam.nam$b_dev == 0 || nam.nam$b_dev >= sizeof dev) {
-        snprintf(msg, sizeof msg, "the %s procedure was not found: it is off", what);
-        st_plat_log(msg);
-        return;
-    }
+    if (!(st & 1)) return st;
+    if (nam.nam$b_dev == 0 || nam.nam$b_dev >= sizeof dev) return SS$_IVDEVNAM;
     memcpy(dev, nam.nam$l_dev, nam.nam$b_dev);
     dev[nam.nam$b_dev] = '\0';
     desc(&dd, dev, (unsigned short) strlen(dev));
@@ -401,18 +405,30 @@ static void resolve_procedure(const char *spec, char *out, size_t outlen, const 
     item_end(&it[1]);
     st = sys$getdviw(0, 0, &dd, it, (void *) iosb, 0, 0, 0);
     if (st & 1) st = iosb[0] & 0xFFFF;
-    if (!(st & 1) || devlen == 0 || devname[0] != '_') {
+    if (!(st & 1) || devlen == 0 || devname[0] != '_') return SS$_IVDEVNAM;
+    devname[devlen] = '\0';
+    n = snprintf(out, outlen, "%s%.*s%.*s%.*s", devname, (int) nam.nam$b_dir, nam.nam$l_dir,
+                 (int) nam.nam$b_name, nam.nam$l_name, (int) nam.nam$b_type, nam.nam$l_type);
+    if (n < 0 || n >= (int) outlen) { out[0] = '\0'; return RMS$_FNM; }
+    if (dirlen) *dirlen = strlen(devname) + nam.nam$b_dir;
+    return SS$_NORMAL;
+}
+
+/* A helper procedure's spec to a physical path, as the service, before any persona
+   ("" if it cannot be: the helper is then off, and the log says why). The directory,
+   name and type, without the version: a kit installed later puts a new version there,
+   and the pool is restarted with it anyway. */
+static void resolve_procedure(const char *spec, char *out, size_t outlen, const char *what)
+{
+    char msg[120];
+    unsigned int st = phys_spec(spec, NULL, out, outlen, NULL);
+    if (st == SS$_IVDEVNAM) {
         snprintf(msg, sizeof msg, "the %s procedure's device has no physical name: it is off", what);
         st_plat_log(msg);
-        return;
+    } else if (!(st & 1)) {
+        snprintf(msg, sizeof msg, "the %s procedure was not found: it is off", what);
+        st_plat_log(msg);
     }
-    devname[devlen] = '\0';
-    /* The directory, name and type, without the version: a kit installed later puts
-       a new version there, and the pool is restarted with it anyway. */
-    if (snprintf(out, outlen, "%s%.*s%.*s%.*s", devname,
-                 (int) nam.nam$b_dir, nam.nam$l_dir, (int) nam.nam$b_name, nam.nam$l_name,
-                 (int) nam.nam$b_type, nam.nam$l_type) >= (int) outlen)
-        out[0] = '\0';
 }
 
 static void lnm_resolve_helper(void)
@@ -3387,7 +3403,11 @@ int st_plat_errlog(const char *privs, int op, unsigned int arg, const char *file
     char a[16], spec[240];
     unsigned int status = 0;
     snprintf(a, sizeof a, "%u", arg);
-    snprintf(spec, sizeof spec, "%s%s", errlog_dir, file && *file ? file : "ERRLOG.SYS");
+    /* The file as it really is, found as the persona: the helper then translates no
+       logical name the viewer's group could shadow (as for the helper procedures).
+       If the viewer cannot find it, the name as given: ELV then says why. */
+    if (!(phys_spec(file && *file ? file : "ERRLOG.SYS", errlog_dir, spec, sizeof spec, NULL) & 1))
+        snprintf(spec, sizeof spec, "%s%s", errlog_dir, file && *file ? file : "ERRLOG.SYS");
     msgs[0] = privs;
     msgs[1] = op == ST_ELV_ENTRY ? "ENTRY" : "LIST";
     msgs[2] = a;
@@ -3458,15 +3478,19 @@ int st_plat_crash_text(const char *name, st_text_cb fn, void *ctx, st_err *e)
     return 0;
 }
 
+/* Found first, then erased by its full name: $ERASE alone looks only in a search
+   list's first directory, and CLUE's listings are in SYS$COMMON, the second of
+   SYS$ERRORLOG's (NOTES.md). */
 int st_plat_crash_delete(const char *name, st_err *e)
 {
     struct FAB fab = cc$rms_fab;
-    unsigned int st;
-    fab.fab$l_fna = (char *) name;
-    fab.fab$b_fns = (unsigned char) strlen(name);
-    fab.fab$l_dna = errlog_dir;
-    fab.fab$b_dns = (unsigned char) strlen(errlog_dir);
-    st = sys$erase(&fab);
+    char full[240];
+    unsigned int st = phys_spec(name, errlog_dir, full, sizeof full, NULL);
+    if (st & 1) {
+        fab.fab$l_fna = full;
+        fab.fab$b_fns = (unsigned char) strlen(full);
+        st = sys$erase(&fab);
+    }
     if (!(st & 1)) {
         set_cond(e, st);
         if (st == RMS$_FNF) e->kind = ST_E_NOTFOUND;
@@ -3540,12 +3564,20 @@ int st_plat_errlog_rename(char newname[32], st_err *e)
     struct FAB ofab = cc$rms_fab, nfab = cc$rms_fab;
     unsigned short t[7];
     char oldspec[240], newspec[240];
+    size_t dirlen = 0;
     unsigned int st;
     newname[0] = '\0';
     if (!(sys$numtim(t, 0) & 1)) { set_text(e, ST_E_INTERNAL, "no time"); return -1; }
     st_errlog_renamed(t[0], t[1], t[2], t[3], t[4], newname);
-    snprintf(oldspec, sizeof oldspec, "%sERRLOG.SYS", errlog_dir);
-    snprintf(newspec, sizeof newspec, "%s%s", errlog_dir, newname);
+    /* Found first, and renamed in the directory it is in: $RENAME alone would take a
+       search list's first directory for both names (NOTES.md). */
+    st = phys_spec("ERRLOG.SYS", errlog_dir, oldspec, sizeof oldspec, &dirlen);
+    if (!(st & 1)) {
+        set_cond(e, st);
+        if (st == RMS$_FNF) e->kind = ST_E_NOTFOUND;
+        return -1;
+    }
+    snprintf(newspec, sizeof newspec, "%.*s%s", (int) dirlen, oldspec, newname);
     ofab.fab$l_fna = oldspec;
     ofab.fab$b_fns = (unsigned char) strlen(oldspec);
     nfab.fab$l_fna = newspec;

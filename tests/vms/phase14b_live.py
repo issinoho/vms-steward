@@ -3,9 +3,11 @@ pool purging its logs (D25), through the real dispatcher and platform (api_probe
 
     python3 tests/vms/phase14b_live.py [node]      (default x86; run from the repo top)
 
-Nothing of the system's is changed: the work account copies ERRLOG.SYS and the three
-newest CLUE listings into [.P14BEL] of the work directory, and api_probe is pointed
-there (API_PROBE_ERRLOG_DIR) to rename and delete those copies; the system's
+Nothing of the system's is changed: the work account copies ERRLOG.SYS into [.P14BELA]
+and the three newest CLUE listings into [.P14BELB] of the work directory, and api_probe
+is pointed (API_PROBE_ERRLOG_DIR) at P14BSL, a process search list of the two, as
+SYS$ERRORLOG is a search list with ERRLOG.SYS in its first directory and the listings
+in its second ($ERASE and $RENAME act on the first only: NOTES.md). The system's
 SYS$ERRORLOG is checked unchanged at the end. The edited helper procedure is staged
 under [STEWARD_TEST.P14T] as for phase14_live.py. The pool purge runs in a test pool of
 the work directory's own ([.P14BRUN], base 19391) that starts no process."""
@@ -15,8 +17,9 @@ NODE = sys.argv[1] if len(sys.argv) > 1 else "x86"
 with open("tools/nodes.conf") as f:
     WORKDIR = next(l.split()[5] for l in f if l.split() and l.split()[0] == NODE)
 BUILD = WORKDIR[:-1] + ".BUILD]"
-EL = WORKDIR[:-1] + ".P14BEL]"
-AUDIT = EL + "AUDIT.LOG"
+ELA = WORKDIR[:-1] + ".P14BELA]"
+ELB = WORKDIR[:-1] + ".P14BELB]"
+AUDIT = ELA + "AUDIT.LOG"
 AP = 'ap = "$' + BUILD + 'API_PROBE.EXE"'
 STAGE = "SYS$SYSDEVICE:[STEWARD_TEST.P14T]"
 HELPER = STAGE + "STEWARD_ERRLOG.COM"
@@ -32,7 +35,8 @@ def api(user, privs, path, method="GET", body=None):
     run = 'ap %s %s "%s" "%s"' % (user, privs, path, method)
     if body is not None:
         run += " " + dcl_quote(json.dumps(body, separators=(",", ":")))
-    out = vms(AP, 'define/nolog API_PROBE_ERRLOG_HELPER "%s"' % HELPER, 'define/nolog API_PROBE_ERRLOG_DIR "%s"' % EL,
+    out = vms(AP, 'define/nolog API_PROBE_ERRLOG_HELPER "%s"' % HELPER, 'define/nolog P14BSL %s,%s' % (ELA, ELB),
+              'define/nolog API_PROBE_ERRLOG_DIR "P14BSL:"',
               'define/nolog API_PROBE_AUDIT "%s"' % AUDIT, run)
     m = re.search(r"^(\d{3})\s*$", out, re.M)
     rest = out[m.end():].replace("\n", "") if m else ""
@@ -57,15 +61,18 @@ real_before = files("SYS$ERRORLOG:ERRLOG.SYS,CLUE$*.LIS")
 clue = [n for n in real_before if n.startswith("CLUE$")]
 newest3 = sorted(clue, key=lambda n: n[-15:-9][4:6] + n[-15:-9][2:4] + n[-15:-9][0:2] + n[-8:-4])[-3:]
 try:
-    vms("create/directory/protection=(S:RWED,O:RWED,G,W) " + EL,
+    vms("create/directory/protection=(S:RWED,O:RWED,G,W) " + ELA,
+        "create/directory/protection=(S:RWED,O:RWED,G,W) " + ELB,
         "create/directory/protection=(S:RWED,O:RWED,G:RE,W:RE) " + STAGE,
         "set security/protection=(S:RWED,O:RWED,G:RE,W:RE) SYS$SYSDEVICE:[STEWARD_TEST]P14T.DIR",
         "copy/protection=(S:RWED,O:RWED,G:RE,W:RE) [.vms]steward_errlog.com " + STAGE,
         "set process/privilege=sysprv",
-        "copy/protection=(S:RWED,O:RWED,G,W) SYS$ERRORLOG:ERRLOG.SYS " + EL,
-        *["copy/protection=(S:RWED,O:RWED,G,W) SYS$ERRORLOG:%s %s" % (n, EL) for n in newest3])
-    check(files(EL + "*.*") == sorted(["ERRLOG.SYS"] + newest3),
-          "copies of ERRLOG.SYS and the three newest listings in the work directory (%s)" % ", ".join(newest3))
+        "copy/protection=(S:RWED,O:RWED,G,W) SYS$ERRORLOG:ERRLOG.SYS " + ELA,
+        *["copy/protection=(S:RWED,O:RWED,G,W) SYS$ERRORLOG:%s %s" % (n, ELB) for n in newest3])
+    check(files(ELA + "*.*") == ["ERRLOG.SYS"] and files(ELB + "*.*") == sorted(newest3),
+          "copies: ERRLOG.SYS in the search list's first directory, the three newest listings (%s) in its second" % ", ".join(newest3))
+    st, doc = api("STEWARD_ADM", "SYSPRV", "/api/v1/crashes")
+    check(st == 200 and sorted(c["name"] for c in doc["crashes"]) == sorted(newest3), "the listings found through the search list")
 
     st, doc = api("STEWARD_ADM", "SYSPRV", "/api/v1/errorlog/files")
     check(st == 200 and [f["name"] for f in doc["files"]] == ["ERRLOG.SYS"] and doc["files"][0]["blocks"] > 1000,
@@ -80,8 +87,8 @@ try:
     check(st == 403, "STEWARD_ADM with SYSPRV not switched on: refused (D9)", (st, doc))
     st, doc = api("STEWARD_ADM", "SYSPRV", "/api/v1/errorlog/new", "POST", {})
     renamed = (doc or {}).get("renamed_to", "")
-    check(st == 200 and re.fullmatch(r"ERRLOG_\d{8}_\d{4}\.SYS", renamed) and files(EL + "*.SYS") == [renamed],
-          "with SYSPRV: ERRLOG.SYS renamed %s, nothing else there" % renamed, (st, doc, files(EL + "*.SYS")))
+    check(st == 200 and re.fullmatch(r"ERRLOG_\d{8}_\d{4}\.SYS", renamed) and files(ELA + "*.SYS") == [renamed] and
+          not files(ELB + "*.SYS"), "with SYSPRV: ERRLOG.SYS renamed %s, in its own directory" % renamed, (st, doc, files(ELA + "*.SYS")))
     st, doc = api("STEWARD_ADM", "SYSPRV", "/api/v1/errorlog")
     check(st == 404 and "ERRFMT creates it at its next record" in (doc or {}).get("detail", ""),
           "no ERRLOG.SYS until the next record, and the viewer told so", (st, doc))
@@ -94,9 +101,9 @@ try:
     st, doc = api("STEWARD_TEST", "-", "/api/v1/crashes/" + newest3[0], "DELETE")
     check(st == 403, "STEWARD_TEST: deleting a listing refused (PRV)", (st, doc))
     st, doc = api("STEWARD_ADM", "SYSPRV", "/api/v1/crashes/" + newest3[0], "DELETE")
-    check(st == 204 and newest3[0] not in files(EL + "*.LIS"), "with SYSPRV: %s deleted" % newest3[0], st)
+    check(st == 204 and newest3[0] not in files(ELB + "*.LIS"), "with SYSPRV: %s deleted, from the second directory" % newest3[0], (st, doc))
     st, doc = api("STEWARD_ADM", "SYSPRV", "/api/v1/crashes/purge", "POST", {"before": "2099-01-01"})
-    check(st == 200 and sorted(doc["deleted"]) == sorted(newest3[1:]) and doc["failed"] == 0 and files(EL + "*.LIS") == [],
+    check(st == 200 and sorted(doc["deleted"]) == sorted(newest3[1:]) and doc["failed"] == 0 and files(ELB + "*.LIS") == [],
           "purge before 2099: the other two", (st, doc))
     audit = vms("type " + AUDIT)
     check(re.search(r'action="errorlog-new" target="ERRLOG\.SYS" outcome="ok" detail="' + renamed, audit) and
@@ -128,8 +135,10 @@ try:
           out[-500:])
 finally:
     vms("set process/privilege=sysprv",
-        "delete/nolog %s*.*;*" % EL, "set security/protection=(O:RWED) %sP14BEL.DIR;1" % WORKDIR,
-        "delete/nolog %sP14BEL.DIR;1" % WORKDIR,
+        "delete/nolog %s*.*;*" % ELA, "set security/protection=(O:RWED) %sP14BELA.DIR;1" % WORKDIR,
+        "delete/nolog %sP14BELA.DIR;1" % WORKDIR,
+        "delete/nolog %s*.*;*" % ELB, "set security/protection=(O:RWED) %sP14BELB.DIR;1" % WORKDIR,
+        "delete/nolog %sP14BELB.DIR;1" % WORKDIR,
         "delete/nolog %s*.*;*" % STAGE, "set security/protection=(S:RWED,O:RWED) SYS$SYSDEVICE:[STEWARD_TEST]P14T.DIR",
         "delete/nolog SYS$SYSDEVICE:[STEWARD_TEST]P14T.DIR;*",
         "delete/nolog %s*.*;*" % (WORKDIR[:-1] + ".P14BRUN.LOGS]"),
