@@ -1,7 +1,8 @@
 # Phase 14: error log
 
 **Status: 14a closed (2026-10-17)** on the user's browser checks of 0.14.0. The user
-approved D23 and the suggested answers below ("Agreed"). 14b (changes) not yet decided.
+approved D23 and the suggested answers below ("Agreed").
+**14b: changes, being planned (2026-10-17)**; D24 and D25 proposed, questions at the end.
 
 What OpenVMS records about the hardware and the system itself: the error log
 (`ERRLOG.SYS`, written by ERRFMT), the crash history (CLUE's summary of each crash
@@ -110,3 +111,73 @@ tests/vms/phase14_live.py x86`, with STEWARD$ROOT:[COM]STEWARD_ERRLOG.COM: 19 ok
 failed.
 
 Browser checks: confirmed by the user (2026-10-17). 14a closed.
+
+## 14b: changes (D24, proposed)
+
+The maintenance a system manager does on these files by hand, each under the viewer's
+persona, so OpenVMS decides (D2), each audited, each confirmed in the page first.
+
+### What the probes found (read-only, x86)
+
+- **ERRLOG.SYS is not held open.** `SHOW DEVICE/FILES` lists OPCOM with
+  `OPERATOR.LOG;243` open, nothing with ERRLOG.SYS: ERRFMT opens it for each batch of
+  records, so a renamed file is simply not found at the next write and ERRFMT creates a
+  new one (as the documentation's "start a new error log" says: rename or delete it).
+- **A new OPERATOR.LOG**: `REPLY/LOG` needs OPER *and* a terminal enabled as an
+  operator terminal, which a detached helper has not. Underneath, OPCDEF has the
+  request: `$SNDOPR` with `OPC$_RQ_LOGI` (2) and `OPC$K_INITLOG` ("if one is open,
+  close logfile; open new logfile"). Whether OPCOM accepts it from a process with OPER
+  but no operator terminal is not known without sending it, which starts a new
+  OPERATOR.LOG on the node: **a probe that needs the user's go-ahead** (question 3).
+- The CLUE listings are plain files; CLUE$HISTORY.DAT and CLUE$COLLECT.DAT beside
+  them are CLUE's own and are left alone.
+- `[.RUN.LOGS]` holds 46 versions of the pool's `.COM` files and 46 of its `.LOG`
+  files: each START writes new ones and nothing purges them (D25, below).
+
+### Design
+
+- **Start a new error log**: rename `SYS$ERRORLOG:ERRLOG.SYS` to
+  `ERRLOG_<yyyymmdd>_<hhmm>.SYS` in the same directory, in-process under the persona
+  (`$RENAME`: SYSPRV, as the directory and file are protected). ERRFMT starts a new
+  ERRLOG.SYS at its next record. The old file is kept; the page can then read an
+  older file with ELV (`GET api/v1/errorlog?file=`, the names `ERRLOG*.SYS` in
+  SYS$ERRORLOG only).
+- **Delete crash listings**: chosen ones, or all older than a date, in-process under
+  the persona (`$ERASE`, SYSPRV). Only names `st_valid_clue_name` accepts.
+- **Start a new OPERATOR.LOG**: `$SNDOPR` `OPC$_RQ_LOGI`/`OPC$K_INITLOG` in-process
+  under the persona (OPER), if the probe shows OPCOM accepts it; otherwise left out
+  (the page says to use `REPLY/LOG` at an operator terminal).
+- **API**: `POST api/v1/errorlog/new`, `DELETE api/v1/crashes/{name}`,
+  `POST api/v1/crashes/purge` (`{"before": "2026-01-01"}`), `POST
+  api/v1/operator-log/new`; CSRF and same-origin as every change; each in the audit
+  log with its outcome.
+- **Tests**: renaming the real error log and deleting real listings are system
+  changes, so the live test works on copies: a test hook (for `api_probe` only, as
+  the helper paths) points SYS$ERRORLOG's role at a scratch directory in the work
+  directory holding a copy of ERRLOG.SYS and of some listings. The real files change
+  only when the user tries it in the browser.
+
+Alternatives considered:
+- **Deleting ERRLOG.SYS** rather than renaming: simpler, but the history is lost; a
+  renamed file can still be read and deleted later by hand.
+- **REPLY/LOG through the D14 helper**: refused without an operator terminal.
+- **A fixed number of crash listings kept** (purge to N): the dates are what a
+  manager decides by.
+
+## Pool logs (D25, proposed)
+
+`STEWARD_POOL.COM START` purges `[.RUN.LOGS]` to the newest **10** versions of each
+process's `.COM` and `.LOG` (`PURGE/KEEP=10`), before it writes new ones; a setting,
+`STEWARD_LOG_KEEP` (1 to 100), changes the number. The service account owns them, so
+no privilege is needed. Tested in the work directory's own test pool.
+
+## Questions for the user (14b and the pool logs)
+
+1. **Error log**: rename to keep the old file (and let the page read older files), or
+   delete it?
+2. **Crash listings**: delete chosen ones and "older than a date", as above?
+3. **OPERATOR.LOG**: may I send one `$SNDOPR` LOGI from the work account (OPER) as a
+   probe? It starts OPERATOR.LOG;244 on x86, as `REPLY/LOG` would.
+4. **Pool logs**: keep 10 of each, with `STEWARD_LOG_KEEP` to change it?
+
+Suggested answers: 1 rename; 2 yes; 3 yes; 4 yes.

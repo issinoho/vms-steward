@@ -642,3 +642,31 @@ persona.
 Alternatives not taken: parsing ERRLOG.SYS in-process (undocumented on x86; ELV's
 translations would be rebuilt); ELV run by the service (its view, D2); running
 `ANALYZE/CRASH_DUMP` (needs the dump and CMKRNL; CLUE's listings hold the summary).
+
+## D24. Error log changes: rename ERRLOG.SYS, delete crash listings, $SNDOPR for OPCOM's log
+
+**Status:** proposed 2026-10-17 (PHASE14.md, 14b).
+
+In-process under the persona, audited, confirmed in the page: a new error log by
+renaming `SYS$ERRORLOG:ERRLOG.SYS` to `ERRLOG_<yyyymmdd>_<hhmm>.SYS` (ERRFMT does not
+hold it open and creates a new one at its next record), older files then readable by
+ELV; chosen crash listings, or those older than a date, deleted (CLUE's own .DAT files
+never); a new OPERATOR.LOG by `$SNDOPR` `OPC$_RQ_LOGI` with `OPC$K_INITLOG`, if OPCOM
+accepts it without an operator terminal (a probe the user must allow). OpenVMS
+decides each (SYSPRV for the files, OPER for OPCOM).
+
+Alternatives not taken: deleting ERRLOG.SYS (history lost); `REPLY/LOG` in the D14
+helper (needs an operator terminal); keeping a fixed number of listings (managers
+decide by date).
+
+## D25. The pool purges its own logs
+
+**Status:** proposed 2026-10-17 (PHASE14.md).
+
+`STEWARD_POOL.COM START` keeps the newest 10 versions of each process's `.COM` and
+`.LOG` in `[.RUN.LOGS]` (`STEWARD_LOG_KEEP`, 1 to 100). Until now each start added a
+version of each and nothing removed them (46 of each on x86 by 2026-10-17).
+
+Alternatives not taken: a version limit on the files (`SET FILE/VERSION_LIMIT`: set
+per file, and lost if a file is recreated); purging in STEWARD$CONTROL (the pool
+procedure also runs without it, from a test pool).
