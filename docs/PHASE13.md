@@ -77,3 +77,11 @@ Answers (2026-10-17, "go"): the suggestions, all four.
 - The rate module's unit tests (wraps, restarts, processes coming and going); a UI
   test on the stub.
 - A kit and the user's browser checks.
+
+Live test: `tests/vms/phase13_live.py x86` 14 ok, 0 failed (against MONITOR
+MODES,SYSTEM,IO/SUMMARY over the same 21 s: idle 46.5 vs 48.8, buffered I/O 2,570/s vs
+2,621; STEWARD_TEST its own processes only, STEWARD_ADM everyone's with WORLD).
+
+Kit T0.12-0 (0.12.0), built by `tools/kit.sh x86` (417 native checks), SHA-256
+`cb3379ea64b0ae5815a4dd8d27125d857d6322f574ff2490182244ea6deb1101`, for the browser
+checks. It also carries the `item_u64` return-length fix (NOTES.md).
