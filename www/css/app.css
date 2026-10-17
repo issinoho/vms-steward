@@ -352,7 +352,7 @@ button.primary.danger, .dlg button.danger[type="submit"] { background: var(--dan
 .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 18px 20px; min-width: 0; }
 .panel h3 { margin: 0 0 12px; }
 .panel h4 { font: 500 .68rem/1.2 var(--mono); text-transform: uppercase; letter-spacing: .12em; color: var(--muted); margin: 14px 0 8px; }
-.panel.wide { grid-column: 1 / -1; }
+.panel.wide, .panels > .wide { grid-column: 1 / -1; }
 .big { font: 600 1.6rem/1.2 var(--mono); margin: 0 0 10px; }
 .big .muted { font: 400 .9rem/1 var(--sans); }
 .bar { display: flex; height: 12px; border-radius: 6px; overflow: hidden; background: var(--panel-2); border: 1px solid var(--line); }

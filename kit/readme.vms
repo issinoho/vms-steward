@@ -109,7 +109,12 @@ Browse to https://<host>:<port>/ (or your proxy's address) and sign in.
     $ @STEWARD$ROOT:[COM]STEWARD$CONTROL STATUS
 
 shows the pool's processes and their privileges (they should be DETACH,TMPMBX,NETMBX:
-SYSPRV off) and the end of the audit log.
+SYSPRV off) and the end of the audit log. Last comes STEWARD_R<port>, the
+monitoring recorder: it writes a reading of the system-wide counters a minute to
+[.RUN]MONITOR.DAT, a file of fixed size (a week, some 15 MB), for the Monitoring
+page's longer ranges. It runs with TMPMBX and NETMBX only. To turn it off, define
+STEWARD_RECORD_SECS as "0" in [.RUN]STEWARD_SETTINGS.COM and RESTART the pool;
+STEWARD_RECORD_DAYS sets how long it keeps (default 7).
 
 lighttpd's account
 ------------------

@@ -14,6 +14,7 @@
 #include "st_sysgen.h"
 #include "st_license.h"
 #include "st_product.h"
+#include "st_mrec.h"
 
 /* What went wrong, in terms the HTTP layer can map to a status. */
 enum {
@@ -34,6 +35,7 @@ typedef struct {
 typedef struct {
     const char *session_file;
     const char *audit_file;
+    const char *history_file;   /* the recording (D22); "" for none */
 } st_plat_config;
 
 int  st_plat_init(const st_plat_config *cfg, st_err *e);
@@ -236,8 +238,7 @@ int st_plat_holder_remove(unsigned int value, unsigned int uic, st_err *e);
    $DEVICE_SCAN with $GETDVI, a wildcard $GETJPI and a wildcard $GETQUI. Nothing here
    needs privilege, but a process scan sees only what the persona may see; the rest
    is counted as hidden. */
-#define ST_MAX_DISKS 32
-#define ST_MAX_SESSIONS 64
+#define ST_MAX_SESSIONS 64   /* ST_MAX_DISKS: st_mrec.h */
 
 typedef struct {
     char               device[32];        /* "DKA0:" */
@@ -570,37 +571,31 @@ int st_plat_vmsinstal(st_vmsinstal_cb fn, void *ctx, unsigned int *cond, char te
 
    One reading of the counters MONITOR shows, from $GETRMI and $GETDVI: open to anyone
    (probe_rmi, NOTES.md). Counters run from boot, so rates come from two readings; that
-   arithmetic is the browser's (D21). The process list is st_plat_proc_enum's. */
-enum { ST_MON_INTERRUPT, ST_MON_MPSYNCH, ST_MON_KERNEL, ST_MON_EXEC, ST_MON_SUPER,
-       ST_MON_USER, ST_MON_IDLE, ST_MON_MODES };
-enum { ST_MON_CUR, ST_MON_COM, ST_MON_COMO, ST_MON_LEF, ST_MON_LEFO, ST_MON_HIB,
-       ST_MON_HIBO, ST_MON_SUSP, ST_MON_SUSPO, ST_MON_PFW, ST_MON_MWAIT, ST_MON_CEF,
-       ST_MON_COLPG, ST_MON_FPG, ST_MON_STATES };
-enum { ST_MON_FAULTS, ST_MON_PREADIO, ST_MON_PWRITIO, ST_MON_ISWPCNT, ST_MON_DIRIO,
-       ST_MON_BUFIO, ST_MON_MBREADS, ST_MON_MBWRITES, ST_MON_COUNTERS };
-
-typedef struct {
-    char         device[32];          /* "DKA0:", as the dashboard names it */
-    unsigned int operations;          /* DVI$_OPCNT: wraps at 2^32 */
-} st_mon_disk;
-
-typedef struct {
-    long long          sampled_at_ms;             /* milliseconds since 1970 UTC */
-    unsigned int       cpus;                      /* active */
-    /* Ticks summed over CPUs, 100 a second a CPU. Signed: RMI$_CPUINTSTK reads
-       negative on the x86 VM (NOTES.md). */
-    long long          modes[ST_MON_MODES];
-    unsigned int       states[ST_MON_STATES];     /* processes in each state, now */
-    unsigned int       processes;                 /* on the system, RMI$_PROCS */
-    unsigned long long mem_total, mem_free, mem_modified;   /* bytes */
-    unsigned int       counters[ST_MON_COUNTERS]; /* since boot; wrap at 2^32 */
-    int                ndisks;
-    st_mon_disk        disks[ST_MAX_DISKS];       /* the system disk first */
-} st_monitor;
-
+   arithmetic is the browser's (D21). The process list is st_plat_proc_enum's. The types
+   (st_monitor) are in st_mrec.h, with the recording's records (D22). */
 /* Fills what it can; an item OpenVMS refuses is left zero. -1 only if nothing could be
    read. */
 int st_plat_monitor(st_monitor *m, st_err *e);
+
+/* ---- the recording (Phase 13b, D22) ----
+
+   [.RUN]MONITOR.DAT: st_mrec.h's records, written by the recorder (steward -r) and read
+   by the pool. Both open it as the service account before any persona (st_plat_init
+   with history_file, st_plat_recorder_init), so reads made later under a request's
+   persona go through the service's channel, as the session store's do: the file holds
+   only what $GETRMI gives anyone (D10), and no processes. */
+
+/* The record with key slot (0: the header): 1, 0 if there is none or no recording file
+   is open, -1 on error. */
+int  st_plat_history_get(unsigned int slot, unsigned char rec[ST_MREC_SIZE], st_err *e);
+/* The recorder only: write the record, replacing the one with the same key. */
+int  st_plat_history_put(const unsigned char rec[ST_MREC_SIZE], st_err *e);
+/* The recorder's start-up: every privilege off but TMPMBX and NETMBX, permanently (it
+   assumes no persona, and $GETRMI and $GETDVI need none), checked; then the file opened
+   for writing (created if absent). */
+int  st_plat_recorder_init(const char *history_file, st_err *e);
+long long st_plat_now_ms(void);           /* milliseconds since 1970 UTC */
+void st_plat_sleep_ms(long long ms);
 
 /* ---- audit and diagnostics ---- */
 void st_plat_audit(const char *line);    /* one record; the platform adds a timestamp */

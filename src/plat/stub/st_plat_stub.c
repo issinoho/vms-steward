@@ -1699,6 +1699,109 @@ int st_plat_monitor(st_monitor *m, st_err *e)
     return 0;
 }
 
+/* The recording (D22): a week at five minutes, made up on first use and ending now,
+   with the recorder "stopped" for two hours a day and a bit ago, so the page shows a
+   gap. Busier by day than by night. st_plat_history_put adds to it. */
+#define STUB_REC_SECS  300u
+#define STUB_REC_SLOTS 2016u
+static unsigned char (*stub_hist)[ST_MREC_SIZE];
+static unsigned char stub_hist_set[STUB_REC_SLOTS + 1];
+
+static void stub_history_fill(void)
+{
+    static const char *const devs[] = { "DKA0:", "DKA100:", "DKB0:" };
+    static const unsigned int counter_rate[ST_MON_COUNTERS] = { 40, 1, 0, 0, 25, 180, 4, 4 };
+    st_monitor m;
+    st_mrec_header h;
+    long long now, t, first;
+    unsigned int i;
+    if (stub_hist) return;
+    stub_hist = calloc(STUB_REC_SLOTS + 1, ST_MREC_SIZE);
+    if (!stub_hist) return;
+    now = stub_ms();
+    memset(&m, 0, sizeof m);
+    m.cpus = 4;
+    m.mem_total = 8ull << 30;
+    m.mem_modified = 268435456ull;
+    m.ndisks = 3;
+    for (i = 0; i < 3; i++) st_copy(m.disks[i].device, sizeof m.disks[i].device, devs[i]);
+    first = (now / 1000 / STUB_REC_SECS - (STUB_REC_SLOTS - 1)) * STUB_REC_SECS * 1000;
+    for (t = first; t <= now; t += STUB_REC_SECS * 1000) {
+        long long age = now - t, ticks = 4LL * 100 * STUB_REC_SECS, busy;
+        unsigned int hour = (unsigned int) ((t / 3600000) % 24), slot, pct;
+        pct = (hour >= 8 && hour < 18 ? 35 : 12) + stub_rand() % 10;
+        busy = ticks * pct / 100;
+        m.modes[ST_MON_KERNEL] += busy * 40 / 100;
+        m.modes[ST_MON_EXEC] += busy * 10 / 100;
+        m.modes[ST_MON_SUPER] += busy * 2 / 100;
+        m.modes[ST_MON_MPSYNCH] += busy * 3 / 100;
+        m.modes[ST_MON_USER] += busy - busy * 55 / 100;
+        m.modes[ST_MON_IDLE] += ticks - busy;
+        for (i = 0; i < ST_MON_COUNTERS; i++)
+            m.counters[i] += counter_rate[i] * pct / 20 * STUB_REC_SECS;
+        for (i = 0; i < 3; i++) m.disks[i].operations += (12u >> (2 * i)) * pct / 20 * STUB_REC_SECS;
+        memset(m.states, 0, sizeof m.states);
+        m.states[ST_MON_CUR] = 1;
+        m.states[ST_MON_COM] = pct / 15;
+        m.states[ST_MON_LEF] = 30;
+        m.states[ST_MON_HIB] = 27 - m.states[ST_MON_COM];
+        m.processes = 58;
+        m.mem_free = 5368709120ull - (unsigned long long) pct * 16777216ull;
+        if (age > 28 * 3600000LL && age <= 30 * 3600000LL) continue;   /* the gap */
+        m.sampled_at_ms = t + 40;   /* a little after the boundary, as the recorder */
+        slot = st_mrec_slot(m.sampled_at_ms, STUB_REC_SECS, STUB_REC_SLOTS);
+        st_mrec_encode(&m, slot, stub_hist[slot]);
+        stub_hist_set[slot] = 1;
+    }
+    h.interval_secs = STUB_REC_SECS;
+    h.slots = STUB_REC_SLOTS;
+    h.started_ms = first;
+    h.updated_ms = now;
+    st_mrec_encode_header(&h, stub_hist[0]);
+    stub_hist_set[0] = 1;
+}
+
+int st_plat_history_get(unsigned int slot, unsigned char rec[ST_MREC_SIZE], st_err *e)
+{
+    (void) e;
+    stub_history_fill();
+    if (!stub_hist || slot > STUB_REC_SLOTS || !stub_hist_set[slot]) return 0;
+    memcpy(rec, stub_hist[slot], ST_MREC_SIZE);
+    return 1;
+}
+
+int st_plat_history_put(const unsigned char rec[ST_MREC_SIZE], st_err *e)
+{
+    unsigned int slot = (unsigned int) rec[0] << 24 | (unsigned int) rec[1] << 16 |
+                        (unsigned int) rec[2] << 8 | rec[3];
+    stub_history_fill();
+    if (!stub_hist || slot > STUB_REC_SLOTS) { set_err(e, ST_E_INVALID, "no such slot"); return -1; }
+    memcpy(stub_hist[slot], rec, ST_MREC_SIZE);
+    stub_hist_set[slot] = 1;
+    return 0;
+}
+
+int st_plat_recorder_init(const char *history_file, st_err *e)
+{
+    (void) history_file;
+    set_err(e, ST_OK, "");
+    return 0;
+}
+
+long long st_plat_now_ms(void) { return stub_ms(); }
+
+void st_plat_sleep_ms(long long ms)
+{
+#ifdef CLOCK_REALTIME
+    struct timespec ts;
+    ts.tv_sec = (time_t) (ms / 1000);
+    ts.tv_nsec = (long) (ms % 1000) * 1000000L;
+    if (ms > 0) nanosleep(&ts, NULL);
+#else
+    (void) ms;
+#endif
+}
+
 int st_plat_vmsinstal(st_vmsinstal_cb fn, void *ctx, unsigned int *cond, char text[256], st_err *e)
 {
     st_vmsinstal v;

@@ -9,6 +9,7 @@ $!              directory). It holds:
 $!                STEWARD_SETTINGS.COM  site settings, run by each process
 $!                SESSIONS.DAT          shared session store (created on first use)
 $!                AUDIT.LOG             shared audit log (created on first use)
+$!                MONITOR.DAT           the monitoring recording (D22)
 $!                [.LOGS]               one log per process, and the stop file
 $!   image      the server image (default STEWARD$ROOT:[BIN]STEWARD.EXE)
 $!
@@ -17,6 +18,11 @@ $! detached through LOGINOUT, named STEWARD_<port>, and runs the image in a DCL
 $! loop that restarts it if it exits; lighttpd's fastcgi.server lists the same
 $! host:port pairs. STOP writes [.LOGS]POOL.STOP so the loops end, then stops the
 $! processes.
+$!
+$! With the pool, the monitoring recorder (D22): STEWARD_R<base-port>, the same image
+$! as "steward -r" in the same kind of loop, writing a reading a minute to
+$! MONITOR.DAT. It switches its privileges off when it starts. STEWARD_RECORD_SECS
+$! "0" in STEWARD_SETTINGS.COM leaves it unstarted; STOP stops it either way.
 $!
 $! Run it as the service account, which should hold IMPERSONATE, TMPMBX and NETMBX
 $! and nothing else (D2), for example from the startup procedure:
@@ -68,7 +74,7 @@ $ if f$search(rundir + "]LOGS.DIR") .eqs. "" then create/directory 'logs'
 $ if f$search(stopfile) .nes. "" then delete/nolog 'stopfile';*
 $ n = 0
 $start_loop:
-$ if n .ge. count then goto start_done
+$ if n .ge. count then goto start_recorder
 $ port = base + n
 $ n = n + 1
 $ name = "STEWARD_" + f$string(port)
@@ -86,6 +92,7 @@ $! whatever its default protection: they must not depend on the directory alone.
 $ write w "$ set protection=(s:rwed,o:rwed,g,w)/default"
 $ write w "$ define/process/nolog STEWARD_SESSION_FILE """, rdir, "SESSIONS.DAT"""
 $ write w "$ define/process/nolog STEWARD_AUDIT_FILE """, rdir, "AUDIT.LOG"""
+$ write w "$ define/process/nolog STEWARD_MONITOR_FILE """, rdir, "MONITOR.DAT"""
 $ write w "$ @", settings
 $ write w "$ steward = ""$", image, """"
 $ write w "$loop:"
@@ -110,7 +117,50 @@ $   goto start_loop
 $ endif
 $ say "STEWARD_POOL: started ", name, " on 127.0.0.1:", port
 $ goto start_loop
-$start_done:
+$!
+$! The recorder, unless the settings turn it off (they define process logical names:
+$! here, in this job, only to read that one).
+$start_recorder:
+$ @'settings'
+$ if f$trnlnm("STEWARD_RECORD_SECS") .eqs. "0"
+$ then
+$   say "STEWARD_POOL: the recorder is off (STEWARD_RECORD_SECS 0)"
+$   exit 1
+$ endif
+$ name = "STEWARD_R" + f$string(base)
+$ gosub find_pid
+$ if pid .nes. ""
+$ then
+$   say "STEWARD_POOL: ", name, " already running"
+$   exit 1
+$ endif
+$ com = logs + name + ".COM"
+$ open/write w 'com'
+$ write w "$ set noon"
+$ write w "$ set protection=(s:rwed,o:rwed,g,w)/default"
+$ write w "$ define/process/nolog STEWARD_MONITOR_FILE """, rdir, "MONITOR.DAT"""
+$ write w "$ @", settings
+$ write w "$ steward = ""$", image, """"
+$ write w "$loop:"
+$ write w "$ if f$search(""", stopfile, """) .nes. """" then exit"
+$ write w "$ write sys$output """, name, " start "", f$time()"
+$ write w "$ steward ""-r"""
+$ write w "$ write sys$output """, name, " exit "", $status, "" "", f$time()"
+$ write w "$ if f$search(""", stopfile, """) .nes. """" then exit"
+$! A minute, not a second: nothing waits on the recorder, and a setting it refuses
+$! should not fill its log.
+$ write w "$ wait 00:01:00"
+$ write w "$ goto loop"
+$ close w
+$ run/detached sys$system:loginout.exe /authorize /input='com' -
+      /output='logs''name'.LOG /error='logs''name'.LOG -
+      /process_name='name'
+$ if .not. $status
+$ then
+$   say "STEWARD_POOL: could not create ", name
+$   exit 1
+$ endif
+$ say "STEWARD_POOL: started ", name, " (monitoring recorder)"
 $ exit 1
 $!
 $stop:
@@ -133,16 +183,24 @@ $   say "STEWARD_POOL: stopped ", name, " (", pid, ")"
 $ endif
 $ goto stop_loop
 $stop_done:
+$ name = "STEWARD_R" + f$string(base)
+$ gosub find_pid
+$ if pid .nes. ""
+$ then
+$   stop/id='pid'
+$   say "STEWARD_POOL: stopped ", name, " (", pid, ")"
+$ endif
 $ delete/nolog 'stopfile';*
 $ exit 1
 $!
 $status:
 $ n = 0
 $status_loop:
-$ if n .ge. count then exit 1
+$ if n .gt. count then exit 1
 $ port = base + n
 $ n = n + 1
 $ name = "STEWARD_" + f$string(port)
+$ if n .gt. count then name = "STEWARD_R" + f$string(base)   ! last, the recorder
 $ gosub find_pid
 $ if pid .eqs. ""
 $ then

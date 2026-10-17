@@ -1,21 +1,32 @@
-// monitor.js - monitoring (Phase 13, D21): MONITOR's classes over time.
+// monitor.js - monitoring (Phase 13, D21, D22): MONITOR's classes over time.
 //
-// The page polls GET api/v1/monitor (every 5 s by default; 2, 10 or 30 to choose) as
-// background requests, which do not count as activity, so a page left open still
-// signs out when idle (as the dashboard). Each reading is raw counters; rates.js
+// Live, the page polls GET api/v1/monitor (every 5 s by default; 2, 10 or 30 to
+// choose) as background requests, which do not count as activity, so a page left open
+// still signs out when idle (as the dashboard). Each reading is raw counters; rates.js
 // turns two into a sample, and the last 30 minutes of samples are kept here, in the
-// page: leaving it drops them, and nothing is recorded on the node. Polls pause while
-// the tab is hidden, and the charts show the gap.
+// page: leaving it drops them. Polls pause while the tab is hidden, and the charts show
+// the gap.
+//
+// The longer ranges come from the recording on the node (GET api/v1/monitor/history,
+// D22): readings a whole number of the recorder's intervals apart, the same raw
+// counters, so rates.js gives the exact average between each two. Fetched again each
+// minute. Processes are not recorded: the busiest tables are live only.
 
 import { api, ApiError } from './api.js';
 import { h, mount } from './dom.js';
 import { refusal } from './fmt.js';
-import { sample, keep, top, MODES } from './rates.js';
+import { sample, keep, top, historySamples, MODES } from './rates.js';
 
 const WINDOW_MS = 30 * 60 * 1000;
 const INTERVALS = [2, 5, 10, 30];
 const FIRST_MS = 1000;   // the second reading comes quickly, so rates show at once
 const KEY = 'steward.monitor.interval';
+const RANGE_KEY = 'steward.monitor.range';
+// Live, or minutes of the recording. 300 points each: every 2, 5 and 34 minutes at the
+// recorder's 60 s.
+const RANGES = [['live', 'Live, 30 minutes'], ['360', 'Last 6 hours'], ['1440', 'Last 24 hours'], ['10080', 'Last 7 days']];
+const POINTS = 300;
+const HISTORY_REFRESH_MS = 60000;
 
 let timer = null;
 let generation = 0;      // a poll that returns after the page was left is dropped
@@ -35,6 +46,15 @@ function savedInterval() {
 function saveInterval(v) {
   try { localStorage.setItem(KEY, String(v)); } catch { /* a convenience only */ }
 }
+function savedRange() {
+  try {
+    const v = localStorage.getItem(RANGE_KEY);
+    return RANGES.some(([k]) => k === v) ? v : 'live';
+  } catch { return 'live'; }
+}
+function saveRange(v) {
+  try { localStorage.setItem(RANGE_KEY, v); } catch { /* a convenience only */ }
+}
 
 // ---- formatting
 
@@ -46,6 +66,17 @@ function rate(x) {
 }
 const MB = 1048576;
 const size = (b) => (b >= 1024 * MB ? `${(b / (1024 * MB)).toFixed(1)} GB` : `${Math.round(b / MB)} MB`);
+function ago(ms) {
+  const m = Math.max(1, Math.round(ms / 60000));
+  if (m < 120) return `${m} min ago`;
+  const hrs = Math.round(m / 60);
+  return hrs < 48 ? `${hrs} h ago` : `${Math.round(hrs / 24)} days ago`;
+}
+function every(secs) {
+  if (secs < 120) return `${secs} s`;
+  return secs % 60 ? `${(secs / 60).toFixed(1)} min` : `${secs / 60} min`;
+}
+const clock = (ms) => new Date(ms).toLocaleString('en-GB', { weekday: 'short', hour: '2-digit', minute: '2-digit' });
 const MODE_LABEL = { interrupt: 'Interrupt', mp_synch: 'MP synch', kernel: 'Kernel', executive: 'Executive',
   supervisor: 'Supervisor', user: 'User' };
 
@@ -118,13 +149,12 @@ function chart({ title, series, samples, stacked, max, unit, fmt }) {
   const legend = h('ul', { class: 'chart-legend' }, series.map((s, k) => h('li', {},
     h('span', { class: `key s${k % 6}`, 'aria-hidden': 'true' }), s.label, ' ',
     h('span', { class: 'mono' }, last >= 0 ? fmt(s.values[last]) : '—'))));
-  const minutes = Math.max(1, Math.round(span / 60000));
   return h('figure', { class: 'chart' },
     h('figcaption', {}, h('span', { class: 'chart-title' }, title), legend),
     h('div', { class: 'chart-frame' },
       h('span', { class: 'chart-max mono muted' }, `${fmt(top)}${unit ? ` ${unit}` : ''}`),
       svg),
-    h('div', { class: 'chart-axis muted small' }, h('span', {}, `${minutes} min ago`), h('span', {}, 'now')));
+    h('div', { class: 'chart-axis muted small' }, h('span', {}, ago(Date.now() - t0)), h('span', {}, Date.now() - t1 < 90000 ? 'now' : ago(Date.now() - t1))));
 }
 
 // ---- the panels
@@ -205,16 +235,32 @@ function busiestTable(title, list, key) {
       : h('tr', {}, h('td', { colspan: 7, class: 'muted' }, 'Nothing busy among the processes you may see')))));
 }
 
-function render(body, samples, latest, intervalS) {
+// view: { range: 'live', intervalS } or { range, hist } (the history response).
+function render(body, samples, latest, view) {
+  const live = view.range === 'live';
+  if (!live && !view.hist.recording) {
+    mount(body, h('p', { class: 'muted' }, 'Nothing is recorded on this node: the recorder is off or has not started (STEWARD_RECORD_SECS in the pool\'s settings). Live monitoring works without it.'));
+    return;
+  }
   if (!samples.length) {
-    mount(body, h('p', { class: 'muted' }, 'Reading… rates need two readings.'));
+    mount(body, h('p', { class: 'muted' }, live ? 'Reading… rates need two readings.'
+      : 'The recording has nothing for this range yet: the recorder writes a reading each interval.'));
     return;
   }
   const s = samples[samples.length - 1];
+  let footer;
+  if (live) {
+    footer = `The last ${Math.round(WINDOW_MS / 60000)} minutes, kept in this page while it is open, a reading every ${view.intervalS} s.`;
+  } else {
+    const hh = view.hist;
+    const stale = Date.now() - hh.updated_ms > 3 * hh.interval_secs * 1000;
+    footer = `Recorded on the node, a reading every ${every(hh.interval_secs)}, kept for ${Math.round(hh.kept_secs / 86400)} days; shown every ${every(hh.step_secs)}, each point the average since the one before.` +
+      (stale ? ` The recorder has not written since ${clock(hh.updated_ms)}.` : '');
+  }
   mount(body,
     h('div', { class: 'panels monitor' },
       h('section', { class: 'panel wide' }, cpuChart(samples),
-        h('p', { class: 'muted small' }, `${pct(s.cpu.busy)} busy across ${latest.cpus} CPU${latest.cpus === 1 ? '' : 's'}. Interrupt time is shown as 0 where OpenVMS reports it below zero, as MONITOR does.`)),
+        h('p', { class: 'muted small' }, `${pct(s.cpu.busy)} busy across ${latest.cpus} CPU${latest.cpus === 1 ? '' : 's'}${live ? '' : ' in the latest interval shown'}. Interrupt time is shown as 0 where OpenVMS reports it below zero, as MONITOR does.`)),
       h('section', { class: 'panel' }, statesChart(samples)),
       h('section', { class: 'panel' }, memoryChart(samples)),
       h('section', { class: 'panel' }, ratesChart('Paging', [
@@ -224,36 +270,54 @@ function render(body, samples, latest, intervalS) {
         ['Direct', (x) => x.rates.direct_io], ['Buffered', (x) => x.rates.buffered_io],
         ['Mailbox', (x) => sum(x.rates.mailbox_reads, x.rates.mailbox_writes)]], samples)),
       h('section', { class: 'panel wide' }, disksChart(samples)),
-      h('section', { class: 'panel wide' },
-        h('h3', {}, `Busiest processes, over the last ${Math.round(s.dt)} s`),
-        h('div', { class: 'busiest-pair' }, busiestTable('By CPU', s.busiest, 'cpu'), busiestTable('By I/O', s.busiest, 'io')),
-        h('p', { class: 'muted small' }, `${latest.visible.length} of the ${latest.processes} processes on the system are visible to you${latest.truncated ? ' (more than Steward lists)' : ''}. CPU is a share of one CPU.`))),
-    h('p', { class: 'muted small' }, `The last ${Math.round(WINDOW_MS / 60000)} minutes, kept in this page while it is open, a reading every ${intervalS} s.`));
+      live
+        ? h('section', { class: 'panel wide' },
+          h('h3', {}, `Busiest processes, over the last ${Math.round(s.dt)} s`),
+          h('div', { class: 'busiest-pair' }, busiestTable('By CPU', s.busiest, 'cpu'), busiestTable('By I/O', s.busiest, 'io')),
+          h('p', { class: 'muted small' }, `${latest.visible.length} of the ${latest.processes} processes on the system are visible to you${latest.truncated ? ' (more than Steward lists)' : ''}. CPU is a share of one CPU.`))
+        : h('p', { class: 'muted small wide' }, 'Processes are not recorded (what you may see of one that has ended can no longer be asked of OpenVMS): the busiest processes are in Live.')),
+    h('p', { class: 'muted small' }, footer));
 }
 
 export async function monitorView(ctx) {
   stopMonitor();
   const gen = generation;
   let intervalS = savedInterval();
+  let range = savedRange();
   let last = null;
   let samples = [];
   const body = h('div', {}, h('p', { class: 'muted' }, 'Reading…'));
   const stamp = h('span', { class: 'stamp muted' });
 
+  async function pollLive(background) {
+    const r = await api.monitor(background);
+    if (gen !== generation || range !== 'live') return false;
+    if (!background) ctx.touched();
+    const s = sample(last, r);
+    if (s) {
+      s.gap = s.dt > 3 * intervalS + 1;
+      samples = keep(samples, s, WINDOW_MS);
+    } else if (last) {
+      samples = [];   // a reboot, or time went back: start again
+    }
+    last = r;
+    render(body, samples, r, { range, intervalS });
+    return true;
+  }
+  async function pollHistory(background) {
+    const want = range;
+    const r = await api.monitorHistory(Number(want), POINTS, background);
+    if (gen !== generation || range !== want) return false;
+    if (!background) ctx.touched();
+    const readings = r.readings || [];
+    render(body, r.recording ? historySamples(readings, r.step_secs) : [], readings[readings.length - 1], { range, hist: r });
+    return true;
+  }
   async function poll(background) {
+    let shown = false;
     try {
-      const r = await api.monitor(background);
-      if (gen !== generation) return;
-      if (!background) ctx.touched();
-      const s = sample(last, r);
-      if (s) {
-        s.gap = s.dt > 3 * intervalS + 1;
-        samples = keep(samples, s, WINDOW_MS);
-      } else if (last) {
-        samples = [];   // a reboot, or time went back: start again
-      }
-      last = r;
-      render(body, samples, r, intervalS);
+      shown = await (range === 'live' ? pollLive(background) : pollHistory(background));
+      if (!shown) return;
       stamp.textContent = `Updated ${new Date().toLocaleTimeString()}`;
     } catch (err) {
       if (gen !== generation) return;
@@ -261,22 +325,33 @@ export async function monitorView(ctx) {
       if (!background) throw err;
       stamp.textContent = 'Not updated: Steward could not be reached';
     }
-    schedule(samples.length ? intervalS * 1000 : FIRST_MS);
+    if (range !== 'live') schedule(HISTORY_REFRESH_MS);
+    else schedule(samples.length ? intervalS * 1000 : FIRST_MS);
   }
   function schedule(ms) {
     clearTimeout(timer);
     if (gen !== generation) return;
     timer = setTimeout(() => {
-      if (document.hidden) { schedule(intervalS * 1000); return; }   // no polling while the tab is hidden
+      if (document.hidden) { schedule(range === 'live' ? intervalS * 1000 : HISTORY_REFRESH_MS); return; }   // no polling while the tab is hidden
       poll(true);
     }, ms);
   }
 
-  const select = h('select', { 'aria-label': 'Reading interval', onchange: (ev) => {
+  const select = h('select', { 'aria-label': 'Reading interval', hidden: range !== 'live', onchange: (ev) => {
     intervalS = Number(ev.target.value);
     saveInterval(intervalS);
     schedule(intervalS * 1000);
   } }, INTERVALS.map((v) => h('option', { value: String(v), selected: v === intervalS }, `every ${v} s`)));
+  const rangeSelect = h('select', { 'aria-label': 'Range', onchange: (ev) => {
+    range = ev.target.value;
+    saveRange(range);
+    select.hidden = range !== 'live';
+    clearTimeout(timer);
+    last = null;      // live starts again from its first reading
+    samples = [];
+    mount(body, h('p', { class: 'muted' }, 'Reading…'));
+    poll(true);
+  } }, RANGES.map(([k, label]) => h('option', { value: k, selected: k === range }, label)));
 
   try {
     await poll(false);
@@ -285,7 +360,7 @@ export async function monitorView(ctx) {
   }
   return [
     h('div', { class: 'titlebar' }, h('h2', {}, 'Monitoring'),
-      h('span', { class: 'live' }, select, h('span', { class: 'led', 'aria-hidden': 'true' }), stamp)),
+      h('span', { class: 'live' }, rangeSelect, select, h('span', { class: 'led', 'aria-hidden': 'true' }), stamp)),
     h('p', { class: 'muted' }, 'CPU, processes, memory, paging and I/O as MONITOR shows them, from the counters OpenVMS keeps. Anyone may read them; processes are those you may see.'),
     body,
   ];

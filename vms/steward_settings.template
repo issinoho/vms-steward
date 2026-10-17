@@ -21,3 +21,11 @@ $! A session ends after this many seconds without an API call, and after this
 $! many seconds in any case.
 $ define/process/nolog STEWARD_IDLE_SECS "900"
 $ define/process/nolog STEWARD_ABSOLUTE_SECS "28800"
+$!
+$! The monitoring recorder (DECISIONS D22), started with the pool: a reading every
+$! STEWARD_RECORD_SECS seconds (5 to 3600; "0" turns it off and the pool does not
+$! start it), kept for STEWARD_RECORD_DAYS days (1 to 366), in MONITOR.DAT in this
+$! directory. Fixed size: about 1.4 KB a reading, so a week at 60 s is some 15 MB.
+$! Without these lines: 60 and 7.
+$ define/process/nolog STEWARD_RECORD_SECS "60"
+$ define/process/nolog STEWARD_RECORD_DAYS "7"

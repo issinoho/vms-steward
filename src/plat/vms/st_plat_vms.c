@@ -150,6 +150,10 @@ static int          session_open;
 static struct FAB   afab;
 static struct RAB   arab;
 static int          audit_open;
+static struct FAB   hfab;           /* the recording (D22) */
+static struct RAB   hrab;
+static struct XABKEY hxab;
+static int          history_open;
 
 static void put64(unsigned char *p, long long v)
 {
@@ -232,6 +236,100 @@ static unsigned int open_sessions(const char *path)
     if (!(st & 1)) { sys$close(&sfab); return st; }
     session_open = 1;
     return SS$_NORMAL;
+}
+
+/* The recording, [.RUN]MONITOR.DAT (D22): an indexed file of fixed records keyed by
+   their first four bytes (st_mrec.h), created by whichever opens it first, recorder or
+   pool. The recorder writes (one $PUT a minute, replacing the slot); the pool reads,
+   regardless of the recorder's lock (NLK, RRL): a reading is replaced whole or not at
+   all, and one from the previous lap is told apart by its time. */
+static unsigned int open_history(const char *path, int writer)
+{
+    unsigned int st;
+    hfab = cc$rms_fab;
+    hxab = cc$rms_xabkey;
+    hxab.xab$b_dtp = XAB$C_STG;
+    hxab.xab$w_pos0 = 0;
+    hxab.xab$b_siz0 = ST_MREC_KEY_SIZE;
+    hxab.xab$b_ref = 0;
+    hfab.fab$l_xab = (void *) &hxab;
+    hfab.fab$l_fna = (char *) path;
+    hfab.fab$b_fns = (unsigned char) strlen(path);
+    hfab.fab$b_org = FAB$C_IDX;
+    hfab.fab$b_rfm = FAB$C_FIX;
+    hfab.fab$w_mrs = ST_MREC_SIZE;
+    hfab.fab$b_bks = 12;   /* 6 KB buckets: four records each */
+    hfab.fab$b_fac = writer ? (FAB$M_GET | FAB$M_PUT | FAB$M_UPD) : FAB$M_GET;
+    hfab.fab$b_shr = FAB$M_SHRGET | FAB$M_SHRPUT | FAB$M_SHRUPD;
+    hfab.fab$l_fop = FAB$M_CIF;
+    st = sys$create(&hfab);
+    if (!(st & 1)) return st;
+    if (hfab.fab$w_mrs != ST_MREC_SIZE) { sys$close(&hfab); return RMS$_RSZ; }
+    hrab = cc$rms_rab;
+    hrab.rab$l_fab = &hfab;
+    st = sys$connect(&hrab);
+    if (!(st & 1)) { sys$close(&hfab); return st; }
+    history_open = 1;
+    return SS$_NORMAL;
+}
+
+int st_plat_history_get(unsigned int slot, unsigned char rec[ST_MREC_SIZE], st_err *e)
+{
+    static unsigned char key[ST_MREC_KEY_SIZE];   /* static: the RAB points at it */
+    unsigned int st;
+    if (!history_open) return 0;
+    st_mrec_key(slot, key);
+    hrab.rab$b_rac = RAB$C_KEY;
+    hrab.rab$b_krf = 0;
+    hrab.rab$l_kbf = (char *) key;
+    hrab.rab$b_ksz = ST_MREC_KEY_SIZE;
+    hrab.rab$l_rop = RAB$M_NLK | RAB$M_RRL;
+    hrab.rab$l_ubf = (char *) rec;
+    hrab.rab$w_usz = ST_MREC_SIZE;
+    st = sys$get(&hrab);
+    if (st == RMS$_RNF) return 0;
+    if (!(st & 1)) { set_cond(e, st); return -1; }
+    return hrab.rab$w_rsz == ST_MREC_SIZE;
+}
+
+int st_plat_history_put(const unsigned char rec[ST_MREC_SIZE], st_err *e)
+{
+    unsigned int st;
+    if (!history_open) { set_text(e, ST_E_INTERNAL, "no recording file"); return -1; }
+    hrab.rab$b_rac = RAB$C_KEY;
+    hrab.rab$l_rop = RAB$M_UIF | RAB$M_WAT;   /* replace the slot's record if present */
+    hrab.rab$l_rbf = (char *) rec;
+    hrab.rab$w_rsz = ST_MREC_SIZE;
+    st = sys$put(&hrab);
+    sys$free(&hrab);
+    if (st & 1) st = sys$flush(&hrab);
+    if (!(st & 1)) { set_cond(e, st); return -1; }
+    return 0;
+}
+
+int st_plat_recorder_init(const char *history_file, st_err *e)
+{
+    unsigned int all[2] = { 0xFFFFFFFFu, 0xFFFFFFFFu };
+    unsigned int keep[2] = { PRV$M_TMPMBX | PRV$M_NETMBX, 0 };
+    unsigned int cur[2] = { 0, 0 }, iosb[2], st;
+    st_ile3 items[2];
+    /* Off in the permanent mask too, so the DCL around the image does not get them
+       back. The recorder never asks for one again. */
+    sys$setprv(0, (void *) all, 1, 0);
+    sys$setprv(1, (void *) keep, 1, 0);
+    item(&items[0], JPI$_CURPRIV, cur, 8, 0);
+    item_end(&items[1]);
+    st = sys$getjpiw(0, 0, 0, items, iosb, 0, 0);
+    if (st & 1) st = iosb[0];
+    if (!(st & 1) || (cur[0] & ~keep[0]) || cur[1]) {
+        set_text(e, ST_E_INTERNAL, "cannot switch the recorder's privileges off");
+        return -1;
+    }
+    if (!history_file || !*history_file) { set_text(e, ST_E_INTERNAL, "STEWARD_MONITOR_FILE is not defined"); return -1; }
+    st = open_history(history_file, 1);
+    if (!(st & 1)) { set_cond(e, st); return -1; }
+    set_text(e, ST_OK, "");
+    return 0;
 }
 
 /* SYSPRV, which $PERSONA_CREATE needs to read the user's UAF record (GRPPRV within
@@ -448,6 +546,17 @@ int st_plat_init(const st_plat_config *cfg, st_err *e)
         }
         if (!(st & 1)) { set_cond(e, st); return -1; }
         audit_open = 1;
+    }
+    if (cfg->history_file && *cfg->history_file) {
+        /* Not fatal: without it the live monitoring still works, and the history
+           says there is no recording. */
+        st = open_history(cfg->history_file, 0);
+        if (!(st & 1)) {
+            char m[200], t[256];
+            msgtext(st, t, sizeof t);
+            snprintf(m, sizeof m, "cannot open the recording: %.150s", t);
+            st_plat_log(m);
+        }
     }
     lnm_resolve_helper();   /* as the service, before any persona */
     set_text(e, ST_OK, "");
@@ -3866,6 +3975,18 @@ int st_plat_startup_queues(char names[][32], int max)
 /* ================================================================ misc */
 
 long long st_plat_time(void) { return (long long) time(NULL); }
+
+long long st_plat_now_ms(void) { return now_utc_ms(); }
+
+void st_plat_sleep_ms(long long ms)
+{
+    /* LIB$WAIT reads VAX F_floating unless told the type (NOTES.md): 4 is IEEE S. */
+    float secs;
+    int type = 4;
+    if (ms <= 0) return;
+    secs = (float) ms / 1000.0f;
+    lib$wait(&secs, 0, &type);
+}
 
 void st_plat_audit(const char *line)
 {

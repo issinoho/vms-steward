@@ -16,6 +16,7 @@
 #include "st_sysgen.h"
 #include "st_license.h"
 #include "st_product.h"
+#include "st_mrec.h"
 #include "st_app.h"
 
 static int checks, failures;
@@ -2139,6 +2140,132 @@ static void test_monitor(void)
     CHECK(!st_plat_persona_active(), "no persona left active");
 }
 
+/* The recording's records and ring (D22): encoded with explicit offsets, read back
+   whole; slots by the nearest boundary; a plan that never reaches past the ring. */
+static void test_mrec(void)
+{
+    static st_monitor m, back;
+    static unsigned char rec[ST_MREC_SIZE];
+    static st_mrec_point pts[400];
+    st_mrec_header h, h2;
+    unsigned int slot = 0, step = 0;
+    long long day = 86400000LL, t0 = 1792000020000LL;   /* a whole minute */
+    int n, i, ok;
+
+    memset(&m, 0, sizeof m);
+    m.sampled_at_ms = t0 + 37;
+    m.cpus = 4;
+    m.modes[ST_MON_INTERRUPT] = -126;   /* negative on the x86 VM */
+    m.modes[ST_MON_IDLE] = 5000000000LL;
+    m.states[ST_MON_FPG] = 3;
+    m.processes = 105;
+    m.mem_total = 8ull << 30;
+    m.mem_free = 5ull << 30;
+    m.mem_modified = 12345;
+    m.counters[ST_MON_MBWRITES] = 4294967295u;
+    m.ndisks = ST_MAX_DISKS;
+    for (i = 0; i < ST_MAX_DISKS; i++) {
+        snprintf(m.disks[i].device, sizeof m.disks[i].device, "$1$DGA%d:", 1000 + i);
+        m.disks[i].operations = 7u * (unsigned int) i;
+    }
+    st_mrec_encode(&m, 1441, rec);
+    CHECK(rec[0] == 0 && rec[1] == 0 && rec[2] == 5 && rec[3] == 0xA1 && !memcmp(rec + 4, "SMR1", 4),
+          "a reading's key big-endian (RMS orders it as a number), then its mark");
+    CHECK(rec[8] == (unsigned char) ((t0 + 37) & 0xFF) && rec[16] == 4 && rec[20] == 105,
+          "the time, CPUs and processes little-endian at their offsets");
+    CHECK(!st_mrec_decode(rec, ST_MREC_SIZE, &back, &slot) && slot == 1441 &&
+          back.sampled_at_ms == t0 + 37 && back.modes[ST_MON_INTERRUPT] == -126 &&
+          back.modes[ST_MON_IDLE] == 5000000000LL && back.states[ST_MON_FPG] == 3 &&
+          back.mem_free == (5ull << 30) && back.mem_modified == 12345 &&
+          back.counters[ST_MON_MBWRITES] == 4294967295u, "every figure read back");
+    CHECK(back.ndisks == ST_MAX_DISKS && !strcmp(back.disks[31].device, "$1$DGA1031:") &&
+          back.disks[31].operations == 217, "all 32 disks, names and counts");
+    CHECK(st_mrec_decode(rec, ST_MREC_SIZE - 1, &back, &slot) == -1, "a record of another length refused");
+    rec[195] = 40;   /* ndisks' top byte: far more than 32 */
+    CHECK(st_mrec_decode(rec, ST_MREC_SIZE, &back, &slot) == -1, "a disk count past 32 refused");
+    CHECK(st_mrec_decode_header(rec, ST_MREC_SIZE, &h2) == -1, "a reading is not a header");
+
+    h.interval_secs = 60;
+    h.slots = st_mrec_slots(60, 7);
+    h.started_ms = t0 - 3 * day;
+    h.updated_ms = t0;
+    CHECK(h.slots == 10080 && st_mrec_slots(60, 366) == 527040 && st_mrec_slots(5, 366) == ST_MREC_MAX_SLOTS &&
+          st_mrec_slots(3600, 0) == 1, "slots: a week at a minute is 10,080; bounded both ways");
+    st_mrec_encode_header(&h, rec);
+    CHECK(!st_mrec_decode_header(rec, ST_MREC_SIZE, &h2) && h2.interval_secs == 60 && h2.slots == 10080 &&
+          h2.started_ms == h.started_ms && h2.updated_ms == t0 && rec[3] == 0 && !memcmp(rec + 4, "SMH1", 4),
+          "the header under key 0, read back");
+    CHECK(st_mrec_decode(rec, ST_MREC_SIZE, &back, &slot) == -1, "a header is not a reading");
+    rec[8] = 0; rec[9] = 0;   /* interval 0 */
+    CHECK(st_mrec_decode_header(rec, ST_MREC_SIZE, &h2) == -1, "a header with no interval refused");
+
+    CHECK(st_mrec_nearest(t0 + 29999, 60) == t0 && st_mrec_nearest(t0 + 30000, 60) == t0 + 60000 &&
+          st_mrec_nearest(t0 - 200, 60) == t0, "the nearest boundary, a little late or a little early");
+    CHECK(st_mrec_slot(t0 - 200, 60, 10080) == st_mrec_slot(t0 + 900, 60, 10080) &&
+          st_mrec_slot(t0, 60, 10080) != st_mrec_slot(t0 + 60000, 60, 10080), "a reading's slot by its boundary");
+    CHECK(st_mrec_slot(t0, 60, 10080) == st_mrec_slot(t0 + 7 * day, 60, 10080) &&
+          st_mrec_slot(t0, 60, 10080) >= 1 && st_mrec_slot(t0, 60, 10080) <= 10080, "a week later, the same slot: the ring");
+    CHECK(st_mrec_matches(t0 + 400, t0, 60) && !st_mrec_matches(t0 + 400 - 7 * day, t0, 60) &&
+          !st_mrec_matches(0, 0, 60), "a record from the last lap does not match");
+
+    n = st_mrec_plan(t0 + 45000, 360, 300, &h, pts, 400, &step);
+    CHECK(step == 120 && n == 180 && pts[n - 1].want_ms == t0 && pts[0].want_ms == t0 - 179 * 120000LL,
+          "6 hours in 300 points: every second minute, the newest boundary last");
+    for (ok = 1, i = 1; i < n; i++) ok &= pts[i].want_ms - pts[i - 1].want_ms == 120000 &&
+        pts[i].slot == st_mrec_slot(pts[i].want_ms, 60, 10080);
+    CHECK(ok, "evenly spaced, each with its slot");
+    n = st_mrec_plan(t0, 30 * 1440, 300, &h, pts, 400, &step);
+    CHECK(step == 2040 && pts[0].want_ms > t0 - 7 * day, "a month asked of a week's ring: only the week");
+    for (ok = 1, i = 1; i < n; i++) ok &= pts[i].slot != pts[0].slot;
+    CHECK(ok, "no slot fetched twice (none from the far side of the ring)");
+    n = st_mrec_plan(t0, 10, 300, &h, pts, 400, &step);
+    CHECK(step == 60 && n == 11, "a short range: every reading");
+    CHECK(st_mrec_plan(t0, 360, 300, &h, pts, 50, &step) == 50 && pts[49].want_ms == t0 && pts[0].want_ms == t0 - 49 * 120000LL,
+          "no more than room for, the newest kept");
+    CHECK(st_mrec_plan(t0, 360, 1, &h, pts, 400, &step) == 0, "one point is no range");
+}
+
+/* GET api/v1/monitor/history on the stub's made-up week (five-minute readings, a gap
+   28 to 30 hours ago). */
+static void test_monitor_history(void)
+{
+    result b;
+    hdr t[3];
+    char tc[100], tcsrf[65];
+    const char *body, *p;
+    int n;
+
+    sign_in("{\"username\":\"steward_test\",\"password\":\"test-pass\"}", tc, sizeof tc, tcsrf);
+    t[0].n = "HTTP_COOKIE"; t[0].v = tc; t[1].n = "HTTP_X_STEWARD_CSRF"; t[1].v = tcsrf; t[2].n = NULL;
+    call("GET", "/api/v1/monitor/history?minutes=360&points=300", t, NULL, &b);
+    body = b.resp.body.data;
+    for (n = 0, p = body; (p = strstr(p, "\"sampled_at_ms\":")); p++) n++;
+    CHECK(b.resp.status == 200 && strstr(body, "\"recording\":true,\"interval_secs\":300,\"kept_secs\":604800") &&
+          strstr(body, "\"step_secs\":300"), "the recording: five minutes, a week; 6 hours at every reading");
+    CHECK(n >= 71 && n <= 73 && !strstr(body, "\"visible\"") && strstr(body, "\"disks\":[{\"device\":\"DKA0:\""),
+          "6 hours: some 72 readings, the counters without processes");
+    st_resp_free(&b.resp);
+    call("GET", "/api/v1/monitor/history?minutes=2880&points=288", t, NULL, &b);
+    body = b.resp.body.data;
+    for (n = 0, p = body; (p = strstr(p, "\"sampled_at_ms\":")); p++) n++;
+    CHECK(b.resp.status == 200 && strstr(body, "\"step_secs\":600") && n >= 274 && n <= 277,
+          "2 days at ten minutes: the two hours the recorder was stopped missing");
+    st_resp_free(&b.resp);
+    call("GET", "/api/v1/monitor/history", t, NULL, &b);
+    CHECK(b.resp.status == 200 && strstr(b.resp.body.data, "\"step_secs\":300"), "by default, 6 hours");
+    st_resp_free(&b.resp);
+    call("GET", "/api/v1/monitor/history?points=1", t, NULL, &b);
+    CHECK(b.resp.status == 400, "a point is not a range");
+    st_resp_free(&b.resp);
+    call("GET", "/api/v1/monitor/history?minutes=x", t, NULL, &b);
+    CHECK(b.resp.status == 400, "minutes a number");
+    st_resp_free(&b.resp);
+    call("GET", "/api/v1/monitor/history", NULL, NULL, &b);
+    CHECK(b.resp.status == 401, "signed in only");
+    st_resp_free(&b.resp);
+    CHECK(!st_plat_persona_active(), "no persona left active");
+}
+
 int main(void)
 {
     st_app_config cfg;
@@ -2177,6 +2304,8 @@ int main(void)
     test_licenses();
     test_products();
     test_monitor();
+    test_mrec();
+    test_monitor_history();
     test_create();
     test_gateway();
     printf("%d checks, %d failed\n", checks, failures);

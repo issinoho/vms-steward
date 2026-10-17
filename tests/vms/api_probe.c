@@ -186,6 +186,8 @@ int main(int argc, char **argv)
     /* An audit log to append to and read back (access history): a scratch copy,
        never the service's own. Unset, records go to stderr. */
     pc.audit_file = getenv("API_PROBE_AUDIT") ? getenv("API_PROBE_AUDIT") : "";
+    /* A recording (D22) to read: one written by a test recorder, never the pool's. */
+    pc.history_file = getenv("API_PROBE_MONITOR_FILE") ? getenv("API_PROBE_MONITOR_FILE") : "";
     if (st_plat_init(&pc, &e)) { fprintf(stderr, "init: %s\n", e.text); return 1; }
     /* A D14 helper procedure to test in place of the installed one. */
     if (getenv("API_PROBE_LNM_HELPER")) st_plat_vms_test_helper(getenv("API_PROBE_LNM_HELPER"));

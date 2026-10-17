@@ -2,6 +2,9 @@
    time, as a member of the pool lighttpd talks to (D1).
 
    Usage: steward -b 127.0.0.1:<port>      serve
+          steward -r                       record the monitoring counters (D22): one
+                                           reading each interval into the recording,
+                                           for ever (STEWARD_POOL.COM runs it)
           steward -v                       print the version
           steward -g                       print a new random gateway secret (64 hex
                                            characters, from OpenSSL's generator), for
@@ -15,6 +18,10 @@
      STEWARD_INSECURE_COOKIE  "1": no Secure flag, for the plain-HTTP dev server only
      STEWARD_AUDIT_FILE       audit log                       (default: stderr)
      STEWARD_SESSION_FILE     shared session store (OpenVMS)
+     STEWARD_MONITOR_FILE     the recording (D22), read by the server, written by -r
+     STEWARD_RECORD_SECS      -r: seconds between readings, 5 to 3600 (default 60;
+                              0 is off, and STEWARD_POOL.COM does not start it)
+     STEWARD_RECORD_DAYS      -r: days kept, 1 to 366 (default 7)
      STEWARD_GATEWAY_SECRET   shared with lighttpd (vms/steward.conf), at least 32
                               characters. Unset: not enforced, with a warning.
 
@@ -35,6 +42,7 @@
 #include "st_version.h"
 #include "st_http.h"
 #include "st_app.h"
+#include "st_mrec.h"
 
 #define PARAMS_LIMIT (64 * 1024)
 #define BODY_LIMIT   (256 * 1024)
@@ -170,6 +178,58 @@ static int parse_bind(const char *spec, struct sockaddr_in *sa)
     return 0;
 }
 
+/* steward -r: the recorder (D22). Privileges off but TMPMBX and NETMBX, then one
+   reading on each interval's boundary, written to its slot, and the header after it.
+   A reading that fails is skipped; a write that fails ends the process, and the pool's
+   DCL loop starts it again. */
+static int record(void)
+{
+    static st_monitor m;
+    static unsigned char rec[ST_MREC_SIZE];
+    st_mrec_header h;
+    st_err e;
+    long long secs = env_long("STEWARD_RECORD_SECS", 60), days = env_long("STEWARD_RECORD_DAYS", 7), step;
+    char msg[160];
+
+    if (!strcmp(env_str("STEWARD_RECORD_SECS"), "0")) {
+        fprintf(stderr, "steward: recording is off (STEWARD_RECORD_SECS 0)\n");
+        return 1;
+    }
+    if (secs < 5 || secs > 3600 || days < 1 || days > 366) {
+        fprintf(stderr, "steward: STEWARD_RECORD_SECS must be 5 to 3600 and STEWARD_RECORD_DAYS 1 to 366\n");
+        return 2;
+    }
+    if (st_plat_recorder_init(env_str("STEWARD_MONITOR_FILE"), &e)) {
+        fprintf(stderr, "steward: recorder init failed: %s\n", e.text);
+        return 1;
+    }
+    h.interval_secs = (unsigned int) secs;
+    h.slots = st_mrec_slots(h.interval_secs, (unsigned int) days);
+    h.started_ms = h.updated_ms = st_plat_now_ms();
+    st_mrec_encode_header(&h, rec);
+    if (st_plat_history_put(rec, &e)) { fprintf(stderr, "steward: cannot write the recording: %s\n", e.text); return 1; }
+    fprintf(stderr, "steward %s: recording every %u s, %u slots\n", ST_VERSION, h.interval_secs, h.slots);
+    step = secs * 1000;
+    for (;;) {
+        long long now = st_plat_now_ms();
+        unsigned int slot;
+        st_plat_sleep_ms((now / step + 1) * step - now);
+        if (st_plat_monitor(&m, &e)) {
+            snprintf(msg, sizeof msg, "a reading failed: %.120s", e.text);
+            st_plat_log(msg);
+            continue;
+        }
+        slot = st_mrec_slot(m.sampled_at_ms, h.interval_secs, h.slots);
+        st_mrec_encode(&m, slot, rec);
+        if (st_plat_history_put(rec, &e)) break;
+        h.updated_ms = m.sampled_at_ms;
+        st_mrec_encode_header(&h, rec);
+        if (st_plat_history_put(rec, &e)) break;
+    }
+    fprintf(stderr, "steward: cannot write the recording: %s\n", e.text);
+    return 1;
+}
+
 int main(int argc, char **argv)
 {
     struct sockaddr_in sa;
@@ -193,8 +253,10 @@ int main(int argc, char **argv)
         st_zero(hex, sizeof hex);
         return 0;
     }
+    /* The C RTL lowercases unquoted arguments (CLAUDE.md): -r either way. */
+    if (argc == 2 && (!strcmp(argv[1], "-r") || !strcmp(argv[1], "-R"))) return record();
     if (argc != 3 || strcmp(argv[1], "-b") || parse_bind(argv[2], &sa)) {
-        fprintf(stderr, "usage: steward -b 127.0.0.1:<port> | -v | -g\n");
+        fprintf(stderr, "usage: steward -b 127.0.0.1:<port> | -r | -v | -g\n");
         return 2;
     }
 #ifdef SIGPIPE
@@ -214,6 +276,7 @@ int main(int argc, char **argv)
                         "can reach this port directly\n");
     pcfg.audit_file = env_str("STEWARD_AUDIT_FILE");
     pcfg.session_file = env_str("STEWARD_SESSION_FILE");
+    pcfg.history_file = env_str("STEWARD_MONITOR_FILE");
     if (st_plat_init(&pcfg, &e)) {
         fprintf(stderr, "steward: platform init failed: %s\n", e.text);
         return 1;

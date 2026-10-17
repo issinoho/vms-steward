@@ -96,6 +96,10 @@ export const api = {
   products: () => call('GET', 'products'),
   // Phase 13: one reading of the counters MONITOR shows (D21); background as for system.
   monitor: (background) => call('GET', 'monitor', undefined, background ? { 'X-Steward-Background': '1' } : undefined),
+  // Phase 13b: readings from the recording on the node (D22), up to points of them
+  // over the last minutes.
+  monitorHistory: (minutes, points, background) => call('GET', `monitor/history${query({ minutes, points })}`,
+    undefined, background ? { 'X-Steward-Background': '1' } : undefined),
   // Phase 2: users and rights identifiers, read-only. Lists take
   // { filter, after, limit } (and type for identifiers) and return { ..., next }.
   users: (q) => call('GET', `users${query(q)}`),

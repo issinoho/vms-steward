@@ -2,8 +2,8 @@
 
 **Status: 13a closed (2026-10-17)** on the user's browser checks of the 0.12.0 kit.
 The user approved D21 and the suggested answers below ("go").
-**13b: history on the node, being planned (2026-10-17)**; D22 proposed, questions at
-the end.
+**13b: history on the node, being built (2026-10-17)**: the user approved D22 and the
+suggested answers ("im good with that").
 
 CPU, memory, paging and I/O over time, as MONITOR shows them, in the browser. The
 dashboard (Phase 5) already shows one snapshot: CPU busy between two polls, memory,
@@ -96,11 +96,14 @@ the Monitoring page (2026-10-17). 13a closed.
 13a's history lasts while the page is open. 13b records the system-wide counters on
 the node, so the page can show the last hours or days whoever looks and whenever.
 
-- **A recorder process, `STEWARD_RECORDER`**, started and stopped with the pool by
+- **A recorder process, `STEWARD_R<base-port>`** (process names stop at 15
+  characters, so not `STEWARD_RECORDER`), started and stopped with the pool by
   `STEWARD_POOL.COM` (same DCL restart loop and stop file), running the same image as
-  `STEWARD -r`. It is the service account but switches IMPERSONATE and SYSPRV off for
-  good at start (`$SETPRV` permanent): it never assumes a persona, and `$GETRMI` and
-  `$GETDVI` need no privilege. Every interval (60 s by default, on the clock's
+  `STEWARD -r`. It is the service account but switches every privilege but TMPMBX and
+  NETMBX off at start, in the permanent mask too, and checks: it never assumes a
+  persona, and `$GETRMI` and `$GETDVI` need no privilege. (The account stays
+  authorized for IMPERSONATE, so this is the recorder's own discipline, as SYSPRV is
+  the pool's, D2.) Every interval (60 s by default, on the clock's
   boundaries) it takes one reading, the same `st_plat_monitor` the page uses, and
   writes it.
 - **System-wide figures only; no processes.** The recorder sees every process, but
@@ -154,6 +157,8 @@ Alternatives considered:
 
 Suggested answers: 1 on by default; 2 60 s for 7 days; 3 yes; 4 agreed.
 
+Answers (2026-10-17, "im good with that"): the suggestions, all four.
+
 ## Exit (13b)
 
 - The record encoding and slot arithmetic in core, unit-tested (wraps of the ring,
@@ -165,3 +170,15 @@ Suggested answers: 1 on by default; 2 60 s for 7 days; 3 yes; 4 agreed.
 - The pool procedure starts, lists and stops the recorder (in the work directory's
   test pool, not the user's).
 - A UI test on the stub for the ranges; a kit and the user's browser checks.
+
+Live test (13b): `tests/vms/phase13b_live.py x86` 19 ok, 0 failed. The recorder run for
+40 s at 5 s wrote 9 readings, each within 6 ms of its boundary, with TMPMBX and NETMBX
+only (current and permanent); STEWARD_TEST read them back through `api_probe`, and the
+last agreed with a live reading taken 2.1 s later; the mode ticks between the first and
+last came to 7,947 of the CPUs' 8,000; no processes in the recording; 1 minute in 2
+points gave readings 30 s apart; without a file, `recording: false`. The work
+directory's test pool (no FastCGI processes, base 19390) started STEWARD_R19390,
+listed it with TMPMBX and NETMBX, recorded into its MONITOR.DAT (protection
+S:RWED,O:RWED,G,W), stopped it, and did not start it with STEWARD_RECORD_SECS "0".
+Linux: 447 unit checks (with the record format and ring), 56 API checks, the UI tests
+(the ranges on the stub's made-up week, with its gap) and `make audit`.

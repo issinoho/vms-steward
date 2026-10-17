@@ -47,7 +47,7 @@ $ ccq = "/STANDARD=C99/POINTER_SIZE=32/PREFIX_LIBRARY_ENTRIES=ALL_ENTRIES" + -
         "/INCLUDE_DIRECTORY=([.src.core],[.src.svc],[.src.plat])"
 $ failed = 0
 $ sources = "[.src.core]st_buf,[.src.core]st_fcgi,[.src.core]st_json,[.src.core]st_http," + -
-            "[.src.core]st_route,[.src.core]st_lnm,[.src.core]st_proc,[.src.core]st_queue,[.src.core]st_sysgen,[.src.core]st_license,[.src.core]st_product,[.src.svc]st_app,[.src.svc]svc_session," + -
+            "[.src.core]st_route,[.src.core]st_lnm,[.src.core]st_proc,[.src.core]st_queue,[.src.core]st_sysgen,[.src.core]st_license,[.src.core]st_product,[.src.core]st_mrec,[.src.svc]st_app,[.src.svc]svc_session," + -
             "[.src.svc]svc_users,[.src.svc]svc_idents,[.src.svc]svc_edit,[.src.svc]svc_system,[.src.svc]svc_access,[.src.svc]svc_logicals,[.src.svc]svc_processes,[.src.svc]svc_queues,[.src.svc]svc_sysgen,[.src.svc]svc_license,[.src.svc]svc_products,[.src.svc]svc_monitor," + -
             "[.src.plat]st_crypto_openssl,[.src.plat.vms]st_plat_vms," + -
             "[.src.plat.stub]st_plat_stub,[.src.main]steward_main,[.tests.unit]test_core," + -
@@ -80,7 +80,7 @@ $ core = "[.build]st_buf,[.build]st_fcgi,[.build]st_json,[.build]st_http,[.build
          "[.build]st_app,[.build]svc_session,[.build]svc_users,[.build]svc_idents,[.build]svc_edit," + -
          "[.build]svc_system,[.build]svc_access,[.build]svc_logicals,[.build]st_lnm," + -
          "[.build]st_proc,[.build]svc_processes,[.build]st_queue,[.build]svc_queues,[.build]st_sysgen,[.build]svc_sysgen,[.build]st_license,[.build]svc_license," + -
-         "[.build]st_product,[.build]svc_products,[.build]svc_monitor," + -
+         "[.build]st_product,[.build]svc_products,[.build]svc_monitor,[.build]st_mrec," + -
          "[.build]st_crypto_openssl"
 $ link/executable=[.build]steward.exe 'core',[.build]st_plat_vms,[.build]steward_main,[.build]ssl.opt/options
 $ if $severity .ne. 1

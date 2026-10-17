@@ -1,7 +1,7 @@
 // rates_unit.mjs - monitoring's arithmetic (www/js/rates.js), on its own: no DOM, no
 // server. Counters that wrap, a reboot, processes that come and go, the CPU share and
 // the negative interrupt count the x86 VM reports (NOTES.md).
-const { delta32, sample, busiest, top, keep } = await import(process.env.STEWARD_UI_JS + '/rates.js');
+const { delta32, sample, busiest, top, keep, historySamples } = await import(process.env.STEWARD_UI_JS + '/rates.js');
 
 let failed = 0;
 const say = (ok, what, extra = '') => { if (!ok) failed++; console.log(ok ? 'ok  ' : 'FAIL', what, ok ? '' : extra); };
@@ -70,5 +70,16 @@ say(delta32(1000, 10) === null, 'one that went back (a reboot): no change');
   let h = [];
   for (let t = 0; t <= 40 * 60000; t += 60000) h = keep(h, { t }, 30 * 60000);
   say(h.length === 31 && h[0].t === 10 * 60000 && h[30].t === 40 * 60000, 'the history: the last 30 minutes', h.length);
+}
+{
+  // The recording: readings 120 s apart, one missing (a gap), then a reboot.
+  const r = (t, idle, faults) => reading(t, { modes: { idle, kernel: idle / 10 }, counters: { page_faults: faults } });
+  const readings = [r(0, 1000, 0), r(120000, 2000, 1200), r(240000, 3000, 2400), /* 360000 missing */
+    r(480000, 5000, 4800), r(600000, 6000, 6000), r(720000, 100, 10), r(840000, 1100, 1210)];
+  const s = historySamples(readings, 120);
+  say(s.length === 4 && s.map((x) => x.t).join() === '120000,240000,600000,840000',
+    'one sample between each two readings, none across a gap or a reboot', s.map((x) => x.t));
+  say(!s[0].gap && !s[1].gap && s[2].gap && s[3].gap, 'the one after a gap or a reboot marked, so the charts break there', s.map((x) => x.gap));
+  say(near(s[0].rates.page_faults, 10) && near(s[3].rates.page_faults, 10), 'each the exact average since the one before');
 }
 process.exit(failed ? 1 : 0);

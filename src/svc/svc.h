@@ -56,6 +56,7 @@ void svc_sysgen(struct st_ctx *c);
 void svc_licenses(struct st_ctx *c);
 void svc_products(struct st_ctx *c);
 void svc_monitor(struct st_ctx *c);
+void svc_monitor_history(struct st_ctx *c);
 void svc_idents_list(struct st_ctx *c);
 void svc_ident_get(struct st_ctx *c);
 void svc_ident_holders(struct st_ctx *c);

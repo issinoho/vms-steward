@@ -56,6 +56,34 @@ try {
   sel.value = '2';
   sel.dispatchEvent(new W.Event('change'));
   say(localStorage.getItem('steward.monitor.interval') === '2', 'the interval chosen is remembered');
+
+  // The recording (D22): the stub's made-up week, five-minute readings, a gap 28 to
+  // 30 hours ago.
+  const range = root.querySelector('select[aria-label="Range"]');
+  say(range && [...range.options].map((o) => o.value).join() === 'live,360,1440,10080' && range.value === 'live',
+    'ranges: live, 6 hours, 24 hours, 7 days; live first');
+  range.value = '1440';
+  range.dispatchEvent(new W.Event('change'));
+  await wait(600);
+  let f = root.querySelectorAll('figure.chart');
+  say(f.length === 6 && !root.querySelector('table.busiest') && root.textContent.includes('Processes are not recorded') &&
+    sel.hidden, '24 hours from the recording: the six charts, no processes, no interval to choose', f.length);
+  say(root.textContent.includes('a reading every 5 min, kept for 7 days; shown every 5 min') &&
+    f[0].querySelectorAll('polyline.line.s0').length === 1 && f[0].querySelector('.chart-axis').textContent.startsWith('24 h ago'),
+    'every reading in 24 hours, one unbroken line', root.textContent.slice(-300));
+  say(localStorage.getItem('steward.monitor.range') === '1440', 'the range chosen is remembered');
+  range.value = '10080';
+  range.dispatchEvent(new W.Event('change'));
+  await wait(600);
+  f = root.querySelectorAll('figure.chart');
+  say(f.length === 6 && f[0].querySelectorAll('polyline.line.s0').length === 2 && root.textContent.includes('shown every 35 min') &&
+    f[0].querySelector('.chart-axis').textContent.startsWith('7 days ago'),
+    '7 days: a point every 35 minutes, the line broken where the recorder stopped', f[0] && f[0].querySelectorAll('polyline.line.s0').length);
+  range.value = 'live';
+  range.dispatchEvent(new W.Event('change'));
+  await wait(1700);
+  say(root.querySelectorAll('table.busiest').length === 2 && !sel.hidden, 'and back to live, with the processes');
+  localStorage.removeItem('steward.monitor.range');
   stopMonitor();
   const n = polls;
   await wait(2500);
@@ -65,7 +93,7 @@ try {
   await api.signIn('STEWARD_ADM', 'admin-pass');
   await api.setPrivileges(['WORLD']);
   root = await view();
-  say(root.querySelector('select').value === '2', 'and offered again');
+  say(root.querySelector('select[aria-label="Reading interval"]').value === '2', 'and offered again');
   await wait(2600);   // the first follow-up after a second, then every 2 s
   const t2 = root.querySelectorAll('table.busiest');
   say(t2.length === 2 && firstCells(t2[0])[0] === 'STEWARD_19301' && firstCells(t2[0]).includes('_FTA12:_S1'),

@@ -212,6 +212,11 @@ $ write s "$! Sessions end after this many seconds without an API call, and afte
 $ write s "$! this many in any case."
 $ write s "$ define/process/nolog STEWARD_IDLE_SECS ""900"""
 $ write s "$ define/process/nolog STEWARD_ABSOLUTE_SECS ""28800"""
+$ write s "$! The monitoring recorder (D22): a reading every so many seconds (5 to 3600;"
+$ write s "$! ""0"" turns it off), kept for so many days (1 to 366), in MONITOR.DAT here."
+$ write s "$! Fixed size: about 1.4 KB a reading, so a week at 60 s is some 15 MB."
+$ write s "$ define/process/nolog STEWARD_RECORD_SECS ""60"""
+$ write s "$ define/process/nolog STEWARD_RECORD_DAYS ""7"""
 $ close s
 $ say "STEWARD$CONFIGURE: wrote ", settings
 $have_secret:

@@ -80,6 +80,22 @@ export function busiest(prevList, curList, dt) {
   return out;
 }
 
+// Samples from the recording's readings, oldest first: one between each two. One that
+// spans a gap (the recorder stopped, readings missing, a reboot) is left out, and the
+// next is marked, so the charts break there rather than draw a long average.
+export function historySamples(readings, stepS) {
+  const out = [];
+  let gap = false;
+  for (let i = 1; i < readings.length; i++) {
+    const s = sample(readings[i - 1], readings[i]);
+    if (!s || s.dt > 1.5 * stepS) { gap = true; continue; }
+    s.gap = gap;
+    gap = false;
+    out.push(s);
+  }
+  return out;
+}
+
 // The top n by a key, leaving out those with nothing to show.
 export function top(list, key, n) {
   return list.filter((p) => (p[key] || 0) > 0).sort((a, b) => b[key] - a[key] || (a.pid < b.pid ? -1 : 1)).slice(0, n);

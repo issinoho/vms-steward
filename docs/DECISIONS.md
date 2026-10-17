@@ -603,11 +603,13 @@ unsettled).
 
 ## D22. Monitoring history: a recorder process writing a fixed ring of raw counters
 
-**Status:** proposed 2026-10-17 (PHASE13.md, 13b). Amends D21's "history in the
+**Status:** approved by the user 2026-10-17 ("im good with that", PHASE13.md, 13b): on by
+default, 60 s for 7 days, ranges Live, 6 h, 24 h and 7 d, no per-process history. Amends D21's "history in the
 browser" for ranges beyond the live 30 minutes.
 
-A detached `STEWARD_RECORDER` (the image as `STEWARD -r`), started and stopped with the
-pool, running as the service account with IMPERSONATE and SYSPRV permanently off, takes
+A detached `STEWARD_R<base-port>` (the image as `STEWARD -r`), started and stopped with
+the pool, running as the service account with every privilege but TMPMBX and NETMBX
+switched off (permanent mask too, checked at start), takes
 one `st_plat_monitor` reading each interval (60 s) and writes the system-wide raw
 counters, no processes, into `[.RUN]MONITOR.DAT`: an RMS indexed file of fixed records
 keyed by slot, a ring of fixed size (7 days). `GET api/v1/monitor/history` returns up to

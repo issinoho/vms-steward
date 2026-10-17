@@ -834,7 +834,7 @@ shown.
 - Dates are as OpenVMS prints them, in the node's local time.
 - `truncated`: more than 5,000 entries in a part.
 
-## Monitoring (Phase 13, D21): read-only
+## Monitoring (Phase 13, D21, D22): read-only
 
 ### `GET api/v1/monitor`
 
@@ -871,6 +871,28 @@ with `X-Steward-Background: 1` so it does not count as activity, as for
 - `visible`: the processes `$GETJPI` shows you (your own; your group's with GROUP;
   everyone's with WORLD), never the one serving the request; `truncated` past 4,000.
 
+### `GET api/v1/monitor/history?minutes=&points=`
+
+Readings from the recording on the node (D22): the recorder (`steward -r`, started with
+the pool) writes one each interval, 60 s by default, kept for 7 days. Up to `points`
+(2 to 1000, default 300) readings spread over the last `minutes` (1 to 527,040, default
+360; cut to what the recording keeps), a whole number of intervals apart (`step_secs`),
+oldest first. Each is `GET api/v1/monitor`'s reading without `visible` and `truncated`:
+processes are not recorded. The counters being cumulative, two readings give the exact
+average between them, so the page's `rates.js` works on them unchanged. A reading that
+was never written (the recorder stopped, a reboot) is simply missing. Anyone signed in
+may read it, as anyone may read the counters. Background polls as above.
+
+```json
+{"recording": true, "interval_secs": 60, "kept_secs": 604800,
+ "started_ms": 1792190000000, "updated_ms": 1792202280012, "step_secs": 120,
+ "readings": [{"sampled_at_ms": 1792180680031, "cpus": 2, "modes": {...}, "states": {...},
+               "processes": 104, "memory": {...}, "counters": {...}, "disks": [...]}]}
+```
+
+Without a recording (the recorder off, or not started yet): `{"recording": false,
+"readings": []}`.
+
 ## Coming
 
-Monitoring, the error log and a terminal (`docs/PLAN.md`).
+The error log and a terminal (`docs/PLAN.md`).
