@@ -49,3 +49,11 @@ install and remove history shown beside the installed list. 4. Changes later.
 
 Found in testing (2026-10-17): PRODUCT switches SYSLCK on itself, so an account needs
 only to be authorized for it (NOTES.md); the stub, page and tests follow that.
+
+Live test: `tests/vms/phase12_live.py x86` 8 ok, 0 failed (STEWARD_TEST refused with
+PRIVCLASS1; STEWARD_ADM, SYSLCK on or only authorized, the same 78 products and 527
+history entries as PRODUCT SHOW; VMSINSTAL's 9 runs for both).
+
+Kit T0.11-0 (0.11.0), built by `tools/kit.sh x86` (410 native checks), SHA-256
+`b97a6286bb24a056f00674fef50deef033ce509a340ab8346bcfdff6ba5286ac`, for the browser
+checks.
