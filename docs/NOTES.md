@@ -531,3 +531,10 @@ against 2,621, page faults and the free list within a few per cent. With a 6 s M
 window the 1.6 s of starting the images either side, on a busy node, put idle 21
 points out; 20 s is long enough. The node was busy throughout with a lighttpd in batch
 from another work directory (not Steward's, not touched).
+
+**A privilege list longer than 255 characters cannot be written by DCL** (Phase 13b,
+2026-10-17). `write sys$output "x ", f$getjpi("", "CURPRIV")` in the work account's
+batch job (which holds many privileges) printed nothing at all: the expression
+overflows a DCL token. STEWARD_POOL.COM's STATUS already cut the list to 200
+characters for this reason; `tests/vms/phase13b_rec.com` now does too. The
+recorder's own list, TMPMBX and NETMBX, is short.

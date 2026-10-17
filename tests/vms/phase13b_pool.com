@@ -39,5 +39,13 @@ $ write s "$ define/process/nolog STEWARD_RECORD_SECS ""0"""
 $ close s
 $ deassign/process STEWARD_RECORD_SECS
 $ @'pool' START 0 19390 "''tdir'" "''image'"
+$! The test pool's directory goes: nothing of it is wanted after the run.
+$ tlogs = tdir - "]" + ".LOGS]"
+$ delete/nolog 'tlogs'*.*;*
+$ delete/nolog 'tdir'*.*;*/exclude=LOGS.DIR
+$ set security/protection=(o:rwed) 'tdir'LOGS.DIR;1
+$ delete/nolog 'tdir'LOGS.DIR;1
+$ set security/protection=(o:rwed) P13BRUN.DIR;1
+$ delete/nolog P13BRUN.DIR;1
 $ say "==END=="
 $ exit 1

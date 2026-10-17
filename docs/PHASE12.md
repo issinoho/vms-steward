@@ -1,7 +1,8 @@
 # Phase 12: installed products
 
-**Status: 12a being built (2026-10-16).** The user approved D20 and the suggested
-answers below ("go with your suggestions").
+**Status: 12a closed (2026-10-17)** on the user's browser checks of 0.11.0. The user
+approved D20 and the suggested answers below ("go with your suggestions"). 12b
+(install and remove) not yet decided.
 
 Read-only first (12a), as for the earlier areas. The user asked (2026-10-16) that
 products installed by VMSINSTAL be reported too, not only PCSI's.

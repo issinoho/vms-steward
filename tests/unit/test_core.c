@@ -2120,7 +2120,7 @@ static void test_monitor(void)
           strstr(body, "\"truncated\":false"), "without WORLD, only your own processes");
     {
         const char *at = strstr(body, "\"sampled_at_ms\":");
-        if (at) first = atoll(at + 16);
+        if (at) first = strtoll(at + 16, NULL, 10);   /* not atoll: VSI C did not declare it here (%CC-I-IMPLICITFUNC) */
     }
     st_resp_free(&b.resp);
 
@@ -2134,7 +2134,7 @@ static void test_monitor(void)
           "with WORLD, everyone's (WEBMASTER's was stopped by the Phase 8b test)");
     {
         const char *at = strstr(body, "\"sampled_at_ms\":");
-        CHECK(at && first > 0 && atoll(at + 16) >= first, "each reading stamped, in order");
+        CHECK(at && first > 0 && strtoll(at + 16, NULL, 10) >= first, "each reading stamped, in order");
     }
     st_resp_free(&b.resp);
     CHECK(!st_plat_persona_active(), "no persona left active");

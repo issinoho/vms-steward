@@ -1,9 +1,8 @@
 # Phase 13: monitoring
 
-**Status: 13a closed (2026-10-17)** on the user's browser checks of the 0.12.0 kit.
-The user approved D21 and the suggested answers below ("go").
-**13b: history on the node, closed (2026-10-17)** on the user's browser checks of the
-0.13.0 kit; the user approved D22 and the suggested answers ("im good with that").
+**Status: closed (2026-10-17).** 13a on the user's browser checks of the 0.12.0 kit,
+13b (history recorded on the node) on those of the 0.13.0 kit. The user approved D21
+and its suggested answers ("go"), then D22 and its ("im good with that").
 
 CPU, memory, paging and I/O over time, as MONITOR shows them, in the browser. The
 dashboard (Phase 5) already shows one snapshot: CPU busy between two polls, memory,

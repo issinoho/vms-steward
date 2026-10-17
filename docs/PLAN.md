@@ -172,11 +172,11 @@ define and deassign, closed 2026-10-15 on the user's browser checks, a review an
 shadowing probe (0.6.2). See `docs/PHASE7.md`.
 
 **Phase 8: processes** (D16): read-only (8a) and stopping a process (8b) closed
-2026-10-15 on the user's browser checks and a review (0.7.2). See `docs/PHASE8.md`. See `docs/PHASE8.md`.
+2026-10-15 on the user's browser checks and a review (0.7.2). See `docs/PHASE8.md`.
 
 **Phase 9: batch and print queues** (D17): read-only (9a) and changes (9b: hold,
 release, delete a job; stop and start a queue) closed 2026-10-15 on the user's browser
-checks and a review (0.8.1). See `docs/PHASE9.md`. See `docs/PHASE9.md`.
+checks and a review (0.8.1). See `docs/PHASE9.md`.
 
 **Phase 10: system parameters** (D18), closed 2026-10-16 on the user's browser checks
 (0.9.0): read-only, SYSGEN SHOW/ALL in the D14 helper. See `docs/PHASE10.md`.
@@ -194,12 +194,14 @@ history read in-process. 12b (install and remove) not yet decided. See
 **Phase 13: monitoring** (D21). 13a, read-only, closed 2026-10-17 on the user's
 browser checks (0.12.0): `$GETRMI` counters, readable by anyone, polled by the page
 (5 s by default), history kept in the browser for 30 minutes, and the busiest
-processes among those the viewer may see. 13b, history recorded on the node by a recorder process started with the pool
-(D22), closed 2026-10-17 on the user's browser checks (0.13.0). See `docs/PHASE13.md`.
+processes among those the viewer may see. 13b, history recorded on the node by a
+recorder process started with the pool (D22), closed 2026-10-17 on the user's browser
+checks (0.13.0). See `docs/PHASE13.md`.
 
 **Later areas, one at a time and each with the same read-only → modify split:** licences, installed products,
-CPU/memory monitoring, error log, and a WebSocket terminal (lighttpd `mod_wstunnel`); licences are Phase 11.
-The user confirmed this order on 2026-10-11 (licences stay where they are).
+CPU/memory monitoring, error log, and a WebSocket terminal (lighttpd `mod_wstunnel`). The user confirmed this
+order on 2026-10-11. Licences (Phase 11), installed products (12) and monitoring (13) are done; the error log and
+the terminal remain, and 12b (installing and removing products) is undecided.
 
 **Wish list (not scheduled):** a layout made for phones (`docs/ideas/mobile.md`,
 asked for by the user 2026-10-11).
