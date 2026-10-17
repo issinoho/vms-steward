@@ -344,18 +344,6 @@ REFERENCED BY; SHOW HISTORY/FULL is PRODUCT, KIT TYPE, OPERATION, VAL, DATE AND 
 ERR, USER NAME, REMARK, with dashed rules giving the widths. A product name longer
 than its column pushes the rest of the line right (`VMSMARIADB V11.4-13E3 Full LP`).
 
-**PRODUCT switches SYSLCK on itself: the account need only be authorized for it**
-(Phase 12, 2026-10-17, `tests/vms/phase12_live.py x86`). With SYSLCK authorized (not
-default) for STEWARD_ADM, the helper as STEWARD_ADM with nothing switched on but
-TMPMBX and NETMBX listed all 78 products and 527 history entries, the same as with
-SYSLCK on; STEWARD_TEST, not authorized, is refused with PRIVCLASS1. The helper does
-honour what is switched on (phase 11: STEWARD_ADM without SYSPRV on is refused the
-licence database), so it is PRODUCT that turns SYSLCK on. The 2026-10-16 work-account
-finding above ("with SYSPRV instead of SYSLCK, or nothing, refused") does not hold:
-the work account holds SETPRV, and with SYSLCK switched off, or SYSPRV instead, it
-listed all 78 today. So unlike the licence database (D9), switching SYSLCK on in
-Steward changes nothing for PCSI; the page says only whether the account holds it.
-
 **VMSINSTAL keeps its own history, a text file** (Phase 12, 2026-10-16).
 `SYS$COMMON:[SYSUPD]VMSINSTAL.HISTORY`, owner [SYSTEM], `(RWED,RWED,RWED,RE)`:
 sequential, variable records, carriage-return control. A header, then one line per
@@ -478,6 +466,15 @@ The earlier "nothing on" run used `SET PROCESS/PRIVILEGE=('p1')`, which only add
 privileges, so it did not show this. To be settled with STEWARD_ADM, authorized for
 SYSLCK but not by default.
 
+**Settled: PRODUCT switches SYSLCK on itself; the account need only be authorized for
+it** (Phase 12, 2026-10-17, `tests/vms/phase12_live.py x86`). With SYSLCK authorized
+(not default) for STEWARD_ADM, the D14 helper as STEWARD_ADM with nothing on but
+TMPMBX and NETMBX listed the same 78 products and 527 history entries as with SYSLCK
+on. The helper does honour what is switched on (phase 11: STEWARD_ADM without SYSPRV
+on is refused the licence database), so it is PRODUCT that turns SYSLCK on. Unlike
+the licence database (D9), switching SYSLCK on in Steward changes nothing for PCSI; the
+page says only whether the account holds it.
+
 **PCSI's messages are in the PRODUCT image, not a message file** (Phase 12,
 2026-10-16). `$GETMSG` in the pool, and `F$MESSAGE(%X1652800A)` in DCL, both give
 `%NONAME-E-NOMSG, Message number 1652800A`; there is no `SYS$MESSAGE:*PCSI*` to `SET
@@ -485,3 +482,30 @@ MESSAGE`. PRODUCT prints its own text, `%PCSIUI-E-PRIVCLASS1, operation requires
 privilege`, so STEWARD_PRODUCT.COM sends PRODUCT's SYS$ERROR to the reply mailbox too
 and the parser keeps each part's first message. Seen through `api_probe` as
 STEWARD_TEST on x86 (`phase12_live.py`).
+
+**`$GETRMI` writes its return length as a longword, 2 bytes past an unsigned short**
+(Phase 13, 2026-10-17, `probes/probe_rmi.c` on x86). The ILE3 return-length field is
+documented as a word, and `$GETSYI` writes a word, but with guard bytes round it every
+successful `$GETRMI` item wrote 4 bytes there. In the first probe the 2 extra bytes
+landed on the loop counter: optimised, it ended in ACCVIO; unoptimised, it asked for
+`RMI$_CPUMPSYNCH` for ever, computable, and three runs were left spinning until I
+stopped them by PID. The dashboard's `item_u64` gave `$GETRMI` an unsigned short on
+the stack too; it now gives it a longword. With event flag 0, `$SYNCH` spins rather
+than waits whenever the IOSB is still empty, because flag 0 is set by everything else.
+
+**What `$GETRMI` gives an unprivileged process** (Phase 13, 2026-10-17,
+`probes/probe_rmi.c` and `MONITOR MODES,SYSTEM,IO/SUMMARY` with everything off but
+TMPMBX and NETMBX). No privilege is needed for any item tried. Buffer sizes: the CPU
+mode counters (`RMI$_CPUINTSTK` to `CPUIDLE`), `FRLIST` and `MODLIST` take 8 bytes;
+`DIRIO`, `BUFIO`, `FAULTS`, `PREADIO`, `PWRITIO`, `ISWPCNT`, `MBREADS`, `MBWRITES`,
+`TTREADS`, `TTWRITES` and the process-state counts take exactly 4 (8 gives BADPARAM, as
+for `RMI$_CUR`). The mode counters are ticks summed over CPUs, 100 a second a CPU:
+their changes over 5 s added to 193 a second on the 2-CPU node, each item read in its
+own call. `RMI$_CPUINTSTK` reads negative on this VM (−1,843,202, falling); MONITOR
+shows Interrupt State 0.00. `RMI$_MODES` (66 bytes for 2 CPUs) is per CPU: a CPU id
+byte, then longword counters whose MP synch, kernel, exec, super and user add up to
+the system-wide items; the idle and interrupt longwords do not match `CPUIDLE` as
+simply (off by the negative interrupt count), so its layout is not settled.
+`RMI$_DISKS` gives BADPARAM; `F$GETDVI(...,"OPCNT")` reads a disk's operation count
+unprivileged. 29 items, one call each, take well under a millisecond of CPU. Nothing
+on the node records history: no MONITOR recording, no TDC or T4.

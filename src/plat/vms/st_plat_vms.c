@@ -1369,14 +1369,16 @@ int st_plat_holder_remove(unsigned int value, unsigned int uic, st_err *e)
 /* One item from $GETSYI ($GETRMI when rmi), into a zeroed 8-byte value. Give an
    8-byte buffer (size 8), as fastfetch does: with 4, RMI$_FRLIST and the page-file
    items came back as 0 on the x86 node. RMI$_CUR, COM and COMO are the exceptions:
-   they need exactly 4 (8 gives BADPARAM). */
+   they need exactly 4 (8 gives BADPARAM). $GETRMI writes the return length as a
+   longword, 2 bytes past an unsigned short (probes/probe_rmi.c, NOTES.md), so it gets
+   one; $GETSYI writes a word into its low half (little-endian). */
 static unsigned int item_u64(int rmi, unsigned short code, unsigned short size, unsigned long long *out)
 {
     unsigned int iosb[2] = { 0, 0 }, st;
     unsigned char buf[8] = { 0 };
-    unsigned short len = 0;
+    unsigned int len = 0;
     st_ile3 it[2];
-    item(&it[0], code, buf, size, &len);
+    item(&it[0], code, buf, size, (unsigned short *) &len);
     item_end(&it[1]);
     if (rmi) {
         st = sys$getrmi(0, 0, 0, it, iosb, 0, 0);
