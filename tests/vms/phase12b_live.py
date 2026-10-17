@@ -107,7 +107,7 @@ try:
         print("INFO log:\n    " + "\n    ".join(res.get("lines", [])[-30:]))
         check(res.get("done") and res.get("success"), "the job ran to its end, successfully (%s)" % res.get("status"), res.get("status"))
         check(installed(), "PRODUCT SHOW PRODUCT now lists STWDEMO")
-        files = vms("directory/nohead/notrail %s[STWDEMO]README.TXT" % (DEST[:-1] + "."))
+        files = vms("directory/nohead/notrail %s.STWDEMO]README.TXT" % DEST[:-1])
         check("README.TXT" in files, "its file in the destination", files[:200])
 
         st, doc = api("STEWARD_ADM", PRIVS, "/api/v1/products/remove", "POST", DEMO)
@@ -124,7 +124,7 @@ finally:
         vms("set process/privilege=(syslck,sysprv)", "product remove STWDEMO /producer=ISSINOHO /options=noconfirm", timeout=600)
     vms("set process/privilege=sysprv",
         *["delete/nolog %s%s;*" % (ADMDIR, l) for l in logs],
-        "delete/nolog %s[STWDEMO]*.*;*" % (DEST[:-1] + "."),
+        "delete/nolog %s.STWDEMO]*.*;*" % DEST[:-1],
         "set security/protection=(O:RWED) %sSTWDEMO.DIR;1" % DEST,
         "delete/nolog %sSTWDEMO.DIR;1" % DEST,
         "delete/nolog %s*.*;*" % STAGE,

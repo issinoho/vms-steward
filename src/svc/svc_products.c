@@ -273,6 +273,18 @@ static void product_job(st_ctx *c, int remove)
         st_resp_problem(c->resp, 409, "refused-product", "Steward will not do this", why, 0, NULL);
         return;
     }
+    {   /* The job logs in as a batch job: with no batch access at any hour it would be
+           refused at login and leave no log (x86, 2026-10-17). Partial hours are left
+           to OpenVMS. */
+        static st_user u;
+        if (!st_plat_user_get(c->session.username, &u, &e) &&
+            (u.access_p[ST_ACC_BATCH] & 0xFFFFFFu) == 0xFFFFFFu && (u.access_s[ST_ACC_BATCH] & 0xFFFFFFu) == 0xFFFFFFu) {
+            st_app_audit(c, c->session.username, action, target, "refused", "no batch access");
+            st_resp_problem(c->resp, 409, "no-batch-access", "Your account has no batch access",
+                            "Installs and removals run as a batch job under your name, and your account may not log in as one (AUTHORIZE /BATCH).", 0, NULL);
+            return;
+        }
+    }
     svc_session_privs(c, privs, sizeof privs);
     if (strlen(privs) > 255) {
         st_resp_problem(c->resp, 422, "too-many-privileges", "Too many privileges switched on",

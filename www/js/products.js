@@ -57,9 +57,22 @@ function followJob(panel, r, what, done) {
   mount(panel, h('div', { class: 'panel' },
     h('div', { class: 'titlebar' }, h('h3', {}, what), h('button', { type: 'button', onclick: () => { stopProductJob(); mount(panel); } }, 'Close')),
     state, pre));
+  let polls = 0;
   async function poll() {
     try {
       const l = await api.productLog(r.log);
+      polls++;
+      if (!l.started && polls >= 2) {
+        // No log yet: still queued, or gone without one (refused at login: batch
+        // access, the login directory).
+        let gone = false;
+        try { await api.job(r.entry); } catch (err) { gone = err instanceof ApiError && err.status === 404; }
+        if (gone) {
+          state.textContent = `Job ${r.entry} ended without writing its log: it may not have been able to log in (your account's batch access, its login directory). Its entry in the accounting file says why.`;
+          state.className = 'small bad';
+          return;
+        }
+      }
       if (l.started) pre.textContent = l.lines.join('\n') || '(empty so far)';
       if (l.done) {
         state.textContent = l.success ? `Finished: ${l.status}.` : `Failed: ${l.status}. The log above has PRODUCT's messages.`;
