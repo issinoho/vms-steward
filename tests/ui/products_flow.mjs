@@ -1,7 +1,8 @@
 // products_flow.mjs - the Installed products view in a headless DOM, against the dev
-// server on the stub platform (tests/ui/run.sh): PCSI refused without SYSLCK, with
-// what would let you read it, and VMSINSTAL's history to anyone; with SYSLCK switched
-// on, the installed products (filterable) and PCSI's history.
+// server on the stub platform (tests/ui/run.sh): PCSI refused to an account without
+// SYSLCK, with why, and VMSINSTAL's history to anyone; to one authorized for SYSLCK,
+// switched on or not (PRODUCT switches it on itself), the installed products
+// (filterable) and PCSI's history.
 import { JSDOM } from 'jsdom';
 const BASE = process.env.STEWARD_UI_BASE || 'http://127.0.0.1:8088/';
 const dom = new JSDOM('<!doctype html><body><div id="toasts"></div></body>', { url: BASE });
@@ -45,12 +46,12 @@ try {
 
   await api.signIn('STEWARD_ADM', 'admin-pass');
   root = await view();
-  say((root.querySelector('.refusal') || {}).textContent?.includes('You hold it: switch it on'),
-    'authorized but not switched on: told how');
+  say(!root.querySelector('.refusal') && root.querySelectorAll('table.products').length === 3,
+    'SYSLCK authorized but not switched on: read, as PRODUCT on x86 reads it');
   await api.setPrivileges(['SYSLCK']);
   root = await view();
   tables = root.querySelectorAll('table.products');
-  say(!root.querySelector('.refusal') && tables.length === 3, 'with SYSLCK: installed, history and VMSINSTAL');
+  say(!root.querySelector('.refusal') && tables.length === 3, 'with SYSLCK switched on: installed, history and VMSINSTAL');
   say(firstCells(tables[0]).join() === 'WIDGET,LONGPRODUCTNAME,C,SSL3,TCPIP,VMS', 'every installed product', firstCells(tables[0]));
   say(tables[0].textContent.includes('VSI X86VMS TCPIP V6.0-31') && root.textContent.includes('6 products installed by PCSI'),
     'referenced-by lists and the count');

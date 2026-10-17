@@ -805,8 +805,10 @@ UIC, SYSPRV, BYPASS, READALL, UIC group 1); a refusal is in `sources`, and `data
 
 What PCSI has installed and its history (`PRODUCT SHOW PRODUCT/FULL` and `PRODUCT SHOW
 HISTORY/FULL`, run in the D14 helper as **you**, with the privileges you switched on),
-and VMSINSTAL's own history, read as you. PRODUCT needs SYSLCK: without it both PCSI
-parts are refused, in PRODUCT's own words, and VMSINSTAL's history is still shown.
+and VMSINSTAL's own history, read as you. PRODUCT needs your account authorized for
+SYSLCK, and switches it on itself, so it need not be switched on in the session; without
+it both PCSI parts are refused, in PRODUCT's own words, and VMSINSTAL's history is still
+shown.
 
 ```json
 {"products": [
@@ -826,7 +828,7 @@ parts are refused, in PRODUCT's own words, and VMSINSTAL's history is still show
 
 - `products` in PCSI's order; `history` newest first, as PCSI gives it; `vmsinstal`
   oldest first, as the file holds it. VMSINSTAL records installs only, never a removal.
-- Without SYSLCK: `"products": {"read": false, "vms_status": "%X0652800A",
+- Without SYSLCK authorized: `"products": {"read": false, "vms_status": "%X0652800A",
   "vms_message": "%PCSIUI-E-PRIVCLASS1, operation requires SYSLCK privilege"}`, and the
   same for `history`; both arrays empty.
 - Dates are as OpenVMS prints them, in the node's local time.

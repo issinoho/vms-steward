@@ -554,8 +554,9 @@ int st_plat_license_list(const char *privs, st_license_parser *p, char text[ST_L
 
    PRODUCT SHOW PRODUCT/FULL and PRODUCT SHOW HISTORY/FULL, run in the D14 helper
    process (the viewer) by the fixed procedure STEWARD_PRODUCT.COM, into p
-   (st_product_init'ed by the caller). PRODUCT needs SYSLCK: a part OpenVMS refused is
-   not an error, its condition is in p->status and its $GETMSG text in text[part].
+   (st_product_init'ed by the caller). PRODUCT needs the account authorized for SYSLCK
+   (it switches it on itself): a part OpenVMS refused is not an error, its condition is
+   in p->status and PRODUCT's own message in text[part].
    privs as for st_plat_lnm_list. */
 int st_plat_product_list(const char *privs, st_product_parser *p, char text[ST_PROD_PARTS][256], st_err *e);
 

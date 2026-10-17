@@ -3,7 +3,8 @@
 
    PCSI has no documented interface to its database, so the D14 helper, which is the
    viewer, runs two PRODUCT commands into the reply mailbox, each in its part (PRODUCT
-   needs SYSLCK; without it the part's status is %PCSIUI-E-PRIVCLASS1):
+   needs the account authorized for SYSLCK, and switches it on itself; without it the
+   part's status is %PCSIUI-E-PRIVCLASS1):
 
    %%PART%% PRODUCTS        PRODUCT SHOW PRODUCT/FULL
    ------------------------------------ ----------- --------- ----- ...

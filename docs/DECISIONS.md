@@ -566,7 +566,9 @@ SYSLCK authorized (not default) for STEWARD_ADM on x86 for testing, which the us
 does; viewers without SYSLCK see PCSI's refusal, as the licence database's (D10);
 VMSINSTAL's record shown as history, not as what is installed, since it never records
 a removal; PCSI's history included beside the installed list; changes (12b) decided
-later. Phase 12.
+later. Phase 12. Amended 2026-10-17: PRODUCT switches SYSLCK on itself, so an
+account authorized for it reads PCSI whether or not it is switched on in Steward
+(NOTES.md); D9 still holds for everything else.
 
 PCSI's database has no documented interface, and `PRODUCT SHOW` needs SYSLCK (probe,
 NOTES.md). So the D14 helper, which is the viewer, would run a fourth fixed procedure,

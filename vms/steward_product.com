@@ -1,7 +1,7 @@
 $! STEWARD_PRODUCT.COM - list the installed products as the user this process runs as
 $! (Phase 12, D20, through the D14 helper). PCSI has no documented interface to its
-$! database; PRODUCT SHOW prints it, to a user with SYSLCK switched on (without it,
-$! %PCSIUI-E-PRIVCLASS1). PRODUCT has no /OUTPUT=, so each command's SYS$OUTPUT is
+$! database; PRODUCT SHOW prints it to a user authorized for SYSLCK, which PRODUCT
+$! switches on itself (without it, %PCSIUI-E-PRIVCLASS1). PRODUCT has no /OUTPUT=, so each command's SYS$OUTPUT is
 $! the reply mailbox for that one image (DEFINE/USER).
 $! Steward sends no commands, only data: its process name is
 $! STW<request><reply><random>, the unit numbers of two mailboxes and a random part, 4

@@ -7,7 +7,8 @@ VMSINSTAL.HISTORY.
 READ-ONLY. With PHASE12_HELPER unset it stages vms/steward_product.com under
 [STEWARD_TEST.P12T] (the helper runs as the viewer, who must read it) and removes it
 after; with PHASE12_HELPER=installed it uses STEWARD$ROOT:[COM]STEWARD_PRODUCT.COM.
-STEWARD_ADM must be authorized for SYSLCK (not by default). The reference listings
+STEWARD_ADM must be authorized for SYSLCK (not by default); PRODUCT switches it on
+itself, so STEWARD_ADM reads PCSI with it switched on or not. The reference listings
 are the commands run by the work account, read with a parser of the test's own."""
 import json, os, re, subprocess, sys
 
@@ -98,12 +99,13 @@ try:
     check(doc.get("products") and all(p["kit_type"] and p["state"] for p in doc["products"]),
           "every product with its kit type and state")
 
-    # Does PRODUCT SHOW need SYSLCK switched on, or only authorized (NOTES.md)? Shown,
-    # not checked, until it is settled.
+    # PRODUCT switches SYSLCK on itself when the account holds it (NOTES.md), unlike
+    # the licence database, which needs SYSPRV switched on (phase11_live.py).
     st, doc = api("STEWARD_ADM", "-", "/api/v1/products")
-    s = ((doc or {}).get("sources") or {}).get("products", {})
-    print("INFO STEWARD_ADM, SYSLCK authorized but not switched on: PCSI %s" %
-          ("read" if s.get("read") else "refused, %s" % s.get("vms_message", s)))
+    doc = doc or {}
+    check(st == 200 and doc.get("sources", {}).get("products", {}).get("read") and [name(p) for p in doc.get("products", [])] == products,
+          "STEWARD_ADM with SYSLCK authorized but not switched on: the same products, as PRODUCT switches it on itself",
+          (st, doc.get("sources")))
 
     left = vms('pipe show system | search sys$pipe "STW"')
     check("STW" not in left.replace("search sys$pipe", ""), "no helper process left behind", left[-200:])

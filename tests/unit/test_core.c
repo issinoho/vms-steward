@@ -2075,6 +2075,10 @@ static void test_products(void)
 
     sign_in("{\"username\":\"steward_adm\",\"password\":\"admin-pass\"}", ac, sizeof ac, acsrf);
     adm[0].n = "HTTP_COOKIE"; adm[0].v = ac; adm[1].n = "HTTP_X_STEWARD_CSRF"; adm[1].v = acsrf; adm[2].n = NULL;
+    call("GET", "/api/v1/products", adm, NULL, &b);
+    CHECK(b.resp.status == 200 && !strstr(b.resp.body.data, "\"read\":false") && strstr(b.resp.body.data, "\"name\":\"WIDGET\""),
+          "SYSLCK authorized, not switched on: read (PRODUCT switches it on itself, as on x86)");
+    st_resp_free(&b.resp);
     call("PUT", "/api/v1/session/privileges", adm, "{\"enabled\":[\"syslck\"]}", &b);
     CHECK(b.resp.status == 200 && strstr(b.resp.body.data, "SYSLCK"), "SYSLCK switched on (authorized, not default)");
     st_resp_free(&b.resp);

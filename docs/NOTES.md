@@ -332,7 +332,7 @@ authorization number, status, revision, who modified it and when, but no checksu
 both listings a "Per Core License" has no Availability line.
 
 **PRODUCT SHOW needs SYSLCK, though the PCSI database is world-readable** (Phase 12,
-2026-10-16). `probes/pcsi_view.com` in batch as STEWARD_TEST (TMPMBX, NETMBX): `PRODUCT
+2026-10-16; corrected 2026-10-17, below: authorized is enough). `probes/pcsi_view.com` in batch as STEWARD_TEST (TMPMBX, NETMBX): `PRODUCT
 SHOW PRODUCT/FULL` and `PRODUCT SHOW HISTORY/FULL` both failed with
 %PCSIUI-E-PRIVCLASS1 "operation requires SYSLCK privilege" (%X1652800A), although
 `SYS$COMMON:[SYSEXE]PCSI$*.PCSI$DATABASE` are `(RWED,RWED,RE,RE)`. From the work
@@ -343,6 +343,18 @@ columns: SHOW PRODUCT/FULL is PRODUCT (36), KIT TYPE (11), STATE (9), MAINTENANC
 REFERENCED BY; SHOW HISTORY/FULL is PRODUCT, KIT TYPE, OPERATION, VAL, DATE AND TIME,
 ERR, USER NAME, REMARK, with dashed rules giving the widths. A product name longer
 than its column pushes the rest of the line right (`VMSMARIADB V11.4-13E3 Full LP`).
+
+**PRODUCT switches SYSLCK on itself: the account need only be authorized for it**
+(Phase 12, 2026-10-17, `tests/vms/phase12_live.py x86`). With SYSLCK authorized (not
+default) for STEWARD_ADM, the helper as STEWARD_ADM with nothing switched on but
+TMPMBX and NETMBX listed all 78 products and 527 history entries, the same as with
+SYSLCK on; STEWARD_TEST, not authorized, is refused with PRIVCLASS1. The helper does
+honour what is switched on (phase 11: STEWARD_ADM without SYSPRV on is refused the
+licence database), so it is PRODUCT that turns SYSLCK on. The 2026-10-16 work-account
+finding above ("with SYSPRV instead of SYSLCK, or nothing, refused") does not hold:
+the work account holds SETPRV, and with SYSLCK switched off, or SYSPRV instead, it
+listed all 78 today. So unlike the licence database (D9), switching SYSLCK on in
+Steward changes nothing for PCSI; the page says only whether the account holds it.
 
 **VMSINSTAL keeps its own history, a text file** (Phase 12, 2026-10-16).
 `SYS$COMMON:[SYSUPD]VMSINSTAL.HISTORY`, owner [SYSTEM], `(RWED,RWED,RWED,RE)`:

@@ -10,7 +10,7 @@ products installed by VMSINSTAL be reported too, not only PCSI's.
 
 | Source | Who may read it | How |
 |---|---|---|
-| PCSI: `PRODUCT SHOW PRODUCT/FULL`, `PRODUCT SHOW HISTORY/FULL` | only with **SYSLCK** on (STEWARD_TEST refused, %PCSIUI-E-PRIVCLASS1; SYSPRV does not do); the database files themselves are W:RE | DCL, no `/OUTPUT=`: `DEFINE/USER SYS$OUTPUT` instead |
+| PCSI: `PRODUCT SHOW PRODUCT/FULL`, `PRODUCT SHOW HISTORY/FULL` | accounts authorized for **SYSLCK**, which PRODUCT switches on itself (STEWARD_TEST refused, %PCSIUI-E-PRIVCLASS1; SYSPRV does not do); the database files themselves are W:RE | DCL, no `/OUTPUT=`: `DEFINE/USER SYS$OUTPUT` instead |
 | VMSINSTAL: `SYS$UPDATE:VMSINSTAL.HISTORY` | anyone (W:RE) | a text file, `|`-separated, installs only |
 
 `probes/pcsi_view.com` is the PCSI probe (batch as STEWARD_TEST; the work account
@@ -46,3 +46,6 @@ Answers (the suggestions, approved): 1. SYSLCK authorized, not default, for STEW
 on x86 (the user runs AUTHORIZE); viewers without it see PCSI's refusal, by name. 2.
 VMSINSTAL's record shown as history ("installed by VMSINSTAL on ..."). 3. PCSI's
 install and remove history shown beside the installed list. 4. Changes later.
+
+Found in testing (2026-10-17): PRODUCT switches SYSLCK on itself, so an account needs
+only to be authorized for it (NOTES.md); the stub, page and tests follow that.

@@ -3,8 +3,8 @@
 // What PCSI has installed (PRODUCT SHOW PRODUCT/FULL), its install and remove history
 // (PRODUCT SHOW HISTORY/FULL), and VMSINSTAL's own history of installs. PCSI has no
 // documented interface, so the commands run in a short-lived process that is you (as
-// for logical names), with the privileges you switched on; PRODUCT needs SYSLCK, and a
-// refusal is shown. VMSINSTAL records installs only, never removals: it is history,
+// for logical names), with the privileges you switched on. PRODUCT needs your account
+// authorized for SYSLCK, and switches it on itself; a refusal is shown. VMSINSTAL records installs only, never removals: it is history,
 // not a list of what is installed now.
 
 import { api, ApiError } from './api.js';
@@ -69,19 +69,15 @@ function vmsinstalTable(list) {
       : h('tr', {}, h('td', { colspan: 8, class: 'muted' }, 'VMSINSTAL records no installation')))));
 }
 
-// PCSI refused: OpenVMS's message, and what would let you read it when the reason was
-// SYSLCK.
+// PCSI refused: OpenVMS's message, and why when the reason was SYSLCK. PRODUCT switches
+// SYSLCK on itself when the account holds it, so there is nothing to switch on here.
 function pcsiRefusal(src, me) {
   const msg = h('pre', { class: 'vmsmsg' }, `PRODUCT SHOW: ${src.vms_message || src.vms_status || 'not read'}`);
   if (src.vms_status !== PRIVCLASS1) return h('div', { class: 'refusal' }, msg);
-  const can = me.authorized_privileges.includes('SYSLCK');
-  const on = me.current_privileges.includes('SYSLCK');
   return h('div', { class: 'refusal' }, msg,
-    h('p', { class: 'muted' }, on
-      ? 'PCSI refused even with SYSLCK switched on.'
-      : can
-        ? h('span', {}, 'PRODUCT SHOW needs SYSLCK. You hold it: switch it on under ', h('a', { href: '#/account' }, 'My account'), ' to see what PCSI has installed.')
-        : 'PRODUCT SHOW needs SYSLCK, which your account does not hold. VMSINSTAL\'s history, below, is open to anyone.'));
+    h('p', { class: 'muted' }, me.authorized_privileges.includes('SYSLCK')
+      ? 'PCSI refused although your account holds SYSLCK.'
+      : 'PRODUCT SHOW needs SYSLCK, which your account does not hold. VMSINSTAL\'s history, below, is open to anyone.'));
 }
 
 const failed = (src, what) => h('div', { class: 'refusal' }, h('pre', { class: 'vmsmsg' }, `${what}: ${src.vms_message || src.vms_status || 'not read'}`));

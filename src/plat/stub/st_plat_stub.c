@@ -6,7 +6,8 @@
 
      STEWARD_ADM    admin-pass     [362,2] defaults TMPMBX, NETMBX, OPER; SYSPRV,
                                    GRPPRV and SYSLCK authorized only (the habit D9
-                                   respects; SYSLCK for PRODUCT SHOW, Phase 12);
+                                   respects; SYSLCK for PRODUCT SHOW, Phase 12,
+                                   which needs it only authorized);
                                    holds STEWARD_DEMO and STEWARD_OPS
      STEWARD_TEST   test-pass      [362,1] TMPMBX, NETMBX only; holds STEWARD_OPS
      DISABLED       disabled-pass  DISUSER: fails, reason "account is disabled"
@@ -1583,13 +1584,15 @@ static const char *const stub_vmsinstal_file[] = {
 
 int st_plat_product_list(const char *privs, st_product_parser *p, char text[ST_PROD_PARTS][256], st_err *e)
 {
-    /* PRODUCT SHOW with SYSLCK, as on x86; without it both parts are refused with
-       %PCSIUI-E-PRIVCLASS1 (NOTES.md). The stub asks for it switched on in the session. */
+    /* PRODUCT SHOW for an account authorized for SYSLCK, switched on or not: PRODUCT
+       switches it on itself, as on x86; without it both parts are refused with
+       %PCSIUI-E-PRIVCLASS1 (NOTES.md). */
     static const char *const refused[] = {
         "%%PART%% PRODUCTS", "%PCSIUI-E-PRIVCLASS1, operation requires SYSLCK privilege", "%%STATUS%% 1652800A",
         "%%PART%% HISTORY", "%PCSIUI-E-PRIVCLASS1, operation requires SYSLCK privilege", "%%STATUS%% 1652800A", NULL };
-    int may = privs && strstr(privs, "SYSLCK") != NULL, i;
+    int may = persona && (persona->u.priv_auth[0] & BIT(30)), i;   /* SYSLCK */
     const char *const *src = may ? stub_products : refused;
+    (void) privs;
     (void) e;
     for (i = 0; i < ST_PROD_PARTS; i++) text[i][0] = '\0';
     for (i = 0; src[i]; i++)
