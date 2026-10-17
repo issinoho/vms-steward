@@ -623,3 +623,20 @@ Alternatives not taken: recording in a pool process by timer AST (could write un
 viewer's persona; every process would record); daily sequential files (grow, need
 pruning, slow to seek); MONITOR /RECORD (system-wide, undocumented); recording rates
 instead of counters (weighted averages, reboots inside an interval lost).
+
+## D23. Error log: ELV in the D14 helper; crash listings and device counts in-process
+
+**Status:** proposed 2026-10-17 (PHASE14.md).
+
+ERRLOG.SYS needs SYSPRV (or the SYSTEM group), its format is not documented, and the
+classic `ANALYZE/ERROR_LOG` is not on x86 (probe, NOTES.md). So the D14 helper, which
+is the viewer, would run a fifth fixed procedure, `STEWARD_ERRLOG.COM`:
+`ANALYZE/ERROR_LOG/ELV TRANSLATE` `/ONE_LINE` for the list, `/ENTRY` for one event in
+full and `/SUMMARY` for the counts, parsed in core; ELV's messages decide a refusal,
+not its exit status, which is success even when it cannot open the file. CLUE's crash
+listings (text, in `SYS$ERRORLOG`) and `DVI$_ERRCNT` are read in-process under the
+persona.
+
+Alternatives not taken: parsing ERRLOG.SYS in-process (undocumented on x86; ELV's
+translations would be rebuilt); ELV run by the service (its view, D2); running
+`ANALYZE/CRASH_DUMP` (needs the dump and CMKRNL; CLUE's listings hold the summary).

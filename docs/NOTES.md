@@ -538,3 +538,15 @@ batch job (which holds many privileges) printed nothing at all: the expression
 overflows a DCL token. STEWARD_POOL.COM's STATUS already cut the list to 200
 characters for this reason; `tests/vms/phase13b_rec.com` now does too. The
 recorder's own list, TMPMBX and NETMBX, is short.
+
+**ANALYZE/ERROR_LOG on x86 is ELV only, and says "file not found" for "no access"**
+(Phase 14, 2026-10-17, `probes/probe_errlog.com`). `ANALYZE/ERROR_LOG` without `/ELV`
+fails: `SYS$SYSTEM:ERF.EXE` is not on E9.2-4. `ANALYZE/ERROR_LOG/ELV TRANSLATE` works
+with SYSPRV; without it, it prints `%ELV-E-FILOPNERR, error opening
+SYS$SYSROOT:[SYSERR]ERRLOG.SYS;1` with `-RMS-E-FNF` and exits with status 1. A plain
+`OPEN/READ SYS$ERRORLOG:ERRLOG.SYS` unprivileged also gives FNF, naming
+`SYS$COMMON:[SYSERR]`: the file is in `SYS$SPECIFIC`, protected (W: no access), and
+the search list goes on to `SYS$COMMON`, where it is not, so the PRV is lost (as with
+ACCOUNTNG, above). A CLUE listing in `SYS$COMMON:[SYSERR]` gives PRV properly.
+Timings with SYSPRV, 1,807 events: `/ONE_LINE` 4 s, one `/ENTRY` 5 s, `/FULL` 10 s
+(6 MB).
