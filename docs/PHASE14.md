@@ -1,7 +1,7 @@
 # Phase 14: error log
 
-**Status: 14a being built (2026-10-17).** The user approved D23 and the suggested
-answers below ("Agreed").
+**Status: 14a closed (2026-10-17)** on the user's browser checks of 0.14.0. The user
+approved D23 and the suggested answers below ("Agreed"). 14b (changes) not yet decided.
 
 What OpenVMS records about the hardware and the system itself: the error log
 (`ERRLOG.SYS`, written by ERRFMT), the crash history (CLUE's summary of each crash
@@ -107,4 +107,6 @@ tests/vms/phase14_live.py` runs the installed procedure.
 Installed (2026-10-17): the user installed 0.14.0 on x86 and restarted the pool (the
 pool and recorder logs show 0.14.0 starting cleanly). `PHASE14_HELPER=installed
 tests/vms/phase14_live.py x86`, with STEWARD$ROOT:[COM]STEWARD_ERRLOG.COM: 19 ok, 0
-failed. Awaiting the user's browser checks.
+failed.
+
+Browser checks: confirmed by the user (2026-10-17). 14a closed.
