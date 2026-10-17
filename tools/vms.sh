@@ -61,8 +61,8 @@ dcl_logged() {
         pid=$!
     }
     local pid waited=0 limit=${VMS_TIMEOUT:-600} starts=1
-    trap 'kill "$pid" 2>/dev/null' EXIT
-    trap 'kill "$pid" 2>/dev/null; exit 143' TERM INT HUP
+    trap 'kill "${pid:-}" 2>/dev/null || true' EXIT
+    trap 'kill "${pid:-}" 2>/dev/null; exit 143' TERM INT HUP
     start_ssh
     while :; do
         sleep 2; waited=$((waited + 2))
