@@ -200,13 +200,14 @@ checks (0.13.0). See `docs/PHASE13.md`.
 
 **Later areas, one at a time and each with the same read-only → modify split:** licences, installed products,
 CPU/memory monitoring, error log, and a WebSocket terminal (lighttpd `mod_wstunnel`). The user confirmed this
-order on 2026-10-11. Licences (Phase 11), installed products (12), monitoring (13) and the error log (14a) are done;
+order on 2026-10-11. Licences (Phase 11), installed products (12), monitoring (13) and the error log (14) are done;
 the terminal remains, and 12b (installing and removing products) is undecided.
 
 **Phase 14: error log** (D23). 14a, read-only, closed 2026-10-17 on the user's browser checks
 (0.14.0): ELV in the D14 helper for ERRLOG.SYS, CLUE's crash listings, OPCOM's log and
-device error counts in-process. 14b (changes, D24) and the pool purging its logs (D25) being built; see
-`docs/PHASE14.md`, which is where to pick up.
+device error counts in-process. 14b, changes (D24: a new error log by renaming ERRLOG.SYS, crash listings deleted), and
+the pool purging its logs (D25), closed 2026-10-17 on the user's browser checks (0.15.2).
+See `docs/PHASE14.md`.
 
 **Wish list (not scheduled):** a layout made for phones (`docs/ideas/mobile.md`,
 asked for by the user 2026-10-11).

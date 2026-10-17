@@ -50,7 +50,7 @@ penetration test are still to come ([`docs/REVIEW-BRIEF.md`](docs/REVIEW-BRIEF.m
 | Licences: loaded, the charge, and the database where OpenVMS lets you read it (read-only) | done (Phase 11, closed 2026-10-16, 0.10.1) |
 | Installed products: PCSI's list and history, VMSINSTAL's history (read-only) | done (Phase 12a, closed 2026-10-17, 0.11.0) |
 | Monitoring: CPU by mode, process states, memory, paging, I/O and disks over time, and the busiest processes (read-only) | done (Phase 13a, closed 2026-10-17, 0.12.0); history recorded on the node (Phase 13b, closed 2026-10-17, 0.13.0) |
-| Error log: device error counts, the events in ERRLOG.SYS (translated by ELV), CLUE's crash summaries and OPCOM's log (read-only) | done (Phase 14a, closed 2026-10-17, 0.14.0); changes built (Phase 14b, 0.15.2 test kit; awaiting browser checks) |
+| Error log: device error counts, the events in ERRLOG.SYS (translated by ELV), CLUE's crash summaries and OPCOM's log (read-only) | done (Phase 14a, closed 2026-10-17, 0.14.0); changes (Phase 14b, closed 2026-10-17, 0.15.2) |
 | Terminal | later |
 
 ## Installing

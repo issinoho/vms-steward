@@ -1,9 +1,8 @@
 # Phase 14: error log
 
-**Status: 14a closed (2026-10-17)** on the user's browser checks of 0.14.0. The user
-approved D23 and the suggested answers below ("Agreed").
-**14b: changes, being built (2026-10-17)**: the user approved D24, D25 and the suggested
-answers ("Agreed").
+**Status: closed (2026-10-17).** 14a on the user's browser checks of 0.14.0; 14b (changes)
+and D25 (the pool purging its logs) on those of 0.15.2. The user approved D23, then D24
+and D25, with the suggested answers ("Agreed").
 
 What OpenVMS records about the hardware and the system itself: the error log
 (`ERRLOG.SYS`, written by ERRFMT), the crash history (CLUE's summary of each crash
@@ -236,3 +235,5 @@ access the real PRV instead of FNF. After the fix: `phase14_live.py` 19 ok,
 Kit T0.15-2 (0.15.2), built by `tools/kit.sh x86`, SHA-256
 `823b51066cb12cdd62e4afd7790702d3a19715d76c989ec2f64fd389ba178156`, for the browser
 checks. (0.15.1 was built before the last change and is not for installing.)
+
+Browser checks: confirmed by the user on 0.15.2 (2026-10-17). 14b closed; Phase 14 done.
