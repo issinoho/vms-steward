@@ -217,6 +217,8 @@ $ write s "$! ""0"" turns it off), kept for so many days (1 to 366), in MONITOR.
 $ write s "$! Fixed size: about 1.4 KB a reading, so a week at 60 s is some 15 MB."
 $ write s "$ define/process/nolog STEWARD_RECORD_SECS ""60"""
 $ write s "$ define/process/nolog STEWARD_RECORD_DAYS ""7"""
+$ write s "$! Each pool start keeps this many versions of each log in [.LOGS] (1 to 100)."
+$ write s "$ define/process/nolog STEWARD_LOG_KEEP ""10"""
 $ close s
 $ say "STEWARD$CONFIGURE: wrote ", settings
 $have_secret:

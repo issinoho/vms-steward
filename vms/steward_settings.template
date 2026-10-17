@@ -29,3 +29,7 @@ $! directory. Fixed size: about 1.4 KB a reading, so a week at 60 s is some 15 M
 $! Without these lines: 60 and 7.
 $ define/process/nolog STEWARD_RECORD_SECS "60"
 $ define/process/nolog STEWARD_RECORD_DAYS "7"
+$!
+$! Each pool start purges [.LOGS] to this many versions of each process's log and
+$! procedure (DECISIONS D25), 1 to 100. Without this line: 10.
+$ define/process/nolog STEWARD_LOG_KEEP "10"

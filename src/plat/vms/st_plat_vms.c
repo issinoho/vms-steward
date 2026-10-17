@@ -362,6 +362,9 @@ static char product_helper_path[256];
 /* The error log's procedure (Phase 14, D23), fixed and resolved the same way. */
 static char errlog_helper[256] = "STEWARD$ROOT:[COM]STEWARD_ERRLOG.COM";
 static char errlog_helper_path[256];
+/* Where the error log and CLUE's listings are: SYS$ERRORLOG, but for the live test's
+   scratch copies (st_plat_vms_test_errlog_dir). */
+static char errlog_dir[200] = "SYS$ERRORLOG:";
 
 /* spec to a physical path in out ("" if it cannot be): $PARSE and $SEARCH with
    NOCONCEAL, as the service, then the device's full name. */
@@ -427,6 +430,13 @@ void st_plat_vms_test_errlog(const char *path)
 {
     st_copy(errlog_helper, sizeof errlog_helper, path);
     lnm_resolve_helper();
+}
+
+/* For tests/vms/api_probe.c only: a directory of copies of ERRLOG.SYS and CLUE
+   listings, so the live test renames and deletes those, not the system's (D24). */
+void st_plat_vms_test_errlog_dir(const char *dir)
+{
+    st_copy(errlog_dir, sizeof errlog_dir, dir);
 }
 
 /* For tests/vms/api_probe.c only, to run an edited products procedure before it is
@@ -3371,16 +3381,18 @@ static void errlog_line(const char *line, size_t len, void *ctx)
     st_elv_line((st_elv_parser *) ctx, line, len);
 }
 
-int st_plat_errlog(const char *privs, int op, unsigned int arg, st_elv_parser *p, st_err *e)
+int st_plat_errlog(const char *privs, int op, unsigned int arg, const char *file, st_elv_parser *p, st_err *e)
 {
-    const char *msgs[3];
-    char a[16];
+    const char *msgs[4];
+    char a[16], spec[240];
     unsigned int status = 0;
     snprintf(a, sizeof a, "%u", arg);
+    snprintf(spec, sizeof spec, "%s%s", errlog_dir, file && *file ? file : "ERRLOG.SYS");
     msgs[0] = privs;
     msgs[1] = op == ST_ELV_ENTRY ? "ENTRY" : "LIST";
     msgs[2] = a;
-    if (helper_run(errlog_helper_path, msgs, 3, errlog_line, p, &status, e)) return -1;
+    msgs[3] = spec;   /* the directory fixed here, the name checked by the caller */
+    if (helper_run(errlog_helper_path, msgs, 4, errlog_line, p, &status, e)) return -1;
     if (!(status & 1)) { set_cond(e, status); return -1; }   /* the procedure refused */
     return 0;
 }
@@ -3395,12 +3407,13 @@ int st_plat_crashes(st_crash_cb fn, void *ctx, st_err *e)
     struct FAB sfab = cc$rms_fab, fab;
     struct NAM nam = cc$rms_nam;
     struct RAB rab;
-    char name[64], full[NAM$C_MAXRSS + 1];
+    char name[64], full[NAM$C_MAXRSS + 1], pat[240];
     unsigned int st;
     int n = 0;
 
-    sfab.fab$l_fna = "SYS$ERRORLOG:CLUE$*.LIS";
-    sfab.fab$b_fns = 23;
+    snprintf(pat, sizeof pat, "%sCLUE$*.LIS", errlog_dir);
+    sfab.fab$l_fna = pat;
+    sfab.fab$b_fns = (unsigned char) strlen(pat);
     sfab.fab$l_nam = &nam;
     nam.nam$l_esa = esa;
     nam.nam$b_ess = NAM$C_MAXRSS;
@@ -3432,7 +3445,7 @@ int st_plat_crash_text(const char *name, st_text_cb fn, void *ctx, st_err *e)
     static unsigned char line[1024];
     struct FAB fab;
     struct RAB rab;
-    unsigned int st = ax_open(&fab, &rab, 0, name, "SYS$ERRORLOG:", line, sizeof line - 1);
+    unsigned int st = ax_open(&fab, &rab, 0, name, errlog_dir, line, sizeof line - 1);
     if (!(st & 1)) {
         set_cond(e, st);
         if (st == RMS$_FNF) e->kind = ST_E_NOTFOUND;
@@ -3442,6 +3455,107 @@ int st_plat_crash_text(const char *name, st_text_cb fn, void *ctx, st_err *e)
         if (fn((const char *) line, rab.rab$w_rsz, ctx)) break;
     sys$close(&fab);
     if (!(st & 1) && st != RMS$_EOF) { set_cond(e, st); return -1; }
+    return 0;
+}
+
+int st_plat_crash_delete(const char *name, st_err *e)
+{
+    struct FAB fab = cc$rms_fab;
+    unsigned int st;
+    fab.fab$l_fna = (char *) name;
+    fab.fab$b_fns = (unsigned char) strlen(name);
+    fab.fab$l_dna = errlog_dir;
+    fab.fab$b_dns = (unsigned char) strlen(errlog_dir);
+    st = sys$erase(&fab);
+    if (!(st & 1)) {
+        set_cond(e, st);
+        if (st == RMS$_FNF) e->kind = ST_E_NOTFOUND;
+        return -1;
+    }
+    return 0;
+}
+
+/* ERRLOG*.SYS in the error log's directory, each opened for its size and creation
+   date: a file the viewer may not open refuses the lot (they share a protection). */
+int st_plat_errlog_files(st_errlog_file_cb fn, void *ctx, st_err *e)
+{
+    static char esa[NAM$C_MAXRSS + 1], rsa[NAM$C_MAXRSS + 1];
+    struct FAB sfab = cc$rms_fab, fab;
+    struct NAM nam = cc$rms_nam;
+    struct XABDAT dat;
+    struct XABFHC fhc;
+    char name[64], full[NAM$C_MAXRSS + 1], pat[240], when[24], iso[20];
+    unsigned int st;
+    unsigned short tl;
+    struct dsc$descriptor_s td;
+    int n = 0;
+
+    snprintf(pat, sizeof pat, "%sERRLOG*.SYS", errlog_dir);
+    sfab.fab$l_fna = pat;
+    sfab.fab$b_fns = (unsigned char) strlen(pat);
+    sfab.fab$l_nam = &nam;
+    nam.nam$l_esa = esa;
+    nam.nam$b_ess = NAM$C_MAXRSS;
+    nam.nam$l_rsa = rsa;
+    nam.nam$b_rss = NAM$C_MAXRSS;
+    st = sys$parse(&sfab);
+    if (!(st & 1)) { set_cond(e, st); return -1; }
+    while ((st = sys$search(&sfab)) & 1) {
+        size_t nl = (size_t) nam.nam$b_name + nam.nam$b_type;
+        if (nl >= sizeof name || ++n > 1000) continue;
+        memcpy(name, nam.nam$l_name, nl);
+        name[nl] = '\0';
+        if (!st_valid_errlog_name(name)) continue;
+        memcpy(full, rsa, nam.nam$b_rsl);
+        full[nam.nam$b_rsl] = '\0';
+        fab = cc$rms_fab;
+        dat = cc$rms_xabdat;
+        fhc = cc$rms_xabfhc;
+        dat.xab$l_nxt = (void *) &fhc;
+        fab.fab$l_xab = (void *) &dat;
+        fab.fab$l_fna = full;
+        fab.fab$b_fns = (unsigned char) strlen(full);
+        fab.fab$b_fac = FAB$M_GET;
+        fab.fab$b_shr = FAB$M_SHRGET | FAB$M_SHRPUT | FAB$M_SHRUPD | FAB$M_UPI;
+        st = sys$open(&fab);
+        if (!(st & 1)) { set_cond(e, st); return -1; }
+        sys$close(&fab);
+        desc(&td, when, 23);
+        tl = 0;
+        iso[0] = '\0';
+        if (sys$asctim(&tl, &td, (void *) &dat.xab$q_cdt, 0) & 1) {
+            when[tl] = '\0';
+            st_vms_time_iso(when[0] == ' ' ? when + 1 : when, iso);
+        }
+        if (fn(name, fhc.xab$l_ebk ? fhc.xab$l_ebk - (fhc.xab$w_ffb == 0) : 0, iso, ctx)) break;
+    }
+    if (!(st & 1) && st != RMS$_NMF && st != RMS$_FNF) { set_cond(e, st); return -1; }
+    return 0;
+}
+
+/* ERRLOG.SYS to ERRLOG_<yyyymmdd>_<hhmm>.SYS, local time ($NUMTIM: the C RTL has no
+   zone rules here, CLAUDE.md). ERRFMT does not hold it open (PHASE14.md). */
+int st_plat_errlog_rename(char newname[32], st_err *e)
+{
+    struct FAB ofab = cc$rms_fab, nfab = cc$rms_fab;
+    unsigned short t[7];
+    char oldspec[240], newspec[240];
+    unsigned int st;
+    newname[0] = '\0';
+    if (!(sys$numtim(t, 0) & 1)) { set_text(e, ST_E_INTERNAL, "no time"); return -1; }
+    st_errlog_renamed(t[0], t[1], t[2], t[3], t[4], newname);
+    snprintf(oldspec, sizeof oldspec, "%sERRLOG.SYS", errlog_dir);
+    snprintf(newspec, sizeof newspec, "%s%s", errlog_dir, newname);
+    ofab.fab$l_fna = oldspec;
+    ofab.fab$b_fns = (unsigned char) strlen(oldspec);
+    nfab.fab$l_fna = newspec;
+    nfab.fab$b_fns = (unsigned char) strlen(newspec);
+    st = sys$rename(&ofab, 0, 0, &nfab);
+    if (!(st & 1)) {
+        set_cond(e, st);
+        if (st == RMS$_FNF) e->kind = ST_E_NOTFOUND;
+        return -1;
+    }
     return 0;
 }
 

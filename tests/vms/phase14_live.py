@@ -62,7 +62,7 @@ try:
 
     st, doc = api("STEWARD_TEST", "-", "/api/v1/errorlog")
     det = (doc or {}).get("detail", "")
-    check(st == 403 and "FILOPNERR" in det and "-RMS-E-FNF" in det and "ELV reports a file it may not read as not found" in det,
+    check(st == 403 and "FILOPNERR" in det and "-RMS-E-FNF" in det and "That is also what it says to a viewer without access" in det,
           "STEWARD_TEST: refused with ELV's own words (file not found), and why", (st, det))
     st, doc = api("STEWARD_ADM", "-", "/api/v1/errorlog")
     check(st == 403, "STEWARD_ADM with SYSPRV authorized but not switched on: refused (D9)", st)

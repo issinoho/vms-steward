@@ -9,6 +9,16 @@
                                     without the hourly time stamps unless stamps=1
    GET api/v1/device-errors         each device with errors, and how many were looked at
 
+   Changes (14b, D24), in-process under the persona, each audited:
+   GET    api/v1/errorlog/files     ERRLOG.SYS and the logs renamed from it
+   POST   api/v1/errorlog/new       start a new error log: rename ERRLOG.SYS to
+                                    ERRLOG_<yyyymmdd>_<hhmm>.SYS; ERRFMT starts a new one
+                                    at its next record
+   DELETE api/v1/crashes/{name}     delete a crash listing
+   POST   api/v1/crashes/purge      {"before": "yyyy-mm-dd"}: delete the listings of
+                                    crashes before that day
+   GET api/v1/errorlog and errorlog/{n} take ?file= for a renamed log.
+
    The error log through the D14 helper, which is the viewer, running ELV (st_errlog.c);
    ELV reports a viewer without access as "file not found" and success, so its message
    decides (NOTES.md). The listings and OPCOM's log are read in-process as the viewer.
@@ -43,13 +53,50 @@ static int uint_query(st_ctx *c, const char *name, unsigned int hi, unsigned int
     return 1;
 }
 
-/* ELV refused the file: OpenVMS's words, and why they say "not found". */
-static void elv_refusal(st_ctx *c, const st_elv_parser *p)
+/* Has the viewer SYSPRV switched on (privs as svc_session_privs gives them)? */
+static int has_sysprv(const char *privs)
 {
-    char d[400];
-    snprintf(d, sizeof d, "%s. ERRLOG.SYS needs SYSPRV or the SYSTEM group; ELV reports a file it "
-             "may not read as not found.", p->message);
-    st_resp_problem(c->resp, 403, "no-privilege", "Not permitted by OpenVMS", d, 0, NULL);
+    const char *s = strstr(privs, "SYSPRV");
+    return s && (s == privs || s[-1] == ',') && (s[6] == '\0' || s[6] == ',');
+}
+
+/* OpenVMS said the file is not there. To a viewer with SYSPRV switched on that is the
+   truth: after a new log is started, ERRLOG.SYS is created at the next record. To
+   anyone else it is also what OpenVMS says for "you may not read it" (the search
+   list, NOTES.md), so both are said. */
+static void not_found(st_ctx *c, const char *privs, const char *file, const char *vms)
+{
+    char d[480];
+    if (has_sysprv(privs)) {
+        snprintf(d, sizeof d, "%s%s%s does not exist.%s", vms, *vms ? ". " : "", file,
+                 strcmp(file, "ERRLOG.SYS") ? "" : " After a new error log is started, ERRFMT creates it at its next record.");
+        st_resp_problem(c->resp, 404, "not-found", "Not found", d, 0, NULL);
+    } else {
+        snprintf(d, sizeof d, "%s%sOpenVMS reports %s as not found. That is also what it says to a viewer "
+                 "without access: it needs SYSPRV or the SYSTEM group.", vms, *vms ? ". " : "", file);
+        st_resp_problem(c->resp, 403, "no-privilege", "Not permitted by OpenVMS", d, 0, NULL);
+    }
+}
+
+/* ELV refused the file: OpenVMS's words, and what they may mean. */
+static void elv_refusal(st_ctx *c, const char *privs, const char *file, const st_elv_parser *p)
+{
+    if (strstr(p->message, "-RMS-E-FNF")) { not_found(c, privs, file, p->message); return; }
+    st_resp_problem(c->resp, 403, "no-privilege", "Not permitted by OpenVMS", p->message, 0, NULL);
+}
+
+/* ?file=: ERRLOG.SYS by default, or a renamed log. 0, or -1 having answered 400. */
+static int file_query(st_ctx *c, char file[32])
+{
+    int got = svc_query(c, "file", file, 32);
+    if (got < 0) return -1;
+    if (!got || !file[0]) { strcpy(file, "ERRLOG.SYS"); return 0; }
+    if (!st_valid_errlog_name(file)) {
+        st_resp_problem(c->resp, 400, "bad-request", "Bad error log name",
+                        "ERRLOG.SYS, or ERRLOG_<yyyymmdd>_<hhmm>.SYS.", 0, NULL);
+        return -1;
+    }
+    return 0;
 }
 
 static void event_members(st_jw *w, const st_elv_event *ev)
@@ -78,23 +125,25 @@ void svc_errorlog(st_ctx *c)
 {
     static st_elv_parser p;
     unsigned int days = 30;
-    char privs[512];
+    char privs[512], file[32];
     list_ctx lc;
     st_err e;
     st_jw w;
 
     if (uint_query(c, "days", 9999, &days) < 0) return;   /* DCL's delta time stops at 9999 days */
+    if (file_query(c, file)) return;
     st_resp_json(c->resp, 200, &w);
     st_jw_obj(&w);
     st_jw_kint(&w, "days", days);
+    st_jw_kstr(&w, "file", file);
     st_jw_key(&w, "events");   /* oldest first */
     st_jw_arr(&w);
     memset(&lc, 0, sizeof lc);
     lc.w = &w;
     st_elv_init(&p, list_one, NULL, &lc);
     svc_session_privs(c, privs, sizeof privs);
-    if (st_plat_errlog(privs, ST_ELV_LIST, days, &p, &e)) { st_app_error(c, &e); return; }
-    if (st_elv_refused(&p)) { elv_refusal(c, &p); return; }
+    if (st_plat_errlog(privs, ST_ELV_LIST, days, file, &p, &e)) { st_app_error(c, &e); return; }
+    if (st_elv_refused(&p)) { elv_refusal(c, privs, file, &p); return; }
     st_jw_arr_end(&w);
     st_jw_kbool(&w, "truncated", lc.truncated);
     st_jw_obj_end(&w);
@@ -139,7 +188,7 @@ void svc_errorlog_event(st_ctx *c)
 {
     static st_elv_parser p;
     unsigned long n;
-    char *end, privs[512];
+    char *end, privs[512], file[32];
     entry_ctx ec;
     st_err e;
     st_jw w;
@@ -149,14 +198,15 @@ void svc_errorlog_event(st_ctx *c)
         st_resp_problem(c->resp, 400, "bad-request", "Bad event number", NULL, 0, NULL);
         return;
     }
+    if (file_query(c, file)) return;
     st_resp_json(c->resp, 200, &w);
     st_jw_obj(&w);
     memset(&ec, 0, sizeof ec);
     ec.w = &w;
     st_elv_init(&p, entry_event, entry_field, &ec);
     svc_session_privs(c, privs, sizeof privs);
-    if (st_plat_errlog(privs, ST_ELV_ENTRY, (unsigned int) n, &p, &e)) { st_app_error(c, &e); return; }
-    if (st_elv_refused(&p)) { elv_refusal(c, &p); return; }
+    if (st_plat_errlog(privs, ST_ELV_ENTRY, (unsigned int) n, file, &p, &e)) { st_app_error(c, &e); return; }
+    if (st_elv_refused(&p)) { elv_refusal(c, privs, file, &p); return; }
     if (!ec.events) {
         st_resp_problem(c->resp, 404, "not-found", "Not found", "No such event in the error log.", 0, NULL);
         return;
@@ -341,5 +391,145 @@ void svc_device_errors(st_ctx *c)
     if (st_plat_device_errors(dev_one, &dc, &scanned, &e)) { st_app_error(c, &e); return; }
     st_jw_arr_end(&w);
     st_jw_kint(&w, "scanned", scanned);
+    st_jw_obj_end(&w);
+}
+
+/* ---- changes (14b, D24) ---- */
+
+typedef struct { st_jw *w; int n; } files_ctx;
+
+static int file_one(const char *name, unsigned int blocks, const char *created, void *ctx)
+{
+    files_ctx *fc = ctx;
+    if (fc->n >= 1000) return 1;
+    fc->n++;
+    st_jw_obj(fc->w);
+    st_jw_kstr(fc->w, "name", name);
+    st_jw_kint(fc->w, "blocks", blocks);
+    st_jw_kstr(fc->w, "created", created);
+    st_jw_obj_end(fc->w);
+    return 0;
+}
+
+void svc_errorlog_files(st_ctx *c)
+{
+    files_ctx fc;
+    st_err e;
+    st_jw w;
+    st_resp_json(c->resp, 200, &w);
+    st_jw_obj(&w);
+    st_jw_key(&w, "files");   /* as the directory lists them */
+    st_jw_arr(&w);
+    memset(&fc, 0, sizeof fc);
+    fc.w = &w;
+    if (st_plat_errlog_files(file_one, &fc, &e)) {
+        char privs[512];
+        svc_session_privs(c, privs, sizeof privs);
+        if (e.kind == ST_E_NOTFOUND) { not_found(c, privs, "ERRLOG.SYS", e.text); return; }
+        st_app_error(c, &e);
+        return;
+    }
+    st_jw_arr_end(&w);
+    st_jw_obj_end(&w);
+}
+
+void svc_errorlog_new(st_ctx *c)
+{
+    char newname[32], privs[512];
+    st_err e;
+    st_jw w;
+    if (st_plat_errlog_rename(newname, &e)) {
+        st_app_audit(c, c->session.username, "errorlog-new", "ERRLOG.SYS", "failed", e.text);
+        svc_session_privs(c, privs, sizeof privs);
+        if (e.kind == ST_E_NOTFOUND) { not_found(c, privs, "ERRLOG.SYS", e.text); return; }
+        st_app_error(c, &e);
+        return;
+    }
+    st_app_audit(c, c->session.username, "errorlog-new", "ERRLOG.SYS", "ok", newname);
+    st_resp_json(c->resp, 200, &w);
+    st_jw_obj(&w);
+    st_jw_kstr(&w, "renamed_to", newname);
+    st_jw_obj_end(&w);
+}
+
+void svc_crash_delete(st_ctx *c)
+{
+    st_err e;
+    if (!st_valid_clue_name(c->args[0])) {
+        st_resp_problem(c->resp, 400, "bad-request", "Bad listing name",
+                        "CLUE$<node>_<ddmmyy>_<hhmm>.LIS, in capitals.", 0, NULL);
+        return;
+    }
+    if (st_plat_crash_delete(c->args[0], &e)) {
+        st_app_audit(c, c->session.username, "crash-delete", c->args[0], "failed", e.text);
+        st_app_error(c, &e);
+        return;
+    }
+    st_app_audit(c, c->session.username, "crash-delete", c->args[0], "ok", NULL);
+    c->resp->status = 204;
+}
+
+#define MAX_PURGE 5000
+typedef struct { char before[11]; char (*names)[40]; int n; } purge_ctx;
+
+static int purge_pick(const char *name, const st_clue_summary *s, void *ctx)
+{
+    purge_ctx *pc = ctx;
+    char iso[20];
+    st_vms_time_iso(st_clue_get(s, "Crash Time"), iso);
+    /* Before the day: its date sorts before it. A listing whose time cannot be read
+       is never taken. */
+    if (iso[0] && strncmp(iso, pc->before, 10) < 0 && pc->n < MAX_PURGE && strlen(name) < 40)
+        strcpy(pc->names[pc->n++], name);
+    return 0;
+}
+
+static int valid_day(const char *s)
+{
+    int i;
+    if (strlen(s) != 10 || s[4] != '-' || s[7] != '-') return 0;
+    for (i = 0; i < 10; i++) if (i != 4 && i != 7 && (s[i] < '0' || s[i] > '9')) return 0;
+    return (s[5] - '0') * 10 + (s[6] - '0') >= 1 && (s[5] - '0') * 10 + (s[6] - '0') <= 12 &&
+           (s[8] - '0') * 10 + (s[9] - '0') >= 1 && (s[8] - '0') * 10 + (s[9] - '0') <= 31;
+}
+
+void svc_crash_purge(st_ctx *c)
+{
+    static char names[MAX_PURGE][40];
+    purge_ctx pc;
+    st_jdoc doc;
+    const char *before;
+    st_err e;
+    st_jw w;
+    int i, deleted = 0;
+
+    if (st_app_body(c, &doc)) return;
+    before = doc.root && doc.root->type == ST_JOBJ ? st_json_get_str(doc.root, "before") : NULL;
+    if (!before || !valid_day(before)) {
+        st_json_free(&doc);
+        st_resp_problem(c->resp, 422, "invalid-value", "Invalid value", "before is a day, yyyy-mm-dd.", 0, NULL);
+        return;
+    }
+    memset(&pc, 0, sizeof pc);
+    memcpy(pc.before, before, 10);
+    st_json_free(&doc);
+    pc.names = names;
+    if (st_plat_crashes(purge_pick, &pc, &e)) { st_app_error(c, &e); return; }
+    st_resp_json(c->resp, 200, &w);
+    st_jw_obj(&w);
+    st_jw_kstr(&w, "before", pc.before);
+    st_jw_key(&w, "deleted");
+    st_jw_arr(&w);
+    for (i = 0; i < pc.n; i++) {
+        if (st_plat_crash_delete(names[i], &e)) {
+            st_app_audit(c, c->session.username, "crash-delete", names[i], "failed", e.text);
+            continue;   /* counted in "failed"; the audit log has why */
+        }
+        st_app_audit(c, c->session.username, "crash-delete", names[i], "ok", "purge");
+        st_jw_str(&w, names[i]);
+        deleted++;
+    }
+    st_jw_arr_end(&w);
+    st_jw_kint(&w, "failed", pc.n - deleted);
     st_jw_obj_end(&w);
 }

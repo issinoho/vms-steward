@@ -80,6 +80,12 @@ void st_elv_line(st_elv_parser *p, const char *line, size_t len);
 /* Did ELV refuse the file (its message says so)? */
 int  st_elv_refused(const st_elv_parser *p);
 
+/* ERRLOG.SYS, or a renamed one, ERRLOG_<yyyymmdd>_<hhmm>.SYS (D24): the only error log
+   files Steward reads or names. */
+int  st_valid_errlog_name(const char *name);
+/* The name a log renamed at local time y-m-d h:m gets. */
+void st_errlog_renamed(int y, int mo, int d, int h, int mi, char out[32]);
+
 /* "13-OCT-2026 15:33:12.11" to "2026-10-13T15:33:12"; "" if it is not such a time. */
 void st_vms_time_iso(const char *vms, char iso[20]);
 

@@ -24,6 +24,9 @@ $! as "steward -r" in the same kind of loop, writing a reading a minute to
 $! MONITOR.DAT. It switches its privileges off when it starts. STEWARD_RECORD_SECS
 $! "0" in STEWARD_SETTINGS.COM leaves it unstarted; STOP stops it either way.
 $!
+$! START then purges [.LOGS] to the newest STEWARD_LOG_KEEP versions (default 10) of
+$! each process's .COM and .LOG (D25): every start writes a new version of each.
+$!
 $! Run it as the service account, which should hold IMPERSONATE, TMPMBX and NETMBX
 $! and nothing else (D2), for example from the startup procedure:
 $!   $ SUBMIT/USER=STEWARD/NOPRINT STEWARD$ROOT:[COM]STEWARD_POOL.COM /PARAMETERS=START
@@ -119,20 +122,20 @@ $ say "STEWARD_POOL: started ", name, " on 127.0.0.1:", port
 $ goto start_loop
 $!
 $! The recorder, unless the settings turn it off (they define process logical names:
-$! here, in this job, only to read that one).
+$! here, in this job, only to read that one and STEWARD_LOG_KEEP).
 $start_recorder:
 $ @'settings'
 $ if f$trnlnm("STEWARD_RECORD_SECS") .eqs. "0"
 $ then
 $   say "STEWARD_POOL: the recorder is off (STEWARD_RECORD_SECS 0)"
-$   exit 1
+$   goto start_purge
 $ endif
 $ name = "STEWARD_R" + f$string(base)
 $ gosub find_pid
 $ if pid .nes. ""
 $ then
 $   say "STEWARD_POOL: ", name, " already running"
-$   exit 1
+$   goto start_purge
 $ endif
 $ com = logs + name + ".COM"
 $ open/write w 'com'
@@ -158,9 +161,19 @@ $ run/detached sys$system:loginout.exe /authorize /input='com' -
 $ if .not. $status
 $ then
 $   say "STEWARD_POOL: could not create ", name
-$   exit 1
+$   goto start_purge
 $ endif
 $ say "STEWARD_POOL: started ", name, " (monitoring recorder)"
+$!
+$! The newest versions of each log and procedure kept (D25), the ones just written
+$! among them; the service account owns them all.
+$start_purge:
+$ keep = f$trnlnm("STEWARD_LOG_KEEP")
+$ if keep .eqs. "" then keep = "10"
+$ if f$type(keep) .nes. "INTEGER" then keep = "10"
+$ if f$integer(keep) .lt. 1 .or. f$integer(keep) .gt. 100 then keep = "10"
+$ nkeep = f$integer(keep)
+$ purge/nolog/keep='nkeep' 'logs'*.LOG,*.COM
 $ exit 1
 $!
 $stop:

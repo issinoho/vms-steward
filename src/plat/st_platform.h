@@ -606,9 +606,20 @@ void st_plat_sleep_ms(long long ms);
    caller asks st_elv_refused. */
 
 /* ELV TRANSLATE in the D14 helper (STEWARD_ERRLOG.COM): op ST_ELV_LIST, arg the days
-   back (0 for the whole file), or ST_ELV_ENTRY, arg the event number. Lines to p. privs
-   as for st_plat_lnm_list. */
-int st_plat_errlog(const char *privs, int op, unsigned int arg, st_elv_parser *p, st_err *e);
+   back (0 for the whole file), or ST_ELV_ENTRY, arg the event number, of file (a name
+   st_valid_errlog_name accepts; "" for ERRLOG.SYS). Lines to p. privs as for
+   st_plat_lnm_list. */
+int st_plat_errlog(const char *privs, int op, unsigned int arg, const char *file, st_elv_parser *p, st_err *e);
+
+/* The error log files in SYS$ERRORLOG (ERRLOG.SYS and those renamed, D24), with their
+   size in blocks and the time they were created (local, ISO). */
+typedef int (*st_errlog_file_cb)(const char *name, unsigned int blocks, const char *created, void *ctx);
+int st_plat_errlog_files(st_errlog_file_cb fn, void *ctx, st_err *e);
+/* Rename ERRLOG.SYS to ERRLOG_<yyyymmdd>_<hhmm>.SYS (local time now), in place: ERRFMT
+   starts a new one at its next record (D24). newname gets the name. */
+int st_plat_errlog_rename(char newname[32], st_err *e);
+/* Delete a CLUE listing (name already st_valid_clue_name). */
+int st_plat_crash_delete(const char *name, st_err *e);
 
 /* The CLUE listings in SYS$ERRORLOG, each with its first page's summary, in directory
    order, until fn returns nonzero. */

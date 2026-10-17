@@ -27,6 +27,18 @@ async function until(cond, ms = 4000) {
 }
 const { api } = await import(process.env.STEWARD_UI_JS + '/api.js');
 const { errorlogView } = await import(process.env.STEWARD_UI_JS + '/errorlog.js');
+// jsdom has no modal dialogs (as processes_flow.mjs).
+W.HTMLDialogElement.prototype.showModal = function () { this.open = true; };
+W.HTMLDialogElement.prototype.close = function () { this.open = false; this.dispatchEvent(new W.Event('close')); };
+async function confirmDialog(text) {
+  const dlg = document.querySelector('dialog');
+  if (!dlg) return null;
+  const input = dlg.querySelector('input');
+  input.value = text;
+  dlg.querySelector('form').dispatchEvent(new W.Event('submit', { cancelable: true }));
+  await until(() => !document.querySelector('dialog') || !dlg.isConnected || dlg.querySelector('pre.vmsmsg:not([hidden])'));
+  return dlg;
+}
 
 async function view() {
   const me = await api.whoami();
@@ -44,7 +56,7 @@ try {
     'device errors: anyone\'s, the device with errors listed', root.textContent.slice(0, 400));
   const refusals = [...root.querySelectorAll('.refusal')];
   say(refusals.length === 3 && refusals[0].textContent.includes('-RMS-E-FNF, file not found') &&
-    refusals[0].textContent.includes('ELV reports a file it may not read as not found'),
+    refusals[0].textContent.includes('That is also what it says to a viewer without access'),
     'the events refused, with ELV\'s words and why they say not found', refusals.map((r) => r.textContent.slice(0, 120)));
   say(refusals.every((r) => r.textContent.includes('needs SYSPRV (or the SYSTEM group), which your account does not have')),
     'each refusal says what would let you read it');
@@ -62,7 +74,8 @@ try {
   say(rows(ev).length === 6 && rows(ev)[0].textContent.includes('Time Stamp') && rows(ev)[5].textContent.includes('Volume Dismount'),
     'with SYSPRV: the last 30 days, newest first', rows(ev).map((r) => r.textContent.slice(0, 40)));
   say(rows(ev).filter((r) => r.classList.contains('bad')).length === 2, 'bugchecks marked');
-  const [range, cls] = root.querySelectorAll('.cmdline select');
+  const range = root.querySelector('select[aria-label="Range"]');
+  const cls = root.querySelector('select[aria-label="Class"]');
   cls.value = 'BUGCHECKS';
   cls.dispatchEvent(new W.Event('change'));
   ev = root.querySelector('table.events');
@@ -107,6 +120,43 @@ try {
   await until(() => root.querySelectorAll('ul.opcom li').length === 6);
   say(root.querySelectorAll('ul.opcom li').length === 6 && root.querySelectorAll('ul.opcom li.muted').length === 2,
     'with the hourly stamps, shown faint');
+
+  // 14b: a new error log, then the renamed one read; crash listings deleted.
+  const fileSel = root.querySelector('select[aria-label="File"]');
+  say(fileSel && [...fileSel.options].map((o) => o.value).join() === 'ERRLOG.SYS,ERRLOG_20260101_0900.SYS',
+    'the file to read: ERRLOG.SYS, or one renamed earlier', fileSel && [...fileSel.options].map((o) => o.value));
+  const newBtn = [...root.querySelectorAll('button')].find((b) => b.textContent === 'Start a new error log');
+  newBtn.click();
+  let dlg = await confirmDialog('errlog');
+  say(dlg && dlg.querySelector('pre.vmsmsg:not([hidden])') && dlg.textContent.includes('Type ERRLOG.SYS to confirm'),
+    'a new log asks for ERRLOG.SYS typed first', dlg && dlg.textContent.slice(-80));
+  dlg = await confirmDialog('errlog.sys');
+  await until(() => root.querySelector('select[aria-label="File"]') && /^ERRLOG_\d{8}_\d{4}\.SYS$/.test(root.querySelector('select[aria-label="File"]').value) &&
+    root.querySelector('table.events'));
+  const sel2 = root.querySelector('select[aria-label="File"]');
+  say(sel2 && /^ERRLOG_\d{8}_\d{4}\.SYS$/.test(sel2.value) && rows(root.querySelector('table.events')).length > 0 &&
+    !root.textContent.includes('Start a new error log'),
+    'ERRLOG.SYS renamed: its events shown under the new name', sel2 && sel2.value);
+  sel2.value = 'ERRLOG.SYS';
+  sel2.dispatchEvent(new W.Event('change'));
+  await until(() => root.textContent.includes('ERRFMT creates it at its next record'));
+  say(root.textContent.includes('ERRFMT creates it at its next record'), 'until ERRFMT writes again, no ERRLOG.SYS, and why');
+
+  const boxes = root.querySelectorAll('table.crashes input[type="checkbox"]');
+  boxes[1].checked = true;
+  boxes[1].dispatchEvent(new W.Event('change'));
+  const delBtn = [...root.querySelectorAll('button')].find((b) => b.textContent.startsWith('Delete chosen'));
+  say(delBtn && !delBtn.disabled && delBtn.textContent === 'Delete chosen (1)', 'a listing chosen');
+  delBtn.click();
+  dlg = await confirmDialog('delete');
+  await until(() => rows(root.querySelector('table.crashes')).length === 1);
+  say(rows(root.querySelector('table.crashes')).length === 1 && rows(root.querySelector('table.crashes'))[0].textContent.includes('PGFIPLHI'),
+    'the chosen listing deleted, the other kept');
+  root.querySelector('input[type="date"]').value = '2026-12-31';
+  [...root.querySelectorAll('button')].find((b) => b.textContent === 'Delete older').click();
+  dlg = await confirmDialog('DELETE');
+  await until(() => root.textContent.includes('No crash listing'));
+  say(root.textContent.includes('No crash listing'), 'and those before a day');
   await api.signOut();
 } catch (e) {
   say(false, 'no exception', e.stack);

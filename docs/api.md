@@ -959,6 +959,28 @@ unless `stamps=1`.
  "truncated": false}
 ```
 
+### Changes (Phase 14b, D24)
+
+Each is done as you, in-process; OpenVMS decides (SYSPRV for these files), and each,
+done or refused, goes in the audit log.
+
+- **`GET api/v1/errorlog/files`**: `{"files": [{"name": "ERRLOG.SYS", "blocks": 1437,
+  "created": "2023-04-20T13:16:52"}, {"name": "ERRLOG_20261017_1130.SYS", ...}]}`:
+  ERRLOG.SYS and the logs renamed from it. `GET api/v1/errorlog` and
+  `errorlog/{n}` take `?file=` (one of these names) to read a renamed log.
+- **`POST api/v1/errorlog/new`**: renames `SYS$ERRORLOG:ERRLOG.SYS` to
+  `ERRLOG_<yyyymmdd>_<hhmm>.SYS` (the node's local time) and answers
+  `{"renamed_to": "..."}`. ERRFMT creates a new ERRLOG.SYS at its next record; until
+  then the list answers 404 to a viewer with SYSPRV switched on, saying so. To a
+  viewer without it OpenVMS says "not found" too, so 403 says both.
+- **`DELETE api/v1/crashes/{name}`**: deletes that listing; 204.
+- **`POST api/v1/crashes/purge`** `{"before": "2026-01-01"}`: deletes the listings of
+  crashes before that day (by each listing's Crash Time); `{"before": ..., "deleted":
+  [names], "failed": 0}`.
+
+Starting a new OPERATOR.LOG is not offered: OPCOM ignores `$SNDOPR` OPC$_RQ_LOGI
+(NOTES.md); use `REPLY/LOG` at an operator terminal.
+
 ### `GET api/v1/device-errors`
 
 Each device whose `DVI$_ERRCNT` is not 0, and how many devices were looked at:

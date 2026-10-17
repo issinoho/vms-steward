@@ -645,7 +645,9 @@ translations would be rebuilt); ELV run by the service (its view, D2); running
 
 ## D24. Error log changes: rename ERRLOG.SYS, delete crash listings, $SNDOPR for OPCOM's log
 
-**Status:** proposed 2026-10-17 (PHASE14.md, 14b).
+**Status:** approved by the user 2026-10-17 ("Agreed", PHASE14.md, 14b): rename, delete
+listings chosen or older than a date, and the $SNDOPR probe allowed. The probe showed OPCOM
+ignores OPC$_RQ_LOGI (NOTES.md): a new OPERATOR.LOG is left out.
 
 In-process under the persona, audited, confirmed in the page: a new error log by
 renaming `SYS$ERRORLOG:ERRLOG.SYS` to `ERRLOG_<yyyymmdd>_<hhmm>.SYS` (ERRFMT does not
@@ -661,7 +663,7 @@ decide by date).
 
 ## D25. The pool purges its own logs
 
-**Status:** proposed 2026-10-17 (PHASE14.md).
+**Status:** approved by the user 2026-10-17 ("Agreed", PHASE14.md): 10 of each.
 
 `STEWARD_POOL.COM START` keeps the newest 10 versions of each process's `.COM` and
 `.LOG` in `[.RUN.LOGS]` (`STEWARD_LOG_KEEP`, 1 to 100). Until now each start added a

@@ -558,3 +558,11 @@ its refusal then arrives twice, on SYS$OUTPUT and SYS$ERROR, and Steward keeps i
 once. Unprivileged, opening `SYS$MANAGER:OPERATOR.LOG` gives RMS-E-FNF, not PRV:
 `SYS$MANAGER` is `SYS$SYSROOT:[SYSMGR]`, a search list, as for ERRLOG.SYS above;
 Steward reports it as a refusal and says why. (`tests/vms/phase14_live.py`.)
+
+**OPCOM ignores an old-format `$SNDOPR` OPC$_RQ_LOGI** (Phase 14b, 2026-10-17,
+`probes/probe_sndopr.c`, run once with the user's go-ahead, with OPER only). The
+message OPCDEF documents (type 2, target classes 0, a request id) was accepted by
+`$SNDOPR` (SS$_NORMAL), but OPCOM sent no reply to the mailbox in 60 s, wrote nothing
+to OPERATOR.LOG and did not start a new one (still ;243). `REPLY/LOG` itself needs an
+operator terminal. So Steward does not start a new OPERATOR.LOG (D24); OPCDEF's newer
+`OPC$_X_LOGFILE` form, which names an operator, was not tried.

@@ -2425,7 +2425,7 @@ static void test_errlog_api(void)
     sign_in("{\"username\":\"steward_test\",\"password\":\"test-pass\"}", tc, sizeof tc, tcsrf);
     t[0].n = "HTTP_COOKIE"; t[0].v = tc; t[1].n = "HTTP_X_STEWARD_CSRF"; t[1].v = tcsrf; t[2].n = NULL;
     call("GET", "/api/v1/errorlog", t, NULL, &b);
-    CHECK(b.resp.status == 403 && strstr(b.resp.body.data, "ELV reports a file it may not read as not found") &&
+    CHECK(b.resp.status == 403 && strstr(b.resp.body.data, "That is also what it says to a viewer without access") &&
           strstr(b.resp.body.data, "-RMS-E-FNF, file not found"), "without SYSPRV, the error log refused, with why OpenVMS says not found");
     st_resp_free(&b.resp);
     call("GET", "/api/v1/crashes", t, NULL, &b);
@@ -2449,7 +2449,7 @@ static void test_errlog_api(void)
     call("GET", "/api/v1/errorlog", adm, NULL, &b);
     body = b.resp.body.data;
     for (n = 0, q = body; (q = strstr(q, "\"number\":")); q++) n++;
-    CHECK(b.resp.status == 200 && strstr(body, "{\"days\":30,\"events\":[{\"number\":1005,\"type\":\"Volume Dismount\",\"time\":\"") &&
+    CHECK(b.resp.status == 200 && strstr(body, "{\"days\":30,\"file\":\"ERRLOG.SYS\",\"events\":[{\"number\":1005,\"type\":\"Volume Dismount\",\"time\":\"") &&
           n == 6 && strstr(body, "\"node\":\"STUB01\",\"class\":\"BUGCHECKS\"") && strstr(body, "\"truncated\":false"),
           "with SYSPRV: the last 30 days, oldest first");
     st_resp_free(&b.resp);
@@ -2505,6 +2505,89 @@ static void test_errlog_api(void)
     CHECK(!st_plat_persona_active(), "no persona left active");
 }
 
+/* 14b's changes on the stub (D24): renaming the error log, reading a renamed one,
+   deleting crash listings. They change the stub's state, so they run last. */
+static void test_errlog_changes(void)
+{
+    result b;
+    hdr t[3], adm[3];
+    char tc[100], tcsrf[65], ac[100], acsrf[65], name[32];
+    const char *body, *q;
+
+    CHECK(st_valid_errlog_name("ERRLOG.SYS") && st_valid_errlog_name("ERRLOG_20261017_1130.SYS") &&
+          !st_valid_errlog_name("ERRLOG.OLD") && !st_valid_errlog_name("ERRLOG_2026101_11300.SYS") &&
+          !st_valid_errlog_name("errlog.sys") && !st_valid_errlog_name("ERRLOG_20261017_1130.SYS;1") &&
+          !st_valid_errlog_name("[-]ERRLOG.SYS"), "error log names: ERRLOG.SYS and renamed ones only");
+    st_errlog_renamed(2026, 3, 7, 9, 5, name);
+    CHECK(!strcmp(name, "ERRLOG_20260307_0905.SYS") && st_valid_errlog_name(name), "a renamed log's name");
+
+    sign_in("{\"username\":\"steward_test\",\"password\":\"test-pass\"}", tc, sizeof tc, tcsrf);
+    t[0].n = "HTTP_COOKIE"; t[0].v = tc; t[1].n = "HTTP_X_STEWARD_CSRF"; t[1].v = tcsrf; t[2].n = NULL;
+    call("GET", "/api/v1/errorlog/files", t, NULL, &b);
+    CHECK(b.resp.status == 403 && strstr(b.resp.body.data, "also what it says to a viewer without access"), "the files: refused without SYSPRV");
+    st_resp_free(&b.resp);
+    call("POST", "/api/v1/errorlog/new", t, "{}", &b);
+    CHECK(b.resp.status == 403, "a new error log: refused without SYSPRV");
+    st_resp_free(&b.resp);
+    call("DELETE", "/api/v1/crashes/CLUE$STUB01_130926_1517.LIS", t, NULL, &b);
+    CHECK(b.resp.status == 403, "deleting a listing: refused without SYSPRV");
+    st_resp_free(&b.resp);
+
+    sign_in("{\"username\":\"steward_adm\",\"password\":\"admin-pass\"}", ac, sizeof ac, acsrf);
+    adm[0].n = "HTTP_COOKIE"; adm[0].v = ac; adm[1].n = "HTTP_X_STEWARD_CSRF"; adm[1].v = acsrf; adm[2].n = NULL;
+    call("PUT", "/api/v1/session/privileges", adm, "{\"enabled\":[\"sysprv\"]}", &b);
+    st_resp_free(&b.resp);
+    call("GET", "/api/v1/errorlog/files", adm, NULL, &b);
+    CHECK(b.resp.status == 200 && strstr(b.resp.body.data, "{\"files\":[{\"name\":\"ERRLOG.SYS\",\"blocks\":1440,\"created\":\"2023-04-20T13:16:52\"},{\"name\":\"ERRLOG_20260101_0900.SYS\""),
+          "with SYSPRV: ERRLOG.SYS and the one renamed earlier");
+    st_resp_free(&b.resp);
+    call("GET", "/api/v1/errorlog?days=0&file=ERRLOG_20260101_0900.SYS", adm, NULL, &b);
+    CHECK(b.resp.status == 200 && strstr(b.resp.body.data, "\"file\":\"ERRLOG_20260101_0900.SYS\",\"events\":[{\"number\":1000"),
+          "a renamed log read by name");
+    st_resp_free(&b.resp);
+    call("GET", "/api/v1/errorlog?file=SYSUAF.DAT", adm, NULL, &b);
+    CHECK(b.resp.status == 400, "no other file by name");
+    st_resp_free(&b.resp);
+    call("POST", "/api/v1/errorlog/new", adm, "{}", &b);
+    body = b.resp.body.data;
+    q = strstr(body, "\"renamed_to\":\"");
+    CHECK(b.resp.status == 200 && q && st_valid_errlog_name(strncpy(name, q + 14, 24)) && !(name[24] = '\0'),
+          "a new error log: ERRLOG.SYS renamed, the new name returned");
+    st_resp_free(&b.resp);
+    call("GET", "/api/v1/errorlog", adm, NULL, &b);
+    CHECK(b.resp.status == 404 && strstr(b.resp.body.data, "ERRFMT creates it at its next record"),
+          "until ERRFMT's next record there is no ERRLOG.SYS, and the viewer is told why");
+    st_resp_free(&b.resp);
+    call("POST", "/api/v1/errorlog/new", adm, "{}", &b);
+    CHECK(b.resp.status == 404, "and no new log of a log not there");
+    st_resp_free(&b.resp);
+    call("GET", "/api/v1/errorlog/files", adm, NULL, &b);
+    CHECK(b.resp.status == 200 && !strstr(b.resp.body.data, "\"ERRLOG.SYS\"") && strstr(b.resp.body.data, name),
+          "the renamed log listed, readable");
+    st_resp_free(&b.resp);
+
+    call("DELETE", "/api/v1/crashes/SYSUAF.DAT", adm, NULL, &b);
+    CHECK(b.resp.status == 400, "only CLUE listings deleted by name");
+    st_resp_free(&b.resp);
+    call("POST", "/api/v1/crashes/purge", adm, "{\"before\":\"2026-13-01\"}", &b);
+    CHECK(b.resp.status == 422, "purge: before a real day");
+    st_resp_free(&b.resp);
+    call("POST", "/api/v1/crashes/purge", adm, "{\"before\":\"2026-05-01\"}", &b);
+    CHECK(b.resp.status == 200 && strstr(b.resp.body.data, "{\"before\":\"2026-05-01\",\"deleted\":[\"CLUE$STUB01_020426_0310.LIS\"],\"failed\":0}"),
+          "purge before 1 May 2026: April's crash only");
+    st_resp_free(&b.resp);
+    call("DELETE", "/api/v1/crashes/CLUE$STUB01_130926_1517.LIS", adm, NULL, &b);
+    CHECK(b.resp.status == 204, "one listing deleted");
+    st_resp_free(&b.resp);
+    call("GET", "/api/v1/crashes", adm, NULL, &b);
+    CHECK(b.resp.status == 200 && strstr(b.resp.body.data, "{\"crashes\":[]}"), "and none left");
+    st_resp_free(&b.resp);
+    call("DELETE", "/api/v1/crashes/CLUE$STUB01_130926_1517.LIS", adm, NULL, &b);
+    CHECK(b.resp.status == 404, "a listing already gone: 404");
+    st_resp_free(&b.resp);
+    CHECK(!st_plat_persona_active(), "no persona left active");
+}
+
 int main(void)
 {
     st_app_config cfg;
@@ -2547,6 +2630,7 @@ int main(void)
     test_monitor_history();
     test_errlog_parsers();
     test_errlog_api();
+    test_errlog_changes();
     test_create();
     test_gateway();
     printf("%d checks, %d failed\n", checks, failures);

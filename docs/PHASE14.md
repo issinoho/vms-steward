@@ -2,7 +2,8 @@
 
 **Status: 14a closed (2026-10-17)** on the user's browser checks of 0.14.0. The user
 approved D23 and the suggested answers below ("Agreed").
-**14b: changes, being planned (2026-10-17)**; D24 and D25 proposed, questions at the end.
+**14b: changes, being built (2026-10-17)**: the user approved D24, D25 and the suggested
+answers ("Agreed").
 
 What OpenVMS records about the hardware and the system itself: the error log
 (`ERRLOG.SYS`, written by ERRFMT), the crash history (CLUE's summary of each crash
@@ -164,7 +165,15 @@ Alternatives considered:
 - **A fixed number of crash listings kept** (purge to N): the dates are what a
   manager decides by.
 
-## Pool logs (D25, proposed)
+### The OPCOM probe (2026-10-17, with the user's go-ahead)
+
+`probes/probe_sndopr.c`, once, with OPER only: `$SNDOPR` accepted OPC$_RQ_LOGI, but
+OPCOM neither replied nor started a new log (OPERATOR.LOG still ;243, nothing written
+to it). So, as planned, starting a new OPERATOR.LOG is left out of 14b; the page says
+to use `REPLY/LOG` at an operator terminal. OPCDEF's newer `OPC$_X_LOGFILE` form was
+not tried (a second probe would need the user's go-ahead).
+
+## Pool logs (D25)
 
 `STEWARD_POOL.COM START` purges `[.RUN.LOGS]` to the newest **10** versions of each
 process's `.COM` and `.LOG` (`PURGE/KEEP=10`), before it writes new ones; a setting,
@@ -181,3 +190,30 @@ no privilege is needed. Tested in the work directory's own test pool.
 4. **Pool logs**: keep 10 of each, with `STEWARD_LOG_KEEP` to change it?
 
 Suggested answers: 1 rename; 2 yes; 3 yes; 4 yes.
+
+Answers (2026-10-17, "Agreed"): the suggestions, all four.
+
+## Built (14b and D25)
+
+- `POST api/v1/errorlog/new` (rename to `ERRLOG_<yyyymmdd>_<hhmm>.SYS`),
+  `GET api/v1/errorlog/files` and `?file=` on the list and event, `DELETE
+  api/v1/crashes/{name}`, `POST api/v1/crashes/purge`: in-process under the persona,
+  audited. STEWARD_ERRLOG.COM takes the file as a fourth message (Steward fixes the
+  directory, checks the name; the procedure checks its characters again).
+- A viewer with SYSPRV switched on who finds no ERRLOG.SYS (after a new log, until
+  ERRFMT's next record) is told that; anyone else is told that "not found" is also
+  OpenVMS's answer to a viewer without access.
+- The page: a file choice (current or renamed), "Start a new error log" (type
+  ERRLOG.SYS to confirm), crash listings chosen or "older than a day" deleted (type
+  DELETE to confirm); a pointer to `REPLY/LOG` for the operator log.
+- `STEWARD_POOL.COM START` purges `[.LOGS]` to `STEWARD_LOG_KEEP` (10) versions of
+  each `.COM` and `.LOG`.
+
+Live test: `tests/vms/phase14b_live.py x86` 15 ok, 0 failed, on copies in the work
+directory (`API_PROBE_ERRLOG_DIR`): ERRLOG.SYS renamed ERRLOG_20261017_1219.SYS,
+read back by name (the same 1,807 events), 404 with why until a new one exists, 404
+for a second new log; STEWARD_TEST refused both changes, STEWARD_ADM refused without
+SYSPRV switched on; a listing deleted, the other two purged before a day; every change
+and refusal in the audit log; a test pool's START purged 15 versions of each to 5;
+the system's SYS$ERRORLOG unchanged (ERRLOG.SYS and 37 listings). Linux: 509 unit
+checks, 56 API checks, the UI tests (the new controls included), `make audit`.

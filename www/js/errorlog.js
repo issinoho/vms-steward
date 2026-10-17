@@ -6,10 +6,17 @@
 // The last three need SYSPRV (or the SYSTEM group) as OpenVMS sets them; a refusal is
 // shown, with what would let you read them. ELV reports a file you may not read as
 // "not found" (NOTES.md).
+//
+// Changes (14b, D24), each confirmed here and done as you: start a new error log
+// (ERRLOG.SYS renamed with the date, kept, and readable here; ERRFMT starts a new one at
+// its next record), and delete crash listings, chosen or older than a day. OPCOM does
+// not take Steward's request for a new operator log (NOTES.md): REPLY/LOG at an
+// operator terminal does that.
 
 import { api, ApiError } from './api.js';
-import { h, mount } from './dom.js';
-import { refusal } from './fmt.js';
+import { h, mount, toast } from './dom.js';
+import { refusal, vmsMessage } from './fmt.js';
+import { dialog, field } from './edit.js';
 
 const RANGES = [['7', 'Last 7 days'], ['30', 'Last 30 days'], ['365', 'Last year'], ['0', 'Everything']];
 const CLASS_LABEL = { BUGCHECKS: 'Bugchecks', CONTROL_ENTRIES: 'Control entries', VOLUME_CHANGES: 'Volume changes' };
@@ -68,10 +75,10 @@ function fieldsTable(fields) {
     h('tbody', {}, rows)));
 }
 
-async function showEvent(panel, n, me) {
+async function showEvent(panel, n, me, file) {
   mount(panel, h('p', { class: 'muted' }, `Translating event ${n}… ELV reads the whole file, a few seconds.`));
   try {
-    const r = await api.errorlogEvent(n);
+    const r = await api.errorlogEvent(n, file);
     const e = r.event;
     mount(panel, h('div', { class: 'panel' },
       h('div', { class: 'titlebar' }, h('h3', {}, `Event ${e.number}: ${e.type}`),
@@ -84,13 +91,13 @@ async function showEvent(panel, n, me) {
   }
 }
 
-function eventsTable(events, cls, panel, me) {
+function eventsTable(events, cls, panel, me, file) {
   const shown = (cls ? events.filter((e) => e.class === cls) : events).slice().reverse();   // newest first
   return h('div', { class: 'tablewrap' }, h('table', { class: 'grid events' },
     h('thead', {}, h('tr', {}, ['Event', 'When', 'Type', 'Class', 'Node'].map((x) => h('th', {}, x)))),
     h('tbody', {}, shown.length ? shown.map((e) => h('tr', { class: e.class === 'BUGCHECKS' ? 'bad' : null },
       h('td', { class: 'mono num' }, h('button', { type: 'button', class: 'linkish mono', title: 'Translate this event',
-        onclick: () => showEvent(panel, e.number, me) }, String(e.number))),
+        onclick: () => showEvent(panel, e.number, me, file) }, String(e.number))),
       h('td', { class: 'mono nowrap' }, when(e.time)),
       h('td', {}, e.type),
       h('td', {}, CLASS_LABEL[e.class] || e.class),
@@ -98,25 +105,55 @@ function eventsTable(events, cls, panel, me) {
       : h('tr', {}, h('td', { colspan: 5, class: 'muted' }, 'No event in this range')))));
 }
 
+// Start a new error log: ERRLOG.SYS renamed with today's date, then shown by that name.
+function newLogDialog(slot, me, state) {
+  const confirm = h('input', { required: true, spellcheck: 'false', placeholder: 'ERRLOG.SYS', class: 'mono' });
+  dialog('Start a new error log', h('div', {},
+    h('p', {}, 'SYS$ERRORLOG:ERRLOG.SYS will be renamed ERRLOG_<date>_<time>.SYS and kept: you can still read it here, and delete it at a terminal. ERRFMT starts a new ERRLOG.SYS at its next record; until then there is none.'),
+    h('p', { class: 'muted small' }, 'OpenVMS decides: renaming it needs SYSPRV.'),
+    field('Type ERRLOG.SYS to confirm', confirm)),
+  [{ label: 'Start a new log', primary: true, danger: true, run: async () => {
+    if (confirm.value.trim().toUpperCase() !== 'ERRLOG.SYS') {
+      throw new ApiError(400, { type: '/x/confirm', title: 'Type ERRLOG.SYS to confirm' });
+    }
+    const r = await api.errorlogNew();
+    toast(vmsMessage('S', 'RENAMED', `SYS$ERRORLOG:ERRLOG.SYS renamed to ${r.renamed_to}`));
+    state.file = r.renamed_to;
+    events(slot, me, state);
+    return true;
+  } }]);
+}
+
 async function events(slot, me, state) {
   mount(slot, h('p', { class: 'muted' }, 'Reading the error log… ELV takes a few seconds.'));
+  // The files first (a refusal there is the same as the list's): ERRLOG.SYS and those
+  // renamed from it, newest first.
+  let files = [];
+  try { files = (await api.errorlogFiles()).files; } catch { files = []; }
+  const old = files.filter((f) => f.name !== 'ERRLOG.SYS').sort((a, b) => (a.name < b.name ? 1 : -1));
+  const current = !state.file || state.file === 'ERRLOG.SYS';
+  const fileSel = old.length ? h('select', { 'aria-label': 'File', onchange: (ev) => { state.file = ev.target.value; events(slot, me, state); } },
+    h('option', { value: 'ERRLOG.SYS', selected: current }, 'ERRLOG.SYS (current)'),
+    old.map((f) => h('option', { value: f.name, selected: f.name === state.file }, `${f.name} (${f.blocks} blocks)`))) : null;
+  const newBtn = current && files.some((f) => f.name === 'ERRLOG.SYS')
+    ? h('button', { type: 'button', class: 'ghost small', onclick: () => newLogDialog(slot, me, state) }, 'Start a new error log') : null;
+  const range = h('select', { 'aria-label': 'Range', onchange: (ev) => { state.days = ev.target.value; events(slot, me, state); } },
+    RANGES.map(([k, label]) => h('option', { value: k, selected: k === state.days }, label)));
   try {
-    const r = await api.errorlog(Number(state.days));
+    const r = await api.errorlog(Number(state.days), current ? '' : state.file);
     const counts = {};
     for (const e of r.events) counts[e.class] = (counts[e.class] || 0) + 1;
     const panel = h('div');
     const box = h('div');
-    const draw = () => mount(box, eventsTable(r.events, state.cls, panel, me));
-    const range = h('select', { 'aria-label': 'Range', onchange: (ev) => { state.days = ev.target.value; events(slot, me, state); } },
-      RANGES.map(([k, label]) => h('option', { value: k, selected: k === state.days }, label)));
+    const draw = () => mount(box, eventsTable(r.events, state.cls, panel, me, current ? '' : state.file));
     const cls = h('select', { 'aria-label': 'Class', onchange: (ev) => { state.cls = ev.target.value; draw(); } },
       h('option', { value: '', selected: !state.cls }, `Every class (${r.events.length})`),
       Object.keys(counts).sort().map((k) => h('option', { value: k, selected: k === state.cls }, `${CLASS_LABEL[k] || k} (${counts[k]})`)));
     draw();
-    mount(slot, h('div', { class: 'cmdline' }, range, cls), panel, box,
+    mount(slot, h('div', { class: 'cmdline' }, fileSel, range, cls, newBtn), panel, box,
       r.truncated ? h('p', { class: 'muted small' }, 'Cut short: more events than Steward lists. Choose a shorter range.') : null);
   } catch (err) {
-    mount(slot, denied(err, me, 'the error log'));
+    mount(slot, fileSel ? h('div', { class: 'cmdline' }, fileSel, range) : null, denied(err, me, 'the error log'));
   }
 }
 
@@ -137,15 +174,55 @@ async function showCrash(panel, name, me) {
   }
 }
 
+// Delete listings: those chosen, or those of crashes before a day.
+function deleteDialog(slot, me, names, before) {
+  const confirm = h('input', { required: true, spellcheck: 'false', placeholder: 'DELETE', class: 'mono' });
+  const what = before ? `the listings of crashes before ${before}` : (names.length === 1 ? names[0] : `${names.length} crash listings`);
+  dialog('Delete crash listings', h('div', {},
+    h('p', {}, `${what[0].toUpperCase()}${what.slice(1)} will be deleted from SYS$ERRORLOG. CLUE's history (CLUE$HISTORY.DAT) is kept; the error log's own records of the crashes are not touched.`),
+    before ? null : h('ul', { class: 'mono small' }, names.slice(0, 12).map((n) => h('li', {}, n)), names.length > 12 ? h('li', {}, '…') : null),
+    h('p', { class: 'muted small' }, 'OpenVMS decides: deleting them needs SYSPRV.'),
+    field('Type DELETE to confirm', confirm)),
+  [{ label: 'Delete', primary: true, danger: true, run: async () => {
+    if (confirm.value.trim().toUpperCase() !== 'DELETE') {
+      throw new ApiError(400, { type: '/x/confirm', title: 'Type DELETE to confirm' });
+    }
+    let done = 0, failed = 0;
+    if (before) {
+      const r = await api.purgeCrashes(before);
+      done = r.deleted.length; failed = r.failed;
+    } else {
+      for (const n of names) {
+        try { await api.deleteCrash(n); done++; } catch (err) { if (!done && names.length === 1) throw err; failed++; }
+      }
+    }
+    toast(vmsMessage(failed ? 'W' : 'S', 'DELETED', `${plural(done, 'listing')} deleted${failed ? `, ${failed} not` : ''}`));
+    crashes(slot, me);
+    return true;
+  } }]);
+}
+
 async function crashes(slot, me) {
   try {
     const r = await api.crashes();
     const list = [...r.crashes].sort((a, b) => (a.time < b.time ? 1 : a.time > b.time ? -1 : 0));   // newest first
     const panel = h('div');
+    const chosen = new Set();
+    const delBtn = h('button', { type: 'button', class: 'ghost small', disabled: true,
+      onclick: () => deleteDialog(slot, me, [...chosen], null) }, 'Delete chosen');
+    const day = h('input', { type: 'date', 'aria-label': 'Crashes before' });
+    const purgeBtn = h('button', { type: 'button', class: 'ghost small',
+      onclick: () => { if (day.value) deleteDialog(slot, me, [], day.value); else day.focus(); } }, 'Delete older');
+    const pick = (name) => h('input', { type: 'checkbox', 'aria-label': `Choose ${name}`, onchange: (ev) => {
+      if (ev.target.checked) chosen.add(name); else chosen.delete(name);
+      delBtn.disabled = !chosen.size;
+      delBtn.textContent = chosen.size ? `Delete chosen (${chosen.size})` : 'Delete chosen';
+    } });
     mount(slot, panel, list.length
       ? h('div', { class: 'tablewrap' }, h('table', { class: 'grid crashes' },
-        h('thead', {}, h('tr', {}, ['When', 'Bugcheck', 'Process', 'Module', 'Up for'].map((x) => h('th', {}, x)))),
+        h('thead', {}, h('tr', {}, ['', 'When', 'Bugcheck', 'Process', 'Module', 'Up for'].map((x) => h('th', {}, x)))),
         h('tbody', {}, list.map((c) => h('tr', {},
+          h('td', {}, pick(c.name)),
           h('td', { class: 'mono nowrap' }, h('button', { type: 'button', class: 'linkish mono', title: 'Show the summary and listing',
             onclick: () => showCrash(panel, c.name, me) }, when(c.time))),
           h('td', {}, c.bugcheck),
@@ -153,6 +230,7 @@ async function crashes(slot, me) {
           h('td', { class: 'mono' }, c.module.split(/\s+/)[0]),
           h('td', { class: 'mono nowrap' }, c.uptime))))))
       : h('p', { class: 'muted' }, 'No crash listing: CLUE writes one when the system restarts after a crash.'),
+    list.length ? h('div', { class: 'cmdline' }, delBtn, h('span', { class: 'muted small' }, 'or those before'), day, purgeBtn) : null,
     list.length ? h('p', { class: 'muted small' }, `${plural(list.length, 'listing')} by CLUE in SYS$ERRORLOG.`) : null);
   } catch (err) {
     mount(slot, denied(err, me, 'the crash listings'));
@@ -190,7 +268,7 @@ async function opcom(slot, me, state) {
       ' Hourly time stamps');
     draw();
     mount(slot, h('div', { class: 'cmdline' }, input, stamps), box, more,
-      h('p', { class: 'muted small' }, `Newest first, from ${r.file || 'OPERATOR.LOG'}${r.truncated ? `; the newest ${r.messages.length} messages` : ''}.`));
+      h('p', { class: 'muted small' }, `Newest first, from ${r.file || 'OPERATOR.LOG'}${r.truncated ? `; the newest ${r.messages.length} messages` : ''}. To start a new operator log, use REPLY/LOG at an operator terminal: OPCOM does not take that request from Steward.`));
   } catch (err) {
     mount(slot, denied(err, me, 'OPCOM\'s log'));
   }
@@ -202,7 +280,7 @@ export async function errorlogView(ctx) {
   const evSlot = h('div');
   const crashSlot = h('div', {}, h('p', { class: 'muted' }, 'Reading…'));
   const opSlot = h('div');
-  const evState = { days: '30', cls: '' };
+  const evState = { days: '30', cls: '', file: '' };
   const opState = { stamps: false, filter: '' };
 
   function loadAll() {
@@ -224,6 +302,6 @@ export async function errorlogView(ctx) {
     h('h3', {}, 'Events'), evSlot,
     h('h3', {}, 'Crashes'), crashSlot,
     h('h3', {}, 'Operator log'), opSlot,
-    h('p', { class: 'muted small' }, 'Read-only: start a new error log or operator log at a terminal.'),
+    h('p', { class: 'muted small' }, 'Changes are done as you, with the privileges you switched on: OpenVMS decides, and each is in Steward\'s audit log.'),
   ];
 }

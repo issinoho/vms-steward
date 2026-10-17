@@ -204,6 +204,30 @@ int st_elv_refused(const st_elv_parser *p)
     return p->message[0] && (strstr(p->message, "-E-") || strstr(p->message, "-F-"));
 }
 
+int st_valid_errlog_name(const char *name)
+{
+    size_t i;
+    if (!strcmp(name, "ERRLOG.SYS")) return 1;
+    if (strlen(name) != 24 || strncmp(name, "ERRLOG_", 7) || name[15] != '_' || strcmp(name + 20, ".SYS")) return 0;
+    for (i = 7; i < 20; i++) if (i != 15 && !isdig(name[i])) return 0;
+    return 1;
+}
+
+void st_errlog_renamed(int y, int mo, int d, int h, int mi, char out[32])
+{
+    int i;
+    char *p;
+    memcpy(out, "ERRLOG_", 7);
+    p = out + 7;
+    for (i = 3; i >= 0; i--) { p[i] = (char) ('0' + y % 10); y /= 10; }
+    p[4] = (char) ('0' + mo / 10 % 10); p[5] = (char) ('0' + mo % 10);
+    p[6] = (char) ('0' + d / 10 % 10);  p[7] = (char) ('0' + d % 10);
+    p[8] = '_';
+    p[9] = (char) ('0' + h / 10 % 10);  p[10] = (char) ('0' + h % 10);
+    p[11] = (char) ('0' + mi / 10 % 10); p[12] = (char) ('0' + mi % 10);
+    memcpy(p + 13, ".SYS", 5);
+}
+
 /* ================================================================ CLUE */
 
 void st_clue_init(st_clue_summary *s) { memset(s, 0, sizeof *s); }

@@ -97,8 +97,13 @@ export const api = {
   // Phase 13: one reading of the counters MONITOR shows (D21); background as for system.
   monitor: (background) => call('GET', 'monitor', undefined, background ? { 'X-Steward-Background': '1' } : undefined),
   // Phase 14: the error log (D23). The first three need SYSPRV, as OpenVMS sets them.
-  errorlog: (days) => call('GET', `errorlog${query({ days })}`),
-  errorlogEvent: (n) => call('GET', `errorlog/${encodeURIComponent(n)}`),
+  errorlog: (days, file) => call('GET', `errorlog${query({ days, file: file || undefined })}`),
+  errorlogEvent: (n, file) => call('GET', `errorlog/${encodeURIComponent(n)}${query({ file: file || undefined })}`),
+  // Phase 14b: changes (D24).
+  errorlogFiles: () => call('GET', 'errorlog/files'),
+  errorlogNew: () => call('POST', 'errorlog/new', {}),
+  deleteCrash: (name) => call('DELETE', `crashes/${encodeURIComponent(name)}`),
+  purgeCrashes: (before) => call('POST', 'crashes/purge', { before }),
   crashes: () => call('GET', 'crashes'),
   crash: (name) => call('GET', `crashes/${encodeURIComponent(name)}`),
   operatorLog: (stamps) => call('GET', `operator-log${query({ stamps: stamps ? 1 : 0 })}`),

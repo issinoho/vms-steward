@@ -116,6 +116,9 @@ page's longer ranges. It runs with TMPMBX and NETMBX only. To turn it off, defin
 STEWARD_RECORD_SECS as "0" in [.RUN]STEWARD_SETTINGS.COM and RESTART the pool;
 STEWARD_RECORD_DAYS sets how long it keeps (default 7).
 
+Each START writes a new version of each pool process's log and procedure in
+[.RUN.LOGS], and keeps the newest 10 of each (STEWARD_LOG_KEEP, 1 to 100).
+
 lighttpd's account
 ------------------
 Give STEWARD$CONFIGURE the account vms-lighttpd actually runs as (by default it

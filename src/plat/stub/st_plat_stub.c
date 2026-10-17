@@ -1864,13 +1864,27 @@ static void stub_field(st_elv_parser *p, const char *d, const char *range, const
     elv_feed(p, row);
 }
 
-int st_plat_errlog(const char *privs, int op, unsigned int arg, st_elv_parser *p, st_err *e)
+/* The error log files: ERRLOG.SYS until it is renamed (D24), one renamed earlier, and
+   any renamed since. Every one holds the same made-up events. */
+static int stub_errlog_current = 1;
+static char stub_errlog_old[8][32] = { "ERRLOG_20260101_0900.SYS" };
+static int stub_errlog_nold = 1;
+
+static int stub_errlog_exists(const char *file)
+{
+    int i;
+    if (!file || !*file || !strcmp(file, "ERRLOG.SYS")) return stub_errlog_current;
+    for (i = 0; i < stub_errlog_nold; i++) if (!strcmp(file, stub_errlog_old[i])) return 1;
+    return 0;
+}
+
+int st_plat_errlog(const char *privs, int op, unsigned int arg, const char *file, st_elv_parser *p, st_err *e)
 {
     int k;
     (void) privs;
     (void) e;
     elv_feed(p, op == ST_ELV_ENTRY ? "%%PART%% ENTRY" : "%%PART%% EVENTS");
-    if (!stub_sysprv()) {
+    if (!stub_sysprv() || !stub_errlog_exists(file)) {
         elv_feed(p, "%ELV-E-FILOPNERR, error opening SYS$SYSROOT:[SYSERR]ERRLOG.SYS;1");
         elv_feed(p, "-RMS-E-FNF, file not found");
         elv_feed(p, "%%STATUS%% 00000001");
@@ -1929,12 +1943,51 @@ static int stub_no_sysprv(st_err *e)
     return -1;
 }
 
+int st_plat_errlog_files(st_errlog_file_cb fn, void *ctx, st_err *e)
+{
+    int i;
+    if (!stub_sysprv()) { set_err(e, ST_E_NOTFOUND, "file not found"); e->cond = 0x00018292u; return -1; }
+    if (stub_errlog_current && fn("ERRLOG.SYS", 1440, "2023-04-20T13:16:52", ctx)) return 0;
+    for (i = 0; i < stub_errlog_nold; i++)
+        if (fn(stub_errlog_old[i], 300, "2025-04-20T13:16:52", ctx)) break;
+    return 0;
+}
+
+int st_plat_errlog_rename(char newname[32], st_err *e)
+{
+    time_t t = time(NULL);
+    struct tm tm = *localtime(&t);
+    newname[0] = '\0';
+    if (!stub_sysprv() || !stub_errlog_current) {   /* as on x86: "not found" either way */
+        set_err(e, ST_E_NOTFOUND, "file not found");
+        e->cond = 0x00018292u;
+        return -1;
+    }
+    st_errlog_renamed(tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday, tm.tm_hour, tm.tm_min, newname);
+    if (stub_errlog_nold < 8) st_copy(stub_errlog_old[stub_errlog_nold++], 32, newname);
+    stub_errlog_current = 0;   /* until ERRFMT's next record, which never comes here */
+    return 0;
+}
+
+static int stub_clue_gone[2];
+
+int st_plat_crash_delete(const char *name, st_err *e)
+{
+    int i;
+    if (!stub_sysprv()) return stub_no_sysprv(e);
+    for (i = 0; i < 2; i++)
+        if (!stub_clue_gone[i] && !strcmp(name, stub_clue_names[i])) { stub_clue_gone[i] = 1; return 0; }
+    set_err(e, ST_E_NOTFOUND, "file not found");
+    return -1;
+}
+
 int st_plat_crashes(st_crash_cb fn, void *ctx, st_err *e)
 {
     st_clue_summary s;
     int i, k;
     if (!stub_sysprv()) return stub_no_sysprv(e);
     for (i = 0; i < 2; i++) {
+        if (stub_clue_gone[i]) continue;
         st_clue_init(&s);
         for (k = 0; k < 14 && !s.done; k++) st_clue_line(&s, stub_clue_text[i][k], strlen(stub_clue_text[i][k]));
         if (fn(stub_clue_names[i], &s, ctx)) break;
@@ -1947,7 +2000,7 @@ int st_plat_crash_text(const char *name, st_text_cb fn, void *ctx, st_err *e)
     int i, k;
     if (!stub_sysprv()) return stub_no_sysprv(e);
     for (i = 0; i < 2; i++) {
-        if (strcmp(name, stub_clue_names[i])) continue;
+        if (stub_clue_gone[i] || strcmp(name, stub_clue_names[i])) continue;
         for (k = 0; k < 14; k++) if (fn(stub_clue_text[i][k], strlen(stub_clue_text[i][k]), ctx)) break;
         return 0;
     }

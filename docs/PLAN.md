@@ -205,7 +205,7 @@ the terminal remains, and 12b (installing and removing products) is undecided.
 
 **Phase 14: error log** (D23). 14a, read-only, closed 2026-10-17 on the user's browser checks
 (0.14.0): ELV in the D14 helper for ERRLOG.SYS, CLUE's crash listings, OPCOM's log and
-device error counts in-process. 14b (changes, D24) and the pool purging its logs (D25) being planned: questions in
+device error counts in-process. 14b (changes, D24) and the pool purging its logs (D25) being built; see
 `docs/PHASE14.md`, which is where to pick up.
 
 **Wish list (not scheduled):** a layout made for phones (`docs/ideas/mobile.md`,
