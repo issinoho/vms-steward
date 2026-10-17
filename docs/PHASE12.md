@@ -155,3 +155,8 @@ to %X00000001 in about 13 s (PRODUCT SHOW lists it, its file in the destination)
 removal likewise (PRODUCT SHOW no longer lists it); staging, destination and job logs
 removed after. Linux: 528 unit checks, the UI tests (Remove, kits, a job followed to its
 end), `make audit`.
+
+Regression: `tests/vms/phase12_live.py x86` 8 ok. Kit T0.16-0 (0.16.0), built by
+`tools/kit.sh x86` (528 native checks), SHA-256
+`7d5b09427ba06c5432f8fa6a38264086da402577c3ed23af46154ad5d52ee25a`, for the browser
+checks; the demo kit staged in `SYS$SYSDEVICE:[STEWARD_TEST.P12T]` for them.
