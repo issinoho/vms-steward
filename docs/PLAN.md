@@ -201,8 +201,17 @@ checks (0.13.0). See `docs/PHASE13.md`.
 
 **Later areas, one at a time and each with the same read-only → modify split:** licences, installed products,
 CPU/memory monitoring, error log, and a WebSocket terminal (lighttpd `mod_wstunnel`). The user confirmed this
-order on 2026-10-11. Licences (Phase 11), installed products (12), monitoring (13) and the error log (14) are done;
-the terminal remains.
+order on 2026-10-11. Licences (Phase 11), installed products (12), monitoring (13) and the error log (14) are done.
+
+**The terminal: set aside** by the user's choice on 2026-10-18, after read-only probing.
+What it found, for whoever picks it up: vms-lighttpd 1.4.85 does not build `mod_wstunnel`
+(not in its static module list), but its `mod_proxy` passes a WebSocket upgrade through
+(`proxy.header = ("upgrade" => "enable")`), so Steward could serve the WebSocket itself and
+see the browser's session cookie and Origin; the pseudo terminal driver routines
+(PTD$CREATE, READ, WRITE, DELETE) are on x86, with no C prototypes. The direction left
+open: the browser terminal as an ordinary terminal, where the user logs in at OpenVMS's
+own Username/Password prompt (every UAF check, intrusion detection and accounting
+applying) and Steward only carries the bytes, never starting a logged-in session itself.
 
 **Phase 14: error log** (D23). 14a, read-only, closed 2026-10-17 on the user's browser checks
 (0.14.0): ELV in the D14 helper for ERRLOG.SYS, CLUE's crash listings, OPCOM's log and
