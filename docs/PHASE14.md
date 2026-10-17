@@ -103,3 +103,8 @@ Kit T0.14-0 (0.14.0), built by `tools/kit.sh x86` (490 native checks), SHA-256
 `41f7d447d83ef00477a3da002b32068d552fa29f81ee538d8a5ce739132c87b0`, for the browser
 checks. After it is installed, `PHASE14_HELPER=installed python3
 tests/vms/phase14_live.py` runs the installed procedure.
+
+Installed (2026-10-17): the user installed 0.14.0 on x86 and restarted the pool (the
+pool and recorder logs show 0.14.0 starting cleanly). `PHASE14_HELPER=installed
+tests/vms/phase14_live.py x86`, with STEWARD$ROOT:[COM]STEWARD_ERRLOG.COM: 19 ok, 0
+failed. Awaiting the user's browser checks.
