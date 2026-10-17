@@ -50,12 +50,19 @@ dcl_logged() {
       echo "\$ open/write vmsrun_done ${WORKDIR}${tag}.DONE"
       echo '$ close vmsrun_done'; } > "$com"
     sftp_batch "cd $SFTPDIR" "put $com $tag.com"
+    # ssh itself in the background, so that $pid is ssh's and the kill below ends it.
+    # (It was a { ssh; echo; } group: the kill ended the subshell and left ssh running,
+    # still connected, holding an SSHD process on the node: 45 orphans by 2026-10-17.)
+    # The node's sshd does not always close the session when the command ends, so ssh
+    # is always ended here, also if vms.sh itself is ended (timeout, Ctrl-C).
     start_ssh() {
-        { ssh -p "$PORT" "${ssh_opts[@]}" "$USER@$HOST" \
-              "@${WORKDIR}${tag}.COM/OUTPUT=${WORKDIR}${tag}.LOG"; echo "(ssh exit $?)"; } >"$sshlog" 2>&1 &
+        ssh -p "$PORT" "${ssh_opts[@]}" "$USER@$HOST" \
+            "@${WORKDIR}${tag}.COM/OUTPUT=${WORKDIR}${tag}.LOG" </dev/null >"$sshlog" 2>&1 &
         pid=$!
     }
     local pid waited=0 limit=${VMS_TIMEOUT:-600} starts=1
+    trap 'kill "$pid" 2>/dev/null' EXIT
+    trap 'kill "$pid" 2>/dev/null; exit 143' TERM INT HUP
     start_ssh
     while :; do
         sleep 2; waited=$((waited + 2))
