@@ -2,8 +2,8 @@
 
 **Status: 12a closed (2026-10-17)** on the user's browser checks of 0.11.0. The user
 approved D20 and the suggested answers below ("go with your suggestions").
-**12b: install and remove, being built (2026-10-17)**: the user approved D26 and the
-suggested answers ("Yes to all four"), the demo kit's install and removal on x86 among them.
+**12b: install and remove, closed (2026-10-17)** on the user's browser checks of 0.16.0;
+the user approved D26 and the suggested answers ("Yes to all four").
 
 Read-only first (12a), as for the earlier areas. The user asked (2026-10-16) that
 products installed by VMSINSTAL be reported too, not only PCSI's.
@@ -160,3 +160,5 @@ Regression: `tests/vms/phase12_live.py x86` 8 ok. Kit T0.16-0 (0.16.0), built by
 `tools/kit.sh x86` (528 native checks), SHA-256
 `7d5b09427ba06c5432f8fa6a38264086da402577c3ed23af46154ad5d52ee25a`, for the browser
 checks; the demo kit staged in `SYS$SYSDEVICE:[STEWARD_TEST.P12T]` for them.
+
+Browser checks: confirmed by the user on 0.16.0 (2026-10-17). The demo kit's staging removed after; STWDEMO not installed. 12b closed; Phase 12 done.

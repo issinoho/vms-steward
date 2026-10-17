@@ -48,7 +48,7 @@ penetration test are still to come ([`docs/REVIEW-BRIEF.md`](docs/REVIEW-BRIEF.m
 | Queues: hold, release, delete a job; stop and start a queue (never Steward's start-up queues) | done (Phase 9b, closed 2026-10-15, 0.8.1) |
 | System parameters, read-only (as SYSGEN SHOW/ALL) | done (Phase 10, closed 2026-10-16, 0.9.0) |
 | Licences: loaded, the charge, and the database where OpenVMS lets you read it (read-only) | done (Phase 11, closed 2026-10-16, 0.10.1) |
-| Installed products: PCSI's list and history, VMSINSTAL's history (read-only); install and remove through PCSI | done (Phase 12a, closed 2026-10-17, 0.11.0); install and remove built (Phase 12b, 0.16.0 test kit; awaiting browser checks) |
+| Installed products: PCSI's list and history, VMSINSTAL's history (read-only); install and remove through PCSI | done (Phase 12a, closed 2026-10-17, 0.11.0); install and remove (Phase 12b, closed 2026-10-17, 0.16.0) |
 | Monitoring: CPU by mode, process states, memory, paging, I/O and disks over time, and the busiest processes (read-only) | done (Phase 13a, closed 2026-10-17, 0.12.0); history recorded on the node (Phase 13b, closed 2026-10-17, 0.13.0) |
 | Error log: device error counts, the events in ERRLOG.SYS (translated by ELV), CLUE's crash summaries and OPCOM's log (read-only) | done (Phase 14a, closed 2026-10-17, 0.14.0); changes (Phase 14b, closed 2026-10-17, 0.15.2) |
 | Terminal | later |

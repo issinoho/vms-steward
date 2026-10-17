@@ -188,7 +188,8 @@ and Phase 10's shared helper (0.10.1). See `docs/PHASE11.md`.
 **Phase 12: installed products** (D20). 12a, read-only, closed 2026-10-17 on the
 user's browser checks (0.11.0): PRODUCT SHOW PRODUCT/FULL and HISTORY/FULL in the D14
 helper (the account needs SYSLCK authorized; PRODUCT switches it on), and VMSINSTAL's
-history read in-process. 12b (install and remove, D26 approved) being built; see
+history read in-process. 12b, install and remove through PCSI as a batch job under
+the viewer's name (D26), closed 2026-10-17 on the user's browser checks (0.16.0). See
 `docs/PHASE12.md`.
 
 **Phase 13: monitoring** (D21). 13a, read-only, closed 2026-10-17 on the user's
@@ -201,7 +202,7 @@ checks (0.13.0). See `docs/PHASE13.md`.
 **Later areas, one at a time and each with the same read-only → modify split:** licences, installed products,
 CPU/memory monitoring, error log, and a WebSocket terminal (lighttpd `mod_wstunnel`). The user confirmed this
 order on 2026-10-11. Licences (Phase 11), installed products (12), monitoring (13) and the error log (14) are done;
-the terminal remains, and 12b (installing and removing products) is undecided.
+the terminal remains.
 
 **Phase 14: error log** (D23). 14a, read-only, closed 2026-10-17 on the user's browser checks
 (0.14.0): ELV in the D14 helper for ERRLOG.SYS, CLUE's crash listings, OPCOM's log and
