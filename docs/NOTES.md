@@ -585,3 +585,13 @@ STEWARD_TEST, which needs only the directory (W:RE); opened by the physical name
 returns (`_X86VMS$DKA0:[SYS0.][SYSERR]ERRLOG.SYS`), ELV says `%ELV-E-FILOPNERR ...
 -RMS-E-PRV`. So Steward resolves first (`phys_spec`), and "not found" now means the
 file is not there (ERRLOG.SYS after a new log, until ERRFMT's next record).
+
+**PRODUCT INSTALL and REMOVE need CMKRNL, SYSLCK, SYSPRV and TMPMBX** (Phase 12b,
+2026-10-17, `tests/vms/phase12b_live.py`). Run by Steward's batch job as STEWARD_ADM
+with SYSPRV and SYSLCK switched on (it is not authorized for CMKRNL), both the install
+of the demo kit and its removal ended at once with `%PCSIUI-E-PRIVCLASS3, operation
+requires CMKRNL, SYSLCK, SYSPRV, and TMPMBX privileges` and `%PCSIUI-E-ABORT`, status
+%X1652800A. (PRODUCT SHOW and FIND need only SYSLCK, which PRODUCT switches on itself,
+or nothing: NOTES above.) Two other things the first runs showed: the job is refused
+at login, leaving no log, for an account without batch access, and SUBMIT's status
+when the login directory is missing (%X00C18324) has no message text.

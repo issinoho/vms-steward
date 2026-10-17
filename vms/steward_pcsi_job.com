@@ -64,11 +64,12 @@ $ say "Privileges switched on: ", f$extract(0, 200, f$getjpi("", "CURPRIV"))
 $ if p_op .eqs. "REMOVE" then goto do_remove
 $!
 $! An upgrade keeps the answers given when it was installed; a new product takes the
-$! producer's. Installed if PRODUCT SHOW lists it.
+$! producer's. Installed if PRODUCT SHOW lists its line ("<producer> <base> <name> ").
 $ conf = "PRODUCER"
+$ pline = p_prod + " " + p_base + " " + p_name + " "
 $ pipe product show product 'p_name' /producer='p_prod' /base_system='p_base' | -
-       search/nooutput sys$pipe " 0 items found"
-$ if $severity .ne. 1 then conf = "CURRENT"
+       search/nooutput sys$pipe "''pline'"
+$ if $severity .eq. 1 then conf = "CURRENT"
 $ say "Configuration: ", conf
 $ dq = ""
 $ if p_dest .nes. "-" then dq = "/destination=" + p_dest

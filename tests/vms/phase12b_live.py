@@ -108,7 +108,7 @@ try:
         check(res.get("done") and res.get("success"), "the job ran to its end, successfully (%s)" % res.get("status"), res.get("status"))
         check(installed(), "PRODUCT SHOW PRODUCT now lists STWDEMO")
         files = vms("directory/nohead/notrail %s.STWDEMO]README.TXT" % DEST[:-1])
-        check("README.TXT" in files, "its file in the destination", files[:200])
+        check(re.search(r"^README\.TXT;\d+", files, re.M) and "%DIRECT" not in files, "its file in the destination", files[:200])
 
         st, doc = api("STEWARD_ADM", PRIVS, "/api/v1/products/remove", "POST", DEMO)
         check(st == 202 and doc.get("entry"), "removal submitted: entry %s" % (doc or {}).get("entry"), (st, doc))

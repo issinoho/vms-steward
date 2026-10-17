@@ -93,7 +93,7 @@ function followJob(panel, r, what, done) {
 function jobDialog(title, intro, p, run) {
   const confirm = h('input', { required: true, spellcheck: 'false', placeholder: p.name, class: 'mono' });
   dialog(title, h('div', {}, intro,
-    h('p', { class: 'muted small' }, 'It runs as a batch job under your name, with the privileges you switched on: OpenVMS and PCSI decide. The kit\'s questions take the answers given at its last install, or the producer\'s for a new product.'),
+    h('p', { class: 'muted small' }, 'It runs as a batch job under your name, with the privileges you switched on: OpenVMS and PCSI decide. PCSI needs CMKRNL, SYSLCK, SYSPRV and TMPMBX switched on. The kit\'s questions take the answers given at its last install, or the producer\'s for a new product.'),
     field(`Type ${p.name} to confirm`, confirm)),
   [{ label: title.split(' ')[0], primary: true, danger: true, run: async () => {
     if (confirm.value.trim().toUpperCase() !== p.name) {
