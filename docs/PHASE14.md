@@ -98,3 +98,8 @@ protected sources; STEWARD_ADM refused without SYSPRV switched on (D9), served w
 Linux: 490 unit checks (the parsers on lines captured from x86, node renamed, and the
 endpoints on the stub), the UI tests (14 for this page) and `make audit`. x86: 490
 native checks, no compiler messages.
+
+Kit T0.14-0 (0.14.0), built by `tools/kit.sh x86` (490 native checks), SHA-256
+`41f7d447d83ef00477a3da002b32068d552fa29f81ee538d8a5ce739132c87b0`, for the browser
+checks. After it is installed, `PHASE14_HELPER=installed python3
+tests/vms/phase14_live.py` runs the installed procedure.
