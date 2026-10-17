@@ -2,8 +2,8 @@
 
 **Status: 13a closed (2026-10-17)** on the user's browser checks of the 0.12.0 kit.
 The user approved D21 and the suggested answers below ("go").
-**13b: history on the node, being built (2026-10-17)**: the user approved D22 and the
-suggested answers ("im good with that").
+**13b: history on the node, closed (2026-10-17)** on the user's browser checks of the
+0.13.0 kit; the user approved D22 and the suggested answers ("im good with that").
 
 CPU, memory, paging and I/O over time, as MONITOR shows them, in the browser. The
 dashboard (Phase 5) already shows one snapshot: CPU busy between two polls, memory,
@@ -186,3 +186,6 @@ Linux: 447 unit checks (with the record format and ring), 56 API checks, the UI 
 Kit T0.13-0 (0.13.0), built by `tools/kit.sh x86` (447 native checks), SHA-256
 `046fbaedeef3b06a0d9265f0e14d726240109c8f3b64db950e88de82392e8f33`, for the browser
 checks.
+
+Browser checks: the user installed the kit on x86, restarted the pool and confirmed
+the Monitoring page's ranges (2026-10-17). 13b closed; Phase 13 done.

@@ -49,7 +49,7 @@ penetration test are still to come ([`docs/REVIEW-BRIEF.md`](docs/REVIEW-BRIEF.m
 | System parameters, read-only (as SYSGEN SHOW/ALL) | done (Phase 10, closed 2026-10-16, 0.9.0) |
 | Licences: loaded, the charge, and the database where OpenVMS lets you read it (read-only) | done (Phase 11, closed 2026-10-16, 0.10.1) |
 | Installed products: PCSI's list and history, VMSINSTAL's history (read-only) | done (Phase 12a, closed 2026-10-17, 0.11.0) |
-| Monitoring: CPU by mode, process states, memory, paging, I/O and disks over time, and the busiest processes (read-only) | done (Phase 13a, closed 2026-10-17, 0.12.0); history recorded on the node built (Phase 13b, 0.13.0 test kit; awaiting browser checks) |
+| Monitoring: CPU by mode, process states, memory, paging, I/O and disks over time, and the busiest processes (read-only) | done (Phase 13a, closed 2026-10-17, 0.12.0); history recorded on the node (Phase 13b, closed 2026-10-17, 0.13.0) |
 | Error log, terminal | later |
 
 ## Installing
