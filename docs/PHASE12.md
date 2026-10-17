@@ -57,3 +57,6 @@ history entries as PRODUCT SHOW; VMSINSTAL's 9 runs for both).
 Kit T0.11-0 (0.11.0), built by `tools/kit.sh x86` (410 native checks), SHA-256
 `b97a6286bb24a056f00674fef50deef033ce509a340ab8346bcfdff6ba5286ac`, for the browser
 checks.
+
+Closed 2026-10-17 on the user's browser checks of 0.11.0 ("kit installed, pool
+restarted, looks good"). 12b, installing and removing products, is to be decided.
