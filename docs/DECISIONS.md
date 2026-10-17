@@ -582,7 +582,9 @@ documented); the commands run by the service (its view, and its privileges, D2).
 
 ## D21. Monitoring: raw counters from the service, history in the browser
 
-**Status:** proposed 2026-10-17, questions in PHASE13.md. Phase 13.
+**Status:** approved by the user 2026-10-17 ("go", PHASE13.md): history in the browser
+(30 minutes while the page is open), a 5 s interval with 2, 10 and 30 s to choose, the
+busiest processes the viewer may see, and no per-CPU figures for now. Phase 13.
 
 `$GETRMI` gives anyone the system-wide counters MONITOR shows (CPU modes, process
 states, memory lists, paging, I/O), and `$GETDVI` each disk's operation count, without

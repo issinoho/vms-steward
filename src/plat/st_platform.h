@@ -566,6 +566,42 @@ int st_plat_product_list(const char *privs, st_product_parser *p, char text[ST_P
 typedef int (*st_vmsinstal_cb)(const st_vmsinstal *v, void *ctx);
 int st_plat_vmsinstal(st_vmsinstal_cb fn, void *ctx, unsigned int *cond, char text[256], st_err *e);
 
+/* ---- monitoring (Phase 13, D21), as the current persona ----
+
+   One reading of the counters MONITOR shows, from $GETRMI and $GETDVI: open to anyone
+   (probe_rmi, NOTES.md). Counters run from boot, so rates come from two readings; that
+   arithmetic is the browser's (D21). The process list is st_plat_proc_enum's. */
+enum { ST_MON_INTERRUPT, ST_MON_MPSYNCH, ST_MON_KERNEL, ST_MON_EXEC, ST_MON_SUPER,
+       ST_MON_USER, ST_MON_IDLE, ST_MON_MODES };
+enum { ST_MON_CUR, ST_MON_COM, ST_MON_COMO, ST_MON_LEF, ST_MON_LEFO, ST_MON_HIB,
+       ST_MON_HIBO, ST_MON_SUSP, ST_MON_SUSPO, ST_MON_PFW, ST_MON_MWAIT, ST_MON_CEF,
+       ST_MON_COLPG, ST_MON_FPG, ST_MON_STATES };
+enum { ST_MON_FAULTS, ST_MON_PREADIO, ST_MON_PWRITIO, ST_MON_ISWPCNT, ST_MON_DIRIO,
+       ST_MON_BUFIO, ST_MON_MBREADS, ST_MON_MBWRITES, ST_MON_COUNTERS };
+
+typedef struct {
+    char         device[32];          /* "DKA0:", as the dashboard names it */
+    unsigned int operations;          /* DVI$_OPCNT: wraps at 2^32 */
+} st_mon_disk;
+
+typedef struct {
+    long long          sampled_at_ms;             /* milliseconds since 1970 UTC */
+    unsigned int       cpus;                      /* active */
+    /* Ticks summed over CPUs, 100 a second a CPU. Signed: RMI$_CPUINTSTK reads
+       negative on the x86 VM (NOTES.md). */
+    long long          modes[ST_MON_MODES];
+    unsigned int       states[ST_MON_STATES];     /* processes in each state, now */
+    unsigned int       processes;                 /* on the system, RMI$_PROCS */
+    unsigned long long mem_total, mem_free, mem_modified;   /* bytes */
+    unsigned int       counters[ST_MON_COUNTERS]; /* since boot; wrap at 2^32 */
+    int                ndisks;
+    st_mon_disk        disks[ST_MAX_DISKS];       /* the system disk first */
+} st_monitor;
+
+/* Fills what it can; an item OpenVMS refuses is left zero. -1 only if nothing could be
+   read. */
+int st_plat_monitor(st_monitor *m, st_err *e);
+
 /* ---- audit and diagnostics ---- */
 void st_plat_audit(const char *line);    /* one record; the platform adds a timestamp */
 void st_plat_log(const char *line);      /* operational log (SYS$ERROR / stderr) */

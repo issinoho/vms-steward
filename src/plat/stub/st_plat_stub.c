@@ -75,6 +75,19 @@ static struct { unsigned int value, uic, attrib; int used; } holds[MAXHOLDS];
 #define NSESSIONS 256
 static st_session sessions[NSESSIONS];
 static int        session_used[NSESSIONS];
+/* Now, milliseconds since 1970. POSIX's clock where there is one (Linux, where the UI
+   tests take readings a second apart); whole seconds under VSI C's strict C99, where
+   the stub only serves test_core's checks. */
+static long long stub_ms(void)
+{
+#ifdef CLOCK_REALTIME
+    struct timespec ts;
+    if (!clock_gettime(CLOCK_REALTIME, &ts)) return (long long) ts.tv_sec * 1000 + ts.tv_nsec / 1000000;
+#endif
+    return (long long) time(NULL) * 1000;
+}
+static long long stub_start_ms;   /* when the stub started: busy processes grow from it */
+
 static stub_user *persona;
 static unsigned int persona_cur[2];   /* current privileges of the persona */
 static FILE      *audit_fp;
@@ -157,6 +170,7 @@ static void seed(void)
 {
     if (seeded) return;
     seeded = 1;
+    stub_start_ms = stub_ms();
     /* AUTHORIZE ADD's template: disabled, as on the node (PHASE4.md). */
     add_user("DEFAULT", NULL, "", "", 0x00800080u,
              BIT(15) | BIT(20), 0, BIT(15) | BIT(20), 0, 1u << ST_UF_DISUSER, -1);
@@ -1195,6 +1209,20 @@ static void stub_proc_fill(const stub_proc *s, st_proc *p)
     p->bufio = s->bufio;
     p->pageflts = s->pf;
     p->login = (long long) time(NULL) - s->age;
+    {   /* a few keep working, so monitoring's busiest processes change (D21) */
+        static const struct { unsigned int pid, cpu, dirio, bufio, pf; } busy[] = {   /* a second */
+            { 0x00007501, 30, 2, 40, 3 }, { 0x00007530, 8, 6, 3, 1 }, { 0x00007521, 15, 0, 12, 0 },
+        };
+        unsigned int secs = (unsigned int) ((stub_ms() - stub_start_ms) / 1000);
+        size_t i;
+        for (i = 0; i < sizeof busy / sizeof busy[0]; i++)
+            if (busy[i].pid == s->pid) {
+                p->cputim += busy[i].cpu * secs / 10;
+                p->dirio += busy[i].dirio * secs;
+                p->bufio += busy[i].bufio * secs;
+                p->pageflts += busy[i].pf * secs;
+            }
+    }
 }
 
 int st_plat_proc_enum(st_proc_cb fn, void *ctx, st_err *e)
@@ -1600,6 +1628,74 @@ int st_plat_product_list(const char *privs, st_product_parser *p, char text[ST_P
     st_product_end(p);
     for (i = 0; i < ST_PROD_PARTS; i++)
         if (p->seen[i] && !(p->status[i] & 1)) st_copy(text[i], 256, p->message[i]);
+    return 0;
+}
+
+/* ================================================================ monitoring (D21)
+
+   Counters that move with the clock, a little unevenly, so the page's charts move on
+   the dev server: four CPUs, 10 to 35 per cent busy, as the dashboard's stub. Interrupt
+   stays 0. Kept between calls: the stub is one process. */
+static unsigned int stub_rand(void)
+{
+    static unsigned int x = 2463534242u;   /* xorshift32: the same run every start */
+    x ^= x << 13; x ^= x >> 17; x ^= x << 5;
+    return x;
+}
+
+int st_plat_monitor(st_monitor *m, st_err *e)
+{
+    static st_monitor cur;
+    static long long last;
+    static const char *const devs[] = { "DKA0:", "DKA100:", "DKB0:" };
+    static const unsigned int disk_rate[] = { 12, 3, 1 };   /* operations a second */
+    static const unsigned int counter_rate[ST_MON_COUNTERS] = { 40, 1, 0, 0, 25, 180, 4, 4 };
+    long long now = stub_ms(), dt;
+    size_t i;
+    (void) e;
+    seed();
+    if (!last) {   /* "booted" three days ago */
+        cur.cpus = 4;
+        cur.modes[ST_MON_KERNEL] = 9000000; cur.modes[ST_MON_EXEC] = 600000;
+        cur.modes[ST_MON_SUPER] = 30000;    cur.modes[ST_MON_USER] = 1200000;
+        cur.modes[ST_MON_MPSYNCH] = 40000;  cur.modes[ST_MON_IDLE] = 93000000;
+        for (i = 0; i < ST_MON_COUNTERS; i++) cur.counters[i] = 1000000u * (unsigned int) (i + 3);
+        cur.ndisks = 3;
+        for (i = 0; i < 3; i++) {
+            st_copy(cur.disks[i].device, sizeof cur.disks[i].device, devs[i]);
+            cur.disks[i].operations = 2000000u / (unsigned int) (i + 1);
+        }
+        cur.mem_total = 8ull << 30;
+        last = now;
+    }
+    dt = now - last;
+    if (dt > 3600000) dt = 3600000;
+    if (dt > 0) {
+        long long ticks = cur.cpus * dt / 10, busy = ticks * (10 + (long long) (stub_rand() % 26)) / 100;
+        cur.modes[ST_MON_KERNEL] += busy * 40 / 100;
+        cur.modes[ST_MON_EXEC] += busy * 10 / 100;
+        cur.modes[ST_MON_SUPER] += busy * 2 / 100;
+        cur.modes[ST_MON_MPSYNCH] += busy * 3 / 100;
+        cur.modes[ST_MON_USER] += busy - busy * 55 / 100;
+        cur.modes[ST_MON_IDLE] += ticks - busy;
+        for (i = 0; i < ST_MON_COUNTERS; i++)
+            cur.counters[i] += (unsigned int) ((counter_rate[i] * (50 + stub_rand() % 101) / 100) * dt / 1000);
+        for (i = 0; i < 3; i++)
+            cur.disks[i].operations += (unsigned int) ((disk_rate[i] * (50 + stub_rand() % 101) / 100) * dt / 1000);
+        last = now;
+    }
+    memset(cur.states, 0, sizeof cur.states);
+    cur.states[ST_MON_CUR] = 1;
+    cur.states[ST_MON_COM] = stub_rand() % 3;
+    cur.states[ST_MON_LEF] = 30;
+    cur.states[ST_MON_HIB] = 24;
+    cur.states[ST_MON_LEFO] = 1;
+    cur.states[ST_MON_HIBO] = 2 - cur.states[ST_MON_COM];   /* the states add up to 58 */
+    cur.processes = 58;   /* as the dashboard's stub */
+    cur.mem_free = 5368709120ull - (stub_rand() % 64) * 1048576ull;
+    cur.mem_modified = 268435456ull;
+    cur.sampled_at_ms = now;
+    *m = cur;
     return 0;
 }
 

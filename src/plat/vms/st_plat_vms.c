@@ -1454,46 +1454,62 @@ static const char *acp_name(unsigned int acp)
     }
 }
 
-static void system_disks(st_system *s)
+/* The next disk the dashboard lists: mounted, not foreign, not a shadow set member,
+   not remote, not the memory-disk boot image. Its $DEVICE_SCAN name in name, its
+   logical volume name in lv, its name as shown ("DKA0:") in device, and whether it is
+   sysdev. 0 at the end of the scan. */
+static int disk_next(unsigned int ctx[2], const char *sysdev, char name[65], char lv[32],
+                     char *device, size_t devlen, int *system_disk)
 {
-    char name[65], sysdev[65], full[65];
+    char full[65];
     unsigned short len;
-    unsigned int devclass = DC$_DISK, ctx[2] = { 0, 0 }, st;
+    unsigned int devclass = DC$_DISK, st;
     struct dsc$descriptor_s nd;
     st_ile3 sel[2];
-    int i;
+    const char *p;
 
-    dvi_str("SYS$SYSDEVICE", DVI$_FULLDEVNAM, sysdev, sizeof sysdev);
     item(&sel[0], DVS$_DEVCLASS, &devclass, sizeof devclass, 0);
     item_end(&sel[1]);
     for (;;) {
-        st_disk *d;
-        const char *p;
-        unsigned long long maxblock, freeblocks;
         len = 0;
-        desc(&nd, name, sizeof name - 1);
+        desc(&nd, name, 64);
         st = sys$device_scan(&nd, &len, 0, sel, (void *) ctx);
-        if (!(st & 1)) break;
+        if (!(st & 1)) return 0;
         name[len] = '\0';
         if (!dvi_u32(name, DVI$_MNT) || dvi_u32(name, DVI$_FOR) || dvi_u32(name, DVI$_SHDW_MEMBER) ||
             dvi_u32(name, DVI$_REMOTE_DEVICE))
             continue;
-        if (s->ndisks == ST_MAX_DISKS) break;
-        d = &s->disks[s->ndisks];
-        memset(d, 0, sizeof *d);
-        dvi_str(name, DVI$_VOLNAM, d->label, sizeof d->label);
-        dvi_str(name, DVI$_LOGVOLNAM, d->logical_volume, sizeof d->logical_volume);
-        if (!strncmp(d->logical_volume, "SYS$MD", 6)) continue;   /* memory-disk boot image */
+        dvi_str(name, DVI$_LOGVOLNAM, lv, 32);
+        if (!strncmp(lv, "SYS$MD", 6)) continue;                   /* memory-disk boot image */
         dvi_str(name, DVI$_FULLDEVNAM, full, sizeof full);
         p = strchr(full, '$');                                    /* "_NODE$DKA0:" -> "DKA0:" */
         p = p ? p + 1 : (full[0] == '_' ? full + 1 : full);
-        st_copy(d->device, sizeof d->device, p);
+        st_copy(device, devlen, p);
+        *system_disk = !strcmp(full, sysdev);
+        return 1;
+    }
+}
+
+static void system_disks(st_system *s)
+{
+    char name[65], sysdev[65], lv[32], device[32];
+    unsigned int ctx[2] = { 0, 0 };
+    int i, sys;
+
+    dvi_str("SYS$SYSDEVICE", DVI$_FULLDEVNAM, sysdev, sizeof sysdev);
+    while (s->ndisks < ST_MAX_DISKS && disk_next(ctx, sysdev, name, lv, device, sizeof device, &sys)) {
+        st_disk *d = &s->disks[s->ndisks];
+        unsigned long long maxblock, freeblocks;
+        memset(d, 0, sizeof *d);
+        dvi_str(name, DVI$_VOLNAM, d->label, sizeof d->label);
+        st_copy(d->logical_volume, sizeof d->logical_volume, lv);
+        st_copy(d->device, sizeof d->device, device);
         st_copy(d->filesystem, sizeof d->filesystem, acp_name(dvi_u32(name, DVI$_ACPTYPE)));
         maxblock = dvi_u32(name, DVI$_MAXBLOCK);
         freeblocks = dvi_u32(name, DVI$_FREEBLOCKS);
         d->total = maxblock * 512ull;
         d->free = freeblocks * 512ull;
-        d->system_disk = !strcmp(full, sysdev);
+        d->system_disk = sys;
         s->ndisks++;
     }
     for (i = 1; i < s->ndisks; i++)   /* the system disk first */
@@ -1569,10 +1585,20 @@ static void system_queues(st_system *s)
     sys$getquiw(0, QUI$_CANCEL_OPERATION, &ctx, 0, iosb, 0, 0);
 }
 
+/* Now, in UTC milliseconds ($GETTIM is local time; no struct timeval under
+   /STANDARD=C99). */
+static long long now_utc_ms(void)
+{
+    unsigned int q[2] = { 0, 0 };
+    sys$gettim((void *) q);
+    return (long long) ((((unsigned long long) q[1] << 32 | q[0]) - VMS_EPOCH_OFFSET) / 10000ull)
+           - local_offset() * 1000;
+}
+
 int st_plat_system(st_system *s, st_err *e)
 {
     unsigned long long v, pages = 0, pagesize = 0, fr = 0, mod = 0, pf = 0, pff = 0, sf = 0, sff = 0;
-    unsigned int boot[2], nowq[2] = { 0, 0 };
+    unsigned int boot[2];
 
     memset(s, 0, sizeof *s);
     syi_str(SYI$_NODENAME, s->node, sizeof s->node);
@@ -1589,11 +1615,7 @@ int st_plat_system(st_system *s, st_err *e)
     if (item_u64(0, SYI$_ACTIVECPU_CNT, 8, &v) & 1) s->cpus_active = (unsigned int) v;
     if (item_u64(0, SYI$_AVAILCPU_CNT, 8, &v) & 1) s->cpus_available = (unsigned int) v;
     item_u64(1, RMI$_CPUIDLE, 8, &s->cpu_idle_ticks);
-    /* When the idle ticks were read, in UTC milliseconds ($GETTIM is local time; no
-       struct timeval under /STANDARD=C99). */
-    sys$gettim((void *) nowq);
-    s->sampled_at_ms = (long long) ((((unsigned long long) nowq[1] << 32 | nowq[0]) - VMS_EPOCH_OFFSET) / 10000ull)
-                       - local_offset() * 1000;
+    s->sampled_at_ms = now_utc_ms();   /* when the idle ticks were read */
     if (item_u64(1, RMI$_CUR, 4, &v) & 1) s->load_current = (unsigned int) v;
     if (item_u64(1, RMI$_COM, 4, &v) & 1) s->load_computable = (unsigned int) v;
     if (item_u64(1, RMI$_COMO, 4, &v) & 1) s->load_computable_out = (unsigned int) v;
@@ -1618,6 +1640,110 @@ int st_plat_system(st_system *s, st_err *e)
         if (item_u64(0, SYI$_CLUSTER_NODES, 8, &v) & 1) s->cluster_nodes = (unsigned int) v;
         if (item_u64(0, SYI$_CLUSTER_VOTES, 8, &v) & 1) s->cluster_votes = (unsigned int) v;
         if (item_u64(0, SYI$_CLUSTER_QUORUM, 8, &v) & 1) s->cluster_quorum = (unsigned int) v;
+    }
+    return 0;
+}
+
+/* ================================================================ monitoring (D21)
+
+   The counters MONITOR shows, from $GETRMI, which needs no privilege (probe_rmi,
+   NOTES.md). Item sizes as the probe found them: the mode counters and the memory
+   lists 8 bytes, the rest exactly 4 (8 gives BADPARAM). Every item goes in one call,
+   so the mode counters are read together; each return length is a longword, which
+   $GETRMI writes in full. Should OpenVMS refuse the list (an item this version does
+   not know), each item is asked for alone and a refused one stays zero. */
+
+typedef struct { unsigned short code, size; int kind, index; } mon_item;
+enum { MK_MODE, MK_STATE, MK_COUNTER, MK_PROCS, MK_FREE, MK_MOD };
+
+static const mon_item mon_items[] = {
+    { RMI$_CPUINTSTK, 8, MK_MODE, ST_MON_INTERRUPT }, { RMI$_CPUMPSYNCH, 8, MK_MODE, ST_MON_MPSYNCH },
+    { RMI$_CPUKERNEL, 8, MK_MODE, ST_MON_KERNEL },    { RMI$_CPUEXEC, 8, MK_MODE, ST_MON_EXEC },
+    { RMI$_CPUSUPER, 8, MK_MODE, ST_MON_SUPER },      { RMI$_CPUUSER, 8, MK_MODE, ST_MON_USER },
+    { RMI$_CPUIDLE, 8, MK_MODE, ST_MON_IDLE },
+    { RMI$_CUR, 4, MK_STATE, ST_MON_CUR },     { RMI$_COM, 4, MK_STATE, ST_MON_COM },
+    { RMI$_COMO, 4, MK_STATE, ST_MON_COMO },   { RMI$_LEF, 4, MK_STATE, ST_MON_LEF },
+    { RMI$_LEFO, 4, MK_STATE, ST_MON_LEFO },   { RMI$_HIB, 4, MK_STATE, ST_MON_HIB },
+    { RMI$_HIBO, 4, MK_STATE, ST_MON_HIBO },   { RMI$_SUSP, 4, MK_STATE, ST_MON_SUSP },
+    { RMI$_SUSPO, 4, MK_STATE, ST_MON_SUSPO }, { RMI$_PFW, 4, MK_STATE, ST_MON_PFW },
+    { RMI$_MWAIT, 4, MK_STATE, ST_MON_MWAIT }, { RMI$_CEF, 4, MK_STATE, ST_MON_CEF },
+    { RMI$_COLPG, 4, MK_STATE, ST_MON_COLPG }, { RMI$_FPG, 4, MK_STATE, ST_MON_FPG },
+    { RMI$_PROCS, 4, MK_PROCS, 0 },
+    { RMI$_FRLIST, 8, MK_FREE, 0 }, { RMI$_MODLIST, 8, MK_MOD, 0 },
+    { RMI$_FAULTS, 4, MK_COUNTER, ST_MON_FAULTS },   { RMI$_PREADIO, 4, MK_COUNTER, ST_MON_PREADIO },
+    { RMI$_PWRITIO, 4, MK_COUNTER, ST_MON_PWRITIO }, { RMI$_ISWPCNT, 4, MK_COUNTER, ST_MON_ISWPCNT },
+    { RMI$_DIRIO, 4, MK_COUNTER, ST_MON_DIRIO },     { RMI$_BUFIO, 4, MK_COUNTER, ST_MON_BUFIO },
+    { RMI$_MBREADS, 4, MK_COUNTER, ST_MON_MBREADS }, { RMI$_MBWRITES, 4, MK_COUNTER, ST_MON_MBWRITES },
+};
+#define MON_NITEMS (sizeof mon_items / sizeof mon_items[0])
+
+static unsigned int rmi_list(st_ile3 *it)
+{
+    unsigned int iosb[2] = { 0, 0 }, st;
+    st = sys$getrmi(0, 0, 0, it, iosb, 0, 0);
+    if (st & 1) st = sys$synch(0, iosb);
+    if (st & 1) st = iosb[0] & 0xFFFF;
+    return st;
+}
+
+int st_plat_monitor(st_monitor *m, st_err *e)
+{
+    static unsigned long long val[MON_NITEMS];
+    static unsigned int len[MON_NITEMS], ok[MON_NITEMS];
+    static st_ile3 it[MON_NITEMS + 1];
+    unsigned long long pages = 0, pagesize = 0, v;
+    char name[65], sysdev[65], lv[32];
+    unsigned int ctx[2] = { 0, 0 };
+    size_t i;
+    int sys, any = 0;
+
+    memset(m, 0, sizeof *m);
+    memset(val, 0, sizeof val);
+    memset(len, 0, sizeof len);
+    for (i = 0; i < MON_NITEMS; i++)
+        item(&it[i], mon_items[i].code, &val[i], mon_items[i].size, (unsigned short *) &len[i]);
+    item_end(&it[MON_NITEMS]);
+    if (rmi_list(it) & 1) {
+        for (i = 0; i < MON_NITEMS; i++) ok[i] = 1;
+    } else {
+        for (i = 0; i < MON_NITEMS; i++) {   /* one at a time: a refused item stays zero */
+            st_ile3 one[2];
+            one[0] = it[i];
+            item_end(&one[1]);
+            val[i] = 0;
+            ok[i] = rmi_list(one) & 1;
+        }
+    }
+    m->sampled_at_ms = now_utc_ms();
+    if (item_u64(0, SYI$_ACTIVECPU_CNT, 8, &v) & 1) m->cpus = (unsigned int) v;
+    item_u64(0, SYI$_MEMSIZE, 8, &pages);
+    item_u64(0, SYI$_PAGE_SIZE, 8, &pagesize);
+    m->mem_total = pages * pagesize;
+    for (i = 0; i < MON_NITEMS; i++) {
+        unsigned long long x = val[i];   /* little-endian: a 4-byte item is the low half */
+        if (!ok[i]) continue;
+        any = 1;
+        switch (mon_items[i].kind) {
+        case MK_MODE:    m->modes[mon_items[i].index] = (long long) x; break;
+        case MK_STATE:   m->states[mon_items[i].index] = (unsigned int) x; break;
+        case MK_COUNTER: m->counters[mon_items[i].index] = (unsigned int) x; break;
+        case MK_PROCS:   m->processes = (unsigned int) x; break;
+        case MK_FREE:    m->mem_free = x * pagesize; break;
+        default:         m->mem_modified = x * pagesize; break;
+        }
+    }
+    if (!any) { set_text(e, ST_E_INTERNAL, "$GETRMI failed"); return -1; }
+
+    dvi_str("SYS$SYSDEVICE", DVI$_FULLDEVNAM, sysdev, sizeof sysdev);
+    while (m->ndisks < ST_MAX_DISKS &&
+           disk_next(ctx, sysdev, name, lv, m->disks[m->ndisks].device, sizeof m->disks[0].device, &sys)) {
+        m->disks[m->ndisks].operations = dvi_u32(name, DVI$_OPCNT);
+        if (sys && m->ndisks) {   /* the system disk first */
+            st_mon_disk t = m->disks[m->ndisks];
+            memmove(&m->disks[1], &m->disks[0], (size_t) m->ndisks * sizeof t);
+            m->disks[0] = t;
+        }
+        m->ndisks++;
     }
     return 0;
 }

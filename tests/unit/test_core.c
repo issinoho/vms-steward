@@ -2095,6 +2095,50 @@ static void test_products(void)
     CHECK(!st_plat_persona_active(), "no persona left active");
 }
 
+/* Monitoring (Phase 13, D21): raw counters, and only the processes the viewer may see. */
+static void test_monitor(void)
+{
+    result b;
+    hdr t[3], adm[3];
+    char tc[100], tcsrf[65], ac[100], acsrf[65];
+    const char *body;
+    long long first = 0;
+
+    sign_in("{\"username\":\"steward_test\",\"password\":\"test-pass\"}", tc, sizeof tc, tcsrf);
+    t[0].n = "HTTP_COOKIE"; t[0].v = tc; t[1].n = "HTTP_X_STEWARD_CSRF"; t[1].v = tcsrf; t[2].n = NULL;
+    call("GET", "/api/v1/monitor", t, NULL, &b);
+    body = b.resp.body.data;
+    CHECK(b.resp.status == 200 && strstr(body, "\"cpus\":4") && strstr(body, "\"modes\":{\"interrupt\":0,\"mp_synch\":") &&
+          strstr(body, "\"idle\":") && strstr(body, "\"processes\":58"), "the CPU modes, and every process on the system counted");
+    CHECK(strstr(body, "\"states\":{\"CUR\":1,\"COM\":") && strstr(body, "\"FPG\":0}") &&
+          strstr(body, "\"counters\":{\"page_faults\":") && strstr(body, "\"mailbox_writes\":"), "states and counters, by MONITOR's names");
+    CHECK(strstr(body, "\"disks\":[{\"device\":\"DKA0:\",\"operations\":") && strstr(body, "\"memory\":{\"total\":8589934592"),
+          "each disk's operations, the system disk first; memory");
+    CHECK(strstr(body, "\"visible\":[{\"pid\":") && strstr(body, "\"username\":\"STEWARD_TEST\"") &&
+          !strstr(body, "\"username\":\"WEBMASTER\"") && !strstr(body, "\"username\":\"SYSTEM\"") &&
+          strstr(body, "\"truncated\":false"), "without WORLD, only your own processes");
+    {
+        const char *at = strstr(body, "\"sampled_at_ms\":");
+        if (at) first = atoll(at + 16);
+    }
+    st_resp_free(&b.resp);
+
+    sign_in("{\"username\":\"steward_adm\",\"password\":\"admin-pass\"}", ac, sizeof ac, acsrf);
+    adm[0].n = "HTTP_COOKIE"; adm[0].v = ac; adm[1].n = "HTTP_X_STEWARD_CSRF"; adm[1].v = acsrf; adm[2].n = NULL;
+    call("PUT", "/api/v1/session/privileges", adm, "{\"enabled\":[\"world\"]}", &b);
+    st_resp_free(&b.resp);
+    call("GET", "/api/v1/monitor", adm, NULL, &b);
+    body = b.resp.body.data;
+    CHECK(b.resp.status == 200 && strstr(body, "\"username\":\"SYSTEM\"") && strstr(body, "\"name\":\"OPCOM\""),
+          "with WORLD, everyone's (WEBMASTER's was stopped by the Phase 8b test)");
+    {
+        const char *at = strstr(body, "\"sampled_at_ms\":");
+        CHECK(at && first > 0 && atoll(at + 16) >= first, "each reading stamped, in order");
+    }
+    st_resp_free(&b.resp);
+    CHECK(!st_plat_persona_active(), "no persona left active");
+}
+
 int main(void)
 {
     st_app_config cfg;
@@ -2132,6 +2176,7 @@ int main(void)
     test_sysgen();
     test_licenses();
     test_products();
+    test_monitor();
     test_create();
     test_gateway();
     printf("%d checks, %d failed\n", checks, failures);

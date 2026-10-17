@@ -16,6 +16,7 @@ import { queuesView, queueView } from './queues.js';
 import { sysgenView } from './sysgen.js';
 import { licensesView } from './licenses.js';
 import { productsView } from './products.js';
+import { monitorView, stopMonitor } from './monitor.js';
 
 const app = document.getElementById('app');
 let me = null;           // whoami, while signed in
@@ -34,6 +35,7 @@ const AREAS = [
   { hash: '#/sysgen', label: 'System parameters', ready: true },
   { hash: '#/licenses', label: 'Licences', ready: true },
   { hash: '#/products', label: 'Installed products', ready: true },
+  { hash: '#/monitor', label: 'Monitoring', ready: true },
 ];
 
 // The theme switch (theme.js): Auto, Light, Dark in turn.
@@ -214,6 +216,7 @@ const VIEWS = {
   sysgen: (ctx) => sysgenView(ctx),
   licenses: (ctx) => licensesView(ctx),
   products: (ctx) => productsView(ctx),
+  monitor: (ctx) => monitorView(ctx),
 };
 
 let routeSeq = 0;
@@ -226,6 +229,7 @@ async function route() {
   const view = VIEWS[area];
   if (!view || !AREAS.find((a) => a.hash === `#/${area}` && a.ready)) { location.hash = '#/dashboard'; return; }
   stopDashboard();   // its refresh belongs to its page
+  stopMonitor();     // and monitoring's to its
   const seq = ++routeSeq;
   const ctx = { me, touched: armIdle, refresh: () => route(), authLost: () => expired('Your session has ended. Sign in again.') };
   let content;
@@ -254,6 +258,7 @@ function armIdle() {
 
 function expired(note) {
   stopDashboard();
+  stopMonitor();
   me = null;
   clearTimeout(idleTimer);
   signInView(note);
@@ -261,6 +266,7 @@ function expired(note) {
 
 async function signOut() {
   stopDashboard();
+  stopMonitor();
   const me0 = me?.username || '';
   try { await api.signOut(); } catch { /* ending anyway */ }
   me = null;

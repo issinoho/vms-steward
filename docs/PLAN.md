@@ -191,7 +191,7 @@ helper (the account needs SYSLCK authorized; PRODUCT switches it on), and VMSINS
 history read in-process. 12b (install and remove) not yet decided. See
 `docs/PHASE12.md`.
 
-**Phase 13: monitoring** (D21, proposed): planning. `$GETRMI` counters, readable by
+**Phase 13: monitoring** (D21, approved 2026-10-17): 13a being built. `$GETRMI` counters, readable by
 anyone, polled by the page, history kept in the browser. Probes done; questions for
 the user in `docs/PHASE13.md`, which is where to pick up.
 

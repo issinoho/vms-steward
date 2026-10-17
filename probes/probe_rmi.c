@@ -38,6 +38,9 @@ static const rmi_item items[] = {
     { "PROCS", RMI$_PROCS, 4 }, { "CUR", RMI$_CUR, 4 }, { "COM", RMI$_COM, 4 },
     { "COMO", RMI$_COMO, 4 }, { "LEF", RMI$_LEF, 4 }, { "HIB", RMI$_HIB, 4 },
     { "PFW", RMI$_PFW, 4 }, { "MWAIT", RMI$_MWAIT, 4 },
+    { "LEFO", RMI$_LEFO, 4 }, { "HIBO", RMI$_HIBO, 4 }, { "SUSP", RMI$_SUSP, 4 },
+    { "SUSPO", RMI$_SUSPO, 4 }, { "CEF", RMI$_CEF, 4 }, { "COLPG", RMI$_COLPG, 4 },
+    { "FPG", RMI$_FPG, 4 },
     { "PROCS8", RMI$_PROCS, 8 }, { "DIRIO8", RMI$_DIRIO, 8 },   /* BADPARAM: they want 4 */
 };
 #define NITEMS (sizeof items / sizeof items[0])
@@ -86,6 +89,26 @@ static void layout(void)
     }
 }
 
+/* Every item in one call, each with a longword return length, as st_plat_monitor
+   asks (the pair with 8 bytes that want 4 left out). */
+static void batch(void)
+{
+    static unsigned long long v[NITEMS];
+    static unsigned int len[NITEMS];
+    static ile3 it[NITEMS + 1];
+    unsigned int iosb[2] = { 0, 0 }, st;
+    size_t i, n = 0;
+    for (i = 0; i < NITEMS; i++) {
+        if (!strcmp(items[i].name, "PROCS8") || !strcmp(items[i].name, "DIRIO8")) continue;
+        ile3_set(&it[n++], items[i].code, &v[i], items[i].size, (unsigned short *) &len[i]);
+    }
+    ile3_end(&it[n]);
+    st = sys$getrmi(efn, 0, 0, it, iosb, 0, 0);
+    if (st & 1) st = sys$synch(efn, iosb);
+    if (st & 1) st = iosb[0] & 0xFFFF;
+    printf("%u items in one $GETRMI: %s; CPUIDLE %llu, PROCS %llu\n", (unsigned) n, msg(st), v[6], v[19]);
+}
+
 static void read_all(unsigned long long v[], unsigned int st[])
 {
     size_t i;
@@ -128,6 +151,7 @@ int main(int argc, char **argv)
     if (secs <= 0) secs = 5.0f;
     if (!(lib$get_ef(&efn) & 1)) { printf("no event flag\n"); return 1; }
     layout();
+    batch();
     if (argc > 2) return 0;   /* "probe_rmi 5 layout": that only */
     read_all(a, sa);
     lib$wait(&secs, 0, &float_type);

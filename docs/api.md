@@ -834,6 +834,43 @@ shown.
 - Dates are as OpenVMS prints them, in the node's local time.
 - `truncated`: more than 5,000 entries in a part.
 
+## Monitoring (Phase 13, D21): read-only
+
+### `GET api/v1/monitor`
+
+One reading of the counters MONITOR shows, from `$GETRMI` and `$GETDVI`, which anyone
+may read, and the processes **you** may see (as `GET api/v1/processes`). Raw counters,
+as OpenVMS keeps them from boot, and when they were read: rates come from two readings,
+and the page works them out and keeps the history (`www/js/rates.js`). Mark a poll
+with `X-Steward-Background: 1` so it does not count as activity, as for
+`api/v1/system`.
+
+```json
+{"sampled_at_ms": 1792202276985, "cpus": 2,
+ "modes": {"interrupt": -1858332, "mp_synch": 27036, "kernel": 7908980, "executive": 548076,
+           "supervisor": 26870, "user": 815117, "idle": 49936073},
+ "states": {"CUR": 2, "COM": 0, "COMO": 0, "LEF": 50, "LEFO": 0, "HIB": 54, "HIBO": 0,
+            "SUSP": 0, "SUSPO": 0, "PFW": 0, "MWAIT": 0, "CEF": 0, "COLPG": 0, "FPG": 0},
+ "processes": 105,
+ "memory": {"total": 7620722688, "free": 5068750848, "modified": 20324352},
+ "counters": {"page_faults": 53270380, "page_read_io": 4728534, "page_write_io": 0, "inswaps": 0,
+              "direct_io": 14061387, "buffered_io": 96706846, "mailbox_reads": 13695616,
+              "mailbox_writes": 13625570},
+ "disks": [{"device": "DKA0:", "operations": 2146577}],
+ "visible": [{"pid": "00007520", "name": "STEWARD_TEST", "username": "STEWARD_TEST", "state": "LEF",
+              "cpu_ms": 350, "direct_io": 120, "buffered_io": 300, "page_faults": 800}],
+ "truncated": false}
+```
+
+- `modes`: ticks summed over the CPUs, 100 a second a CPU. `interrupt` can be negative
+  (it is on the x86 VM); the page shows it as 0, as MONITOR does.
+- `states`: processes in each state now, by MONITOR's and SHOW SYSTEM's names; their
+  total need not equal `processes` exactly.
+- `counters` and `operations` wrap at 2^32.
+- `disks`: those the dashboard lists, the system disk first.
+- `visible`: the processes `$GETJPI` shows you (your own; your group's with GROUP;
+  everyone's with WORLD), never the one serving the request; `truncated` past 4,000.
+
 ## Coming
 
 Monitoring, the error log and a terminal (`docs/PLAN.md`).

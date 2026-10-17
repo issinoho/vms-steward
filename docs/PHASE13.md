@@ -1,6 +1,7 @@
 # Phase 13: monitoring
 
-**Status: planning (2026-10-17).** D21 proposed; questions for the user below.
+**Status: 13a being built (2026-10-17).** The user approved D21 and the suggested
+answers below ("go").
 
 CPU, memory, paging and I/O over time, as MONITOR shows them, in the browser. The
 dashboard (Phase 5) already shows one snapshot: CPU busy between two polls, memory,
@@ -66,6 +67,8 @@ Alternatives considered:
    probe further first?
 
 Suggested answers: 1 in the browser; 2 yes; 3 include; 4 leave out for now.
+
+Answers (2026-10-17, "go"): the suggestions, all four.
 
 ## Exit (13a)
 

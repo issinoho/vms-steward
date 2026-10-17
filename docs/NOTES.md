@@ -509,3 +509,25 @@ simply (off by the negative interrupt count), so its layout is not settled.
 `RMI$_DISKS` gives BADPARAM; `F$GETDVI(...,"OPCNT")` reads a disk's operation count
 unprivileged. 29 items, one call each, take well under a millisecond of CPU. Nothing
 on the node records history: no MONITOR recording, no TDC or T4.
+
+**`$GETRMI` takes every monitoring item in one call** (Phase 13, 2026-10-17,
+`probes/probe_rmi.c` batch pass, x86). 34 items in one item list, each with a longword
+return length, returned SS$_NORMAL; the state items `LEFO`, `HIBO`, `SUSP`, `SUSPO`,
+`CEF`, `COLPG` and `FPG` take 4 bytes like the rest. `st_plat_monitor` reads its 32 in
+one call, so the mode counters are read together: over a 21 s window their changes
+added to within 2% of the CPUs' ticks (`phase13_live.py`).
+
+**The process-state counts and `RMI$_PROCS` do not quite agree** (Phase 13,
+2026-10-17). With 105 processes (`RMI$_PROCS`, and MONITOR's Process Count), the 14
+state counts added to 109; MONITOR STATES, run between two such readings, showed LEF
+50, HIB 54 and Current 2 (106). So the states are shown as OpenVMS counts them, and
+the live test allows a few either way.
+
+**Monitoring agrees with MONITOR over the same window** (Phase 13, 2026-10-17,
+`tests/vms/phase13_live.py x86`). A reading through `api_probe`, `MONITOR
+MODES,SYSTEM,IO/SUMMARY` for 20 s, and another reading, in one session (21.4 s apart):
+idle 46.5 against MONITOR's 48.8 (percent summed over CPUs), buffered I/O 2,570/s
+against 2,621, page faults and the free list within a few per cent. With a 6 s MONITOR
+window the 1.6 s of starting the images either side, on a busy node, put idle 21
+points out; 20 s is long enough. The node was busy throughout with a lighttpd in batch
+from another work directory (not Steward's, not touched).

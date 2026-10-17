@@ -94,6 +94,8 @@ export const api = {
   // Phase 11: licences, as SHOW LICENSE and LICENSE LIST (D19).
   licenses: () => call('GET', 'licenses'),
   products: () => call('GET', 'products'),
+  // Phase 13: one reading of the counters MONITOR shows (D21); background as for system.
+  monitor: (background) => call('GET', 'monitor', undefined, background ? { 'X-Steward-Background': '1' } : undefined),
   // Phase 2: users and rights identifiers, read-only. Lists take
   // { filter, after, limit } (and type for identifiers) and return { ..., next }.
   users: (q) => call('GET', `users${query(q)}`),
