@@ -225,3 +225,14 @@ Kit T0.15-0 (0.15.0), built by `tools/kit.sh x86` (509 native checks), SHA-256
 `aab2e0f65e840471ff32a4c94c669ce2cb0554c9ef5cd72af45dee3ec35e6ef7`, for the browser
 checks. Its RESTART uses the new pool procedure, so the first START with it purges
 `[.RUN.LOGS]` to 10 of each.
+
+The user's browser check of 0.15.0 found deleting a crash listing failed (RMS-E-FNF):
+`$ERASE` and `$RENAME` act on a search list's first directory (NOTES.md). Fixed by
+finding each file first (`phys_spec`); the live test now uses a search list of two
+scratch directories, as SYS$ERRORLOG is. Resolving first also gives a viewer without
+access the real PRV instead of FNF. After the fix: `phase14_live.py` 19 ok,
+`phase14b_live.py` 16 ok, 509 native checks.
+
+Kit T0.15-2 (0.15.2), built by `tools/kit.sh x86`, SHA-256
+`823b51066cb12cdd62e4afd7790702d3a19715d76c989ec2f64fd389ba178156`, for the browser
+checks. (0.15.1 was built before the last change and is not for installing.)
