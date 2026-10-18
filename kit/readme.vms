@@ -42,8 +42,8 @@ the request, so OpenVMS decides what you may see and change, exactly as at a
 terminal. Steward has no permissions of its own. Source, design and security
 records: https://github.com/issinoho/vms-steward
 
-This is a test release. It has been exercised in service on one x86-64 system; on
-IA64 it builds and passes its unit tests but has not yet been run in service. Please
+This is a test release. It has been exercised in service on one x86-64 system and,
+with fewer checks so far, on one IA64 system. Please
 try it on a test system first, and report problems at the address above.
 
 Requirements: OpenVMS @ARCH@ (x86-64 V9.2-x, or IA64 V8.4-2L3), VSI TCP/IP Services,
@@ -202,7 +202,6 @@ recorded.
 
 Notes for this test release
 ---------------------------
-- x86-64 only for now; IA64 will follow.
 - Dates are shown in the browser's time zone. OpenVMS stores UAF dates in local
   time and keeps only the current offset from UTC, so a date from the other side
   of a daylight-saving change shows an hour out, as in other OpenVMS tools.

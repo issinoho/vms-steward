@@ -28,8 +28,8 @@ product.
 - **D3 Targets:** x86-64 first, built with VSI C, `/POINTER_SIZE=32` and
   `SSL3$LIBCRYPTO_SHR32`, which is vmsguard's proven combination. This was revised from clang
   during Phase 0 because system-service item lists are 32-bit structures. The code is C99
-  so IA64 stays cheap later. (The IA64 port was tried on 2026-10-16 and is on hold:
-  docs/IA64.md.)
+  so IA64 stays cheap later. (The IA64 port was tried on 2026-10-16, put on hold, and
+  brought up to date with 0.16.0 on 2026-10-18: docs/IA64.md.)
 - **D7 Reverse proxies:** must work behind nginx proxy manager. `X-Forwarded-*` is
   believed only from configured trusted proxies, and the front end uses relative URLs.
 - **D8 Security auditing of the code:** `make audit` and CI on every push (analyzers,
