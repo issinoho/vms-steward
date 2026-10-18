@@ -66,7 +66,8 @@
     var img = document.getElementById('shot-img'), cap = document.getElementById('shot-cap');
     var sizes = { dashboard: [1280, 920], users: [1280, 820], user: [1280, 1340], modify: [1280, 1000], account: [1280, 720],
                   ident: [1280, 760], access: [1280, 900], logicals: [1280, 900], processes: [1280, 900],
-                  process: [1280, 1100], queues: [1280, 800], sysgen: [1280, 1000], signin: [1280, 760] };
+                  process: [1280, 1100], queues: [1280, 800], sysgen: [1280, 1000], licenses: [1280, 900],
+                  products: [1280, 1000], monitor: [1280, 1000], errorlog: [1280, 1000], signin: [1280, 760] };
     Array.prototype.forEach.call(buttons, function (b) {
       b.addEventListener('click', function () {
         Array.prototype.forEach.call(buttons, function (o) { o.setAttribute('aria-selected', o === b ? 'true' : 'false'); });
@@ -80,25 +81,37 @@
   }
 
   // ---------------------------------------------------------------- the latest release
+  // A release carries one kit per architecture: ISSINOHO-X86VMS-STEWARD-... and
+  // ISSINOHO-I64VMS-STEWARD-... Each button gets its own; one with no kit in the
+  // release keeps pointing at the releases page.
+  var KITS = [
+    { re: /X86VMS.*\.PCSI$/i, ids: ['download', 'download2'], label: 'x86-64' },
+    { re: /I64VMS.*\.PCSI$/i, ids: ['download-i64', 'download2-i64'], label: 'IA64' }
+  ];
+
   function release() {
     var out = document.getElementById('release');
     fetch('https://api.github.com/repos/issinoho/vms-steward/releases/latest', { headers: { Accept: 'application/vnd.github+json' } })
       .then(function (r) { return r.ok ? r.json() : Promise.reject(r.status); })
       .then(function (rel) {
-        var kit = (rel.assets || []).filter(function (a) { return /\.PCSI$/i.test(a.name); })[0];
-        var sums = (rel.assets || []).filter(function (a) { return a.name === 'SHA256SUMS'; })[0];
-        if (kit) {
-          ['download', 'download2'].forEach(function (id) {
+        var assets = rel.assets || [];
+        var sums = assets.filter(function (a) { return a.name === 'SHA256SUMS'; })[0];
+        var found = 0;
+        KITS.forEach(function (k) {
+          var kit = assets.filter(function (a) { return k.re.test(a.name); })[0];
+          if (!kit) return;
+          found++;
+          k.ids.forEach(function (id) {
             var a = document.getElementById(id);
-            if (a) { a.href = kit.browser_download_url; a.textContent = 'Download ' + rel.tag_name; }
+            if (a) { a.href = kit.browser_download_url; a.textContent = 'Download for ' + k.label; }
           });
-        }
+        });
         var d = new Date(rel.published_at);
         var when = isNaN(d) ? '' : ' · ' + d.toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' });
         out.textContent = '';
         var t = document.createElement('a');
         t.href = rel.html_url; t.textContent = rel.tag_name + ' release notes';
-        out.appendChild(document.createTextNode('Latest: ' + (kit ? kit.name : rel.tag_name) + when + ' · '));
+        out.appendChild(document.createTextNode('Latest: ' + rel.tag_name + (found ? ', ' + found + (found === 1 ? ' kit' : ' kits') : '') + when + ' · '));
         out.appendChild(t);
         if (sums) {
           out.appendChild(document.createTextNode(' · '));

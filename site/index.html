@@ -37,19 +37,21 @@
 <!-- ============================================================ HERO -->
 <section class="hero">
   <div class="hero-copy">
-    <p class="eyebrow"><span class="led" aria-hidden="true"></span> Early test release &middot; OpenVMS x86-64</p>
+    <p class="eyebrow"><span class="led" aria-hidden="true"></span> Early test release &middot; OpenVMS x86-64 and IA64</p>
     <h1>OpenVMS system management, <span class="amber">in your browser.</span></h1>
     <p class="lede">Steward gives your OpenVMS systems a fast, modern web console for
-      users and rights, access history, logical names, processes, queues and system
-      parameters, and lets OpenVMS itself decide who may do what.
+      users and rights, access history, logical names, processes, queues, system
+      parameters, licences, installed products, monitoring and the error log, and lets
+      OpenVMS itself decide who may do what.
       Sign in with your OpenVMS account. Every request runs <em>as you</em>.</p>
     <div class="cta">
-      <a class="btn primary" id="download" href="https://github.com/issinoho/vms-steward/releases/latest">Download the kit</a>
+      <a class="btn primary" id="download" href="https://github.com/issinoho/vms-steward/releases/latest">Download for x86-64</a>
+      <a class="btn primary" id="download-i64" href="https://github.com/issinoho/vms-steward/releases/latest">Download for IA64</a>
       <a class="btn ghost" href="https://github.com/issinoho/vms-steward">View the source</a>
     </div>
     <ul class="facts" aria-label="At a glance">
       <li><b>Native</b><span>C99 on OpenVMS</span></li>
-      <li><b>PCSI</b><span>one kit, one command</span></li>
+      <li><b>x86 + IA64</b><span>a PCSI kit for each</span></li>
       <li><b>MIT</b><span>open source</span></li>
     </ul>
     <p class="release" id="release" aria-live="polite"></p>
@@ -72,10 +74,14 @@
     <span>SET PROCESS/PRIVILEGE</span><span>BREAK-IN EVASION</span><span>PCSI</span><span>LK201</span>
     <span>%STEWARD-S-MDFYMSG</span><span>RMS</span><span>[362,1]</span><span>DCL</span>
     <span>SHOW SYSTEM</span><span>$GETQUI</span><span>SHOW LOGICAL</span><span>SYSGEN</span>
+    <span>LICENSE LIST</span><span>PRODUCT INSTALL</span><span>$GETRMI</span><span>MONITOR</span>
+    <span>ANALYZE/ERROR_LOG/ELV</span><span>CLUE</span><span>OPCOM</span><span>I64VMS</span>
     <span>SYS$ACM</span><span>$PERSONA_CREATE</span><span>AUTHORIZE</span><span>RIGHTSLIST</span>
     <span>SET PROCESS/PRIVILEGE</span><span>BREAK-IN EVASION</span><span>PCSI</span><span>LK201</span>
     <span>%STEWARD-S-MDFYMSG</span><span>RMS</span><span>[362,1]</span><span>DCL</span>
     <span>SHOW SYSTEM</span><span>$GETQUI</span><span>SHOW LOGICAL</span><span>SYSGEN</span>
+    <span>LICENSE LIST</span><span>PRODUCT INSTALL</span><span>$GETRMI</span><span>MONITOR</span>
+    <span>ANALYZE/ERROR_LOG/ELV</span><span>CLUE</span><span>OPCOM</span><span>I64VMS</span>
   </div>
 </div>
 
@@ -105,7 +111,8 @@
     <article class="card feature">
       <div class="keycap" aria-hidden="true">DCL</div>
       <h3>It speaks VMS</h3>
-      <p>Screens laid out as AUTHORIZE, SHOW SYSTEM, SHOW QUEUE and SYSGEN lay them out.
+      <p>Screens laid out as AUTHORIZE, SHOW SYSTEM, SHOW QUEUE, SYSGEN, LICENSE, PRODUCT
+        and MONITOR lay them out.
         DCL wildcards in every filter.
         Messages in <code>%FACILITY-S-IDENT</code> form, with the system's own text when
         OpenVMS says no. Privileges you switch on and off like
@@ -114,7 +121,8 @@
     <article class="card feature">
       <div class="keycap" aria-hidden="true">C99</div>
       <h3>Native, with no runtime to install</h3>
-      <p>A small C program on OpenVMS, run as a pool of FastCGI processes behind lighttpd.
+      <p>A small C program, run as a pool of FastCGI processes behind lighttpd, built from
+        the same source for OpenVMS x86-64 and IA64 (Integrity).
         No Java, no Node.js, no Python on the server. One PCSI kit and one configuration
         procedure, with startup and shutdown hooks like any layered product.</p>
     </article>
@@ -155,6 +163,10 @@
     <button role="tab" aria-selected="false" aria-controls="shot" data-shot="process" data-cap="One process, as SHOW PROCESS/ALL: state, image, CPU and I/O, privileges, rights and every quota with what is left. Stop it, as STOP/ID, if OpenVMS lets you.">Process</button>
     <button role="tab" aria-selected="false" aria-controls="shot" data-shot="queues" data-cap="Batch and print queues, as SHOW QUEUE. Open one for its jobs; hold, release and delete jobs, stop and start queues, with the queue manager deciding who may.">Queues</button>
     <button role="tab" aria-selected="false" aria-controls="shot" data-shot="sysgen" data-cap="System parameters, as SYSGEN SHOW/ALL prints them: current, default, limits and unit, with values off their default marked. Read-only.">System parameters</button>
+    <button role="tab" aria-selected="false" aria-controls="shot" data-shot="licenses" data-cap="Licences: what is loaded on this node (SHOW LICENSE), its charge, and the licence database (LICENSE LIST) where OpenVMS lets you read it. Read-only.">Licences</button>
+    <button role="tab" aria-selected="false" aria-controls="shot" data-shot="products" data-cap="Installed products, as PRODUCT SHOW PRODUCT lists them, with PCSI's history and VMSINSTAL's. Find kits in a directory and install or remove them through PCSI, run as a batch job under your own name.">Installed products</button>
+    <button role="tab" aria-selected="false" aria-controls="shot" data-shot="monitor" data-cap="Monitoring: CPU by mode, process states, memory, paging, I/O and disks, as MONITOR shows them. Live every few seconds, or the last 6 hours, 24 hours or 7 days, recorded on the node.">Monitoring</button>
+    <button role="tab" aria-selected="false" aria-controls="shot" data-shot="errorlog" data-cap="The error log: device error counts, the events in ERRLOG.SYS translated by ELV, CLUE's crash summaries and OPCOM's log. Start a new error log and delete old crash listings where OpenVMS lets you.">Error log</button>
     <button role="tab" aria-selected="false" aria-controls="shot" data-shot="signin" data-cap="Sign in with your OpenVMS username and password, checked by SYS$ACM. An expired password can be changed right here.">Sign in</button>
   </div>
   <figure class="shot" id="shot" role="tabpanel">
@@ -171,7 +183,7 @@
   <p class="kicker">03 / How it works</p>
   <h2>Small moving parts. Each one checked.</h2>
   <div class="how">
-    <div class="term-box" role="img" aria-label="Browser, then an HTTPS reverse proxy, then lighttpd, then the Steward pool, then SYS$ACM and your persona, then the system: SYSUAF, RIGHTSLIST, processes, queues, logical names and system parameters">
+    <div class="term-box" role="img" aria-label="Browser, then an HTTPS reverse proxy, then lighttpd, then the Steward pool, then SYS$ACM and your persona, then the system: SYSUAF, RIGHTSLIST, processes, queues, logical names, system parameters, licences, products, performance counters and the error log">
 <pre><span class="dim">browser</span> <span class="amber">──HTTPS──▶</span> reverse proxy <span class="dim">(optional, ends TLS)</span>
                  │
                  ▼
@@ -184,10 +196,12 @@
    <b>SYS$ACM</b>              <b>your persona</b>
   password, expiry,     $GETUAI  $SETUAI  RMS
   break-in evasion      $GETJPI  $GETQUI  $SNDJBC
-                        $DELPRC  SHOW LOGICAL  SYSGEN …
+                        $DELPRC  $GETRMI  SYSGEN
+                        LICENSE  PRODUCT  ELV …
                              │
                 <span class="amber">SYSUAF · RIGHTSLIST · processes</span>
-                <span class="amber">queues · logical names · parameters</span></pre>
+                <span class="amber">queues · logical names · parameters</span>
+                <span class="amber">licences · products · counters · errors</span></pre>
     </div>
     <ol class="steps">
       <li><b>You sign in.</b> <code>SYS$ACM</code> checks your password, so expiry, DISUSER,
@@ -210,7 +224,7 @@
 <!-- ============================================================ TODAY / ROADMAP -->
 <section class="section" id="roadmap">
   <p class="kicker">04 / Today and next</p>
-  <h2>Users, processes, queues. The rest of the system next.</h2>
+  <h2>The whole system, on x86-64 and IA64.</h2>
   <div class="roadmap">
     <div class="col now">
       <h3><span class="pill on">In the release</span></h3>
@@ -228,6 +242,13 @@
         <li>Processes, as SHOW SYSTEM and SHOW PROCESS/ALL; stop one, as STOP/ID</li>
         <li>Batch and print queues and their jobs; hold, release and delete jobs, stop and start queues</li>
         <li>System parameters, as SYSGEN SHOW/ALL, read-only</li>
+        <li>Licences, as SHOW LICENSE and LICENSE LIST, read-only</li>
+        <li>Installed products, as PRODUCT SHOW; find, install and remove kits through PCSI</li>
+        <li><b>Monitoring:</b> CPU, process states, memory, paging, I/O and disks, live or over
+          the last week, recorded on the node; the busiest processes</li>
+        <li>The error log: device errors, ERRLOG.SYS through ELV, crash summaries, OPCOM's log;
+          start a new error log, delete old crash listings</li>
+        <li>Kits for OpenVMS x86-64 and IA64</li>
         <li>An audit log of every sign-in and change</li>
         <li>Light and dark themes</li>
       </ul>
@@ -235,10 +256,9 @@
     <div class="col next">
       <h3><span class="pill">Coming</span></h3>
       <ul class="arrows">
-        <li><b>Licences:</b> what is loaded and what is registered, read-only</li>
-        <li>Installed products</li>
-        <li>CPU and memory monitoring, the error log, a terminal in the browser</li>
-        <li>IA64 kits</li>
+        <li><b>An external review</b> and penetration test of the code and the running service</li>
+        <li>A layout made for phones</li>
+        <li>A terminal in the browser: explored, and set aside for now</li>
       </ul>
     </div>
   </div>
@@ -261,14 +281,17 @@ $ @VMSLIGHTTPD$ROOT:[COM]VMSLIGHTTPD$CONTROL RESTART</pre>
     <div class="req">
       <h3>You will need</h3>
       <ul>
-        <li>OpenVMS x86-64 V9.2</li>
+        <li>OpenVMS x86-64 V9.2-x, or OpenVMS IA64 (Integrity) V8.4-2L3</li>
         <li>TCP/IP Services and the SSL3 kit (OpenSSL 3)</li>
         <li><a href="https://github.com/issinoho/vms-lighttpd">lighttpd for OpenVMS</a>, which serves Steward</li>
         <li>HTTPS at the browser: a TLS proxy in front, or TLS in lighttpd</li>
       </ul>
       <p class="note">This is an <b>early test release</b>. Try it on a test system first, and
         <a href="https://github.com/issinoho/vms-steward/issues">tell us what you find</a>.</p>
-      <a class="btn primary" id="download2" href="https://github.com/issinoho/vms-steward/releases/latest">Download the kit</a>
+      <div class="cta">
+        <a class="btn primary" id="download2" href="https://github.com/issinoho/vms-steward/releases/latest">Download for x86-64</a>
+        <a class="btn primary" id="download2-i64" href="https://github.com/issinoho/vms-steward/releases/latest">Download for IA64</a>
+      </div>
     </div>
   </div>
 </section>
