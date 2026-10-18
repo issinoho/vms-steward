@@ -595,3 +595,8 @@ requires CMKRNL, SYSLCK, SYSPRV, and TMPMBX privileges` and `%PCSIUI-E-ABORT`, s
 or nothing: NOTES above.) Two other things the first runs showed: the job is refused
 at login, leaving no log, for an account without batch access, and SUBMIT's status
 when the login directory is missing (%X00C18324) has no message text.
+
+**IA64: large responses through lighttpd reported cleared** (2026-10-18, the user's
+observation in the browser). Logical names on `LNM$SYSTEM_TABLE`, which had failed with
+`%STEWARD-F-NOSERVER` and `NS_ERROR_NET_PARTIAL_TRANSFER` (entry of 2026-10-16 above),
+now works. Not repeated with curl from here; what changed was not recorded.
