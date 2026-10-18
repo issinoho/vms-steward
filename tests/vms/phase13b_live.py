@@ -84,9 +84,9 @@ check(st == 200 and thin.get("step_secs") == 30 and 1 <= len(thin.get("readings"
 st, nf = doc(section(out, "NOFILE"))
 check(st == 200 and nf == {"recording": False, "readings": []}, "without a recording file: recording false, nothing else", nf)
 d = section(out, "DIR")
-m = re.search(r"P13B_MONITOR\.DAT;1\s+(\d+)/(\d+)", d)
-check(m and int(m.group(1)) < 200, "the file small for a few readings (%s blocks used)" % (m.group(1) if m else "?"), d[:300])
-
+m = re.search(r"P13B_MONITOR\.DAT;\d+\s+(\d+)(KB)?/", d)   # blocks, or KB as IA64's V8.4-2L3 shows them
+used = (int(m.group(1)) * 2 if m.group(2) else int(m.group(1))) if m else None
+check(m and used < 200, "the file small for a few readings (%s blocks used)" % used, d[:300])
 out = batch("tests/vms/phase13b_pool.com")
 start, status, after = section(out, "START"), section(out, "STATUS"), section(out, "AFTER")
 check("started STEWARD_R19390 (monitoring recorder)" in start, "the pool starts the recorder, STEWARD_R19390", start[-300:])

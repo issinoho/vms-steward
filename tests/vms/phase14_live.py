@@ -86,8 +86,9 @@ try:
         ref = elv("/entry=(start:%d,end:%d)" % (n, n))
         reffields = [l for l in ref.split("\n") if re.match(r"^ {3}\S", l)]
         arch = next((f for f in fields if f.get("description") == "Hardware Architecture"), {})
+        want = ("6", "Intel IA-64") if NODE.startswith("ia64") else ("5", "Intel X86")
         check(st == 200 and doc["event"]["number"] == n and doc["event"]["type"] == "Crash Restart" and
-              len(fields) >= len(reffields) - 2 and arch.get("value") == "5" and arch.get("translated") == "Intel X86",
+              len(fields) >= len(reffields) - 2 and (arch.get("value"), arch.get("translated")) == want,
               "event %d, the latest crash restart: %d fields as ELV gives them (%d top-level lines)" % (n, len(fields), len(reffields)),
               (st, len(fields), len(reffields), arch))
         mode = next((f for f in fields if f.get("description") == "Current Mode"), {})
@@ -100,11 +101,14 @@ try:
     # ---- the crashes
     names = sorted(re.findall(r"(CLUE\$[A-Z0-9_]+_\d{6}_\d{4}\.LIS);\d+", vms("directory/nohead/notrail SYS$ERRORLOG:CLUE$*.LIS")))
     st, doc = api("STEWARD_TEST", "-", "/api/v1/crashes")
-    check(st == 403 and "privilege" in json.dumps(doc or {}).lower(), "STEWARD_TEST: the crash listings refused (PRV)", (st, doc))
+    if names:
+        check(st == 403 and "privilege" in json.dumps(doc or {}).lower(), "STEWARD_TEST: the crash listings refused (PRV)", (st, doc))
+    else:   # nothing to open, so nothing for OpenVMS to refuse (IA64, 2026-10-18)
+        check(st == 200 and doc == {"crashes": []}, "no crash listings on this node: STEWARD_TEST gets an empty list", (st, doc))
     st, doc = api("STEWARD_ADM", "SYSPRV", "/api/v1/crashes")
     got = sorted(c["name"] for c in (doc or {}).get("crashes", []))
     check(st == 200 and got == names, "with SYSPRV: the %d listings in SYS$ERRORLOG" % len(got), (got[:3], names[:3]))
-    newest = max((doc or {}).get("crashes", [{"time": ""}]), key=lambda c: c["time"])
+    newest = max((doc or {}).get("crashes") or [{"time": ""}], key=lambda c: c["time"])
     if newest.get("name"):
         refsum = vms("set process/privilege=sysprv", "search SYS$ERRORLOG:%s \"Bugcheck Type:\",\"Crash Time:\"" % newest["name"])
         m = re.search(r"Bugcheck Type:\s+(.+?)\s*$", refsum, re.M)
@@ -120,11 +124,11 @@ try:
     # ---- OPCOM's log
     st, doc = api("STEWARD_TEST", "-", "/api/v1/operator-log")
     check(st == 403, "STEWARD_TEST: OPCOM's log refused", st)
-    st, doc = api("STEWARD_ADM", "SYSPRV", "/api/v1/operator-log?stamps=1")
     tail = vms("set process/privilege=sysprv", "directory/nohead/notrail SYS$MANAGER:OPERATOR.LOG;0",
                "type/tail=40 SYS$MANAGER:OPERATOR.LOG")
     ver = re.search(r"OPERATOR\.LOG;(\d+)", tail)
     heads = re.findall(r"%{11}  OPCOM  (\d{1,2}-[A-Z]{3}-\d{4} \d\d:\d\d:\d\d)\.\d\d  %{11}", tail)
+    st, doc = api("STEWARD_ADM", "SYSPRV", "/api/v1/operator-log?stamps=1")
     msgs = (doc or {}).get("messages", [])
     check(st == 200 and ver and doc.get("file", "").endswith("OPERATOR.LOG;" + ver.group(1)),
           "with SYSPRV: the newest version, %s" % (doc or {}).get("file"), ((doc or {}).get("file"), ver and ver.group(1)))
@@ -132,7 +136,7 @@ try:
         d, mon, y = heads[-1].split()[0].split("-")
         months = "JANFEBMARAPRMAYJUNJULAUGSEPOCTNOVDEC"
         want = "%s-%02d-%02dT%s" % (y, months.index(mon) // 3 + 1, int(d), heads[-1].split()[1])
-        check(msgs[0]["time"] >= want, "newest first: %s, the file's last message %s" % (msgs[0]["time"], want))
+        check(msgs[0]["time"] >= want, "newest first: %s, at least the file's last message before the call, %s" % (msgs[0]["time"], want))
     st, doc = api("STEWARD_ADM", "SYSPRV", "/api/v1/operator-log")
     check(st == 200 and not any(m.get("stamp") for m in doc.get("messages", [])), "without stamps=1, no hourly stamps")
 
