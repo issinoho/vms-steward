@@ -600,3 +600,16 @@ when the login directory is missing (%X00C18324) has no message text.
 observation in the browser). Logical names on `LNM$SYSTEM_TABLE`, which had failed with
 `%STEWARD-F-NOSERVER` and `NS_ERROR_NET_PARTIAL_TRANSFER` (entry of 2026-10-16 above),
 now works. Not repeated with curl from here; what changed was not recorded.
+
+**VSI Apache (APACHEWS V2.4-62, x86): tried as an alternative to lighttpd, then set
+aside by the user** (2026-10-18). Steward was not documented for Apache. What was seen,
+for whoever picks it up: the kit ships `mod_proxy_fcgi`, `mod_proxy_balancer` and
+`mod_headers`, and Steward reads only standard FastCGI variables (`REQUEST_URI`,
+`REMOTE_ADDR`, `HTTPS`, `HTTP_*`), so nothing in Steward looked like an obstacle. A
+private httpd (`-p 0 -D ONE_PROCESS`, own config, under the work account) did not get as
+far as serving: `Listen 127.0.0.1:18490` ACCVIOs in `ap_str_tolower` from
+`ap_set_listener`; with a protocol added, or with no address, `httpd -t` gives AH00078
+"failed to get a socket" (`(57) socket is not connected`). Separately, all of Apache's
+system logical names (`APACHE$COMMON`, `APACHE$ROOT`, ...) had disappeared from the
+system table between 09:50 and 10:39 that morning, the product still installed; not
+caused by the test and not investigated.
