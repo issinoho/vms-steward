@@ -1,7 +1,11 @@
 """phase12b_live.py - Phase 12b on a VMS node: installing and removing a product through
 the real dispatcher and platform (tests/vms/api_probe), as STEWARD_ADM.
 
-    python3 tests/vms/phase12b_live.py [node] [privileges]   (default x86 SYSPRV,SYSLCK)
+    python3 tests/vms/phase12b_live.py [node] [privileges] [--find-only]   (default x86 SYSPRV,SYSLCK)
+
+With --find-only nothing is installed or removed: only finding kits, PRODUCT's NOMATCH
+and Steward's refusals (its own product, the operating system) are checked, so the
+system is not changed (used on IA64, 2026-10-18).
 
 CHANGES THE SYSTEM, as the user allowed on 2026-10-17 (PHASE12.md): it installs the
 demo kit ISSINOHO <base> STWDEMO V1.0 (probes/make_stwdemo.com, one text file) into a
@@ -13,8 +17,10 @@ Steward's own product and the operating system are only asked for, to see them
 refused."""
 import json, re, subprocess, sys, time
 
-NODE = sys.argv[1] if len(sys.argv) > 1 else "x86"
-PRIVS = sys.argv[2] if len(sys.argv) > 2 else "SYSPRV,SYSLCK"
+FIND_ONLY = "--find-only" in sys.argv
+ARGS = [a for a in sys.argv[1:] if a != "--find-only"]
+NODE = ARGS[0] if len(ARGS) > 0 else "x86"
+PRIVS = ARGS[1] if len(ARGS) > 1 else "SYSPRV,SYSLCK"
 with open("tools/nodes.conf") as f:
     WORKDIR = next(l.split()[5] for l in f if l.split() and l.split()[0] == NODE)
 BUILD = WORKDIR[:-1] + ".BUILD]"
@@ -94,6 +100,11 @@ try:
 
     st, doc = api("STEWARD_ADM", PRIVS, "/api/v1/products/remove", "POST", {"producer": "VSI", "base": BASE, "name": "VMS"})
     check(st == 409, "the operating system: refused by Steward, nothing submitted", (st, doc))
+    st, doc = api("STEWARD_ADM", PRIVS, "/api/v1/products/install", "POST",
+                  {"producer": "ISSINOHO", "base": BASE, "name": "STEWARD", "version": "T9.99-0", "source": STAGE})
+    check(st == 409 and doc.get("type", "").endswith("refused-product"), "Steward's own product: refused by Steward, nothing submitted", (st, doc))
+    if FIND_ONLY:
+        raise SystemExit   # into finally: nothing installed, staging removed
 
     st, doc = api("STEWARD_ADM", PRIVS, "/api/v1/products/install", "POST",
                   dict(DEMO, version="V1.0", source=STAGE, destination=DEST))
@@ -134,6 +145,5 @@ finally:
         "set security/protection=(S:RWED,O:RWED) SYS$SYSDEVICE:[STEWARD_TEST]P12T.DIR",
         "delete/nolog SYS$SYSDEVICE:[STEWARD_TEST]P12T.DIR;*")
     check(not installed(), "the demo product is not installed at the end")
-
-print("%d ok, %d failed" % (ok, bad))
-sys.exit(1 if bad else 0)
+    print("%d ok, %d failed" % (ok, bad))
+    sys.exit(1 if bad else 0)
