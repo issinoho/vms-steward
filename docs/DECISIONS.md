@@ -690,3 +690,22 @@ refuses its own product and the operating system.
 Alternatives not taken: PRODUCT in the helper itself (30 s deadline, a request held for
 minutes); run by the service (its privileges, D2); uploaded kits (256 KB bodies,
 hundreds of MB kits).
+
+## D27. VSI Apache: documented as supported, untested
+
+**Status:** decided by the user 2026-10-20 ("document in the readme that apache is
+supported but untested - we'll put a pin in the actual testing for now").
+
+The README says Steward can run behind VSI Apache (APACHEWS 2.4) instead of lighttpd,
+with `mod_proxy_fcgi` and a balancer over the pool's ports, the gateway secret set by
+`RequestHeader set`, and the page headers by `Header set`, and that this is untested.
+Nothing in Steward changes: it speaks plain FastCGI over TCP and reads only standard
+variables. STEWARD$CONFIGURE still writes lighttpd files; for Apache they are translated
+by hand. The 2026-10-18 attempt (NOTES.md) did not get a private httpd past `Listen`.
+
+Still to do, when the node's Apache works again: a private httpd against a test pool
+(sign-in, `REQUEST_URI` and `REMOTE_ADDR` as Steward sees them, the secret refused when
+missing, large responses), then STEWARD$CONFIGURE support for Apache's files.
+
+Alternatives not taken: leaving Apache unmentioned until tested; adding Apache files to
+STEWARD$CONFIGURE before a test has shown the configuration works.

@@ -6,7 +6,8 @@
 
 Browser-based system management for OpenVMS, served over HTTPS by
 [vms-lighttpd](https://github.com/issinoho/vms-lighttpd) as a FastCGI service with a
-REST API and a static web front end.
+REST API and a static web front end. VSI Apache is supported too, but untested
+([below](#behind-vsi-apache-supported-untested)).
 
 Users sign in with their own OpenVMS username and password, checked by `SYS$ACM`. Every
 request then runs under that user's persona, so OpenVMS itself decides what they may
@@ -60,6 +61,7 @@ penetration test are still to come ([`docs/REVIEW-BRIEF.md`](docs/REVIEW-BRIEF.m
 Needs OpenVMS x86-64 V9.2-x or OpenVMS IA64 V8.4-2L3, VSI TCP/IP Services, VSI SSL3, and
 [vms-lighttpd](https://github.com/issinoho/vms-lighttpd) installed and set up. Browsers
 must reach Steward over HTTPS, through a proxy that ends TLS or with TLS in lighttpd.
+(VSI Apache can take lighttpd's place; see below.)
 
 ```
 $ PRODUCT INSTALL STEWARD /SOURCE=dev:[dir]
@@ -89,6 +91,40 @@ Two account points:
   account, which is always vms-lighttpd's;
 - running behind a reverse proxy;
 - the audit log.
+
+### Behind VSI Apache (supported, untested)
+
+Steward should also run behind VSI Apache (APACHEWS 2.4) in place of lighttpd. It uses
+only standard FastCGI over TCP, and the VSI kit ships the modules it needs. **It has not
+been tested yet**: the one attempt never got a private httpd serving at all, for
+reasons in Apache, not in Steward (`docs/NOTES.md`, 2026-10-18). Please report how it
+goes.
+
+STEWARD$CONFIGURE still writes lighttpd files, so for Apache you set it up by hand
+from them:
+- Answer STEWARD$CONFIGURE's "lighttpd's account" question with Apache's account
+  (normally `APACHE$WWW`), so Apache can read the gateway secret. Type it again on every
+  run: the default offered is always vms-lighttpd's account.
+- Load `mod_proxy`, `mod_proxy_fcgi`, `mod_proxy_balancer`, `mod_lbmethod_byrequests`
+  and `mod_headers`, and serve `STEWARD$ROOT:[WWW]` as the document root of Steward's
+  site.
+- Send `/api/` to the pool, one member for each pool port, with the gateway secret set
+  on every API request. Keep the secret in its own file, readable by Apache's account
+  only, and `Include` it:
+  ```apache
+  <Proxy "balancer://steward">
+      BalancerMember "fcgi://127.0.0.1:19300"
+      BalancerMember "fcgi://127.0.0.1:19301"
+  </Proxy>
+  ProxyFCGIBackendType GENERIC
+  ProxyPass "/api/" "balancer://steward/api/"
+  <Location "/api/">
+      RequestHeader set X-Steward-Gateway "<the secret from STEWARD_GATEWAY.CONF>"
+  </Location>
+  ```
+- Copy the page headers (CSP, `X-Frame-Options`, `Cache-Control: no-cache` and the
+  others) from the generated `STEWARD.CONF` into a `<LocationMatch "^/(?!api/)">`
+  block with `Header set`.
 
 `tools/kit.sh <node>` builds the kit (`kit/`).
 
