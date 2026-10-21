@@ -121,7 +121,7 @@
     <article class="card feature">
       <div class="keycap" aria-hidden="true">C99</div>
       <h3>Native, with no runtime to install</h3>
-      <p>A small C program, run as a pool of FastCGI processes behind lighttpd, built from
+      <p>A small C program, run as a pool of FastCGI processes behind lighttpd (or VSI Apache), built from
         the same source for OpenVMS x86-64 and IA64 (Integrity).
         No Java, no Node.js, no Python on the server. One PCSI kit and one configuration
         procedure, with startup and shutdown hooks like any layered product.</p>
@@ -213,7 +213,7 @@
       <li><b>OpenVMS decides.</b> If the system would refuse you at a terminal, it refuses
         you here, and you see its own message:
         <code class="refuse">%SYSTEM-F-NOSYSPRV, operation requires SYSPRV privilege</code></li>
-      <li><b>Nothing else gets in.</b> Only your lighttpd can reach the pool: it adds a
+      <li><b>Nothing else gets in.</b> Only your web server can reach the pool: it adds a
         secret that the pool requires, so no other process on the system can talk to it
         directly. Sessions are random tokens, stored only as hashes, bound to your CSRF
         token and same-origin requests.</li>
@@ -283,8 +283,10 @@ $ @VMSLIGHTTPD$ROOT:[COM]VMSLIGHTTPD$CONTROL RESTART</pre>
       <ul>
         <li>OpenVMS x86-64 V9.2-x, or OpenVMS IA64 (Integrity) V8.4-2L3</li>
         <li>TCP/IP Services and the SSL3 kit (OpenSSL 3)</li>
-        <li><a href="https://github.com/issinoho/vms-lighttpd">lighttpd for OpenVMS</a>, which serves Steward</li>
-        <li>HTTPS at the browser: a TLS proxy in front, or TLS in lighttpd</li>
+        <li><a href="https://github.com/issinoho/vms-lighttpd">lighttpd for OpenVMS</a>, which serves Steward;
+          VSI Apache should work too, but is untested
+          (<a href="https://github.com/issinoho/vms-steward#behind-vsi-apache-supported-untested">set it up by hand</a>)</li>
+        <li>HTTPS at the browser: a TLS proxy in front, or TLS in the web server</li>
       </ul>
       <p class="note">This is an <b>early test release</b>. Try it on a test system first, and
         <a href="https://github.com/issinoho/vms-steward/issues">tell us what you find</a>.</p>
