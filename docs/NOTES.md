@@ -613,3 +613,17 @@ far as serving: `Listen 127.0.0.1:18490` ACCVIOs in `ap_str_tolower` from
 system logical names (`APACHE$COMMON`, `APACHE$ROOT`, ...) had disappeared from the
 system table between 09:50 and 10:39 that morning, the product still installed; not
 caused by the test and not investigated.
+
+**A SYLOGIN.COM without world read stops the pool: `%DCL-E-NOCMDPROC`** (x86,
+2026-10-25). The pool had not run since the reboot of 23-Oct 16:48: STEWARD_START.LOG
+(boot, and a START at 22:49 on 25-Oct) held only `%DCL-E-NOCMDPROC, error opening
+captive command procedure - access denied`, 0.1 s after the job began. The kit's files
+and every directory above them read fine from a process with no privileges; the UAF
+record was unchanged. The cause was `SYS$MANAGER:SYLOGIN.COM`, rewritten by the site
+on 23-Oct 15:41 with `(RWED,RWED,RE,)`: STEWARD [362,2] is in the world category, and
+STEWARD is a Restricted account, which the "captive" in the message points to. An
+unprivileged OPEN of the file gives `%RMS-E-FNF`, not PRV, because SYS$MANAGER is a
+search list. SYLOGIN needs at least W:RE, as the template's own header says. Confirmed: the user set
+`SET SECURITY/PROTECTION=(W:RE)` on ;7, `STEWARD$CONTROL START` then started
+STEWARD_19300, STEWARD_19301 and STEWARD_R19300, and `/api/v1/health` through
+lighttpd on the node returned `{"status":"ok"}` (200).
