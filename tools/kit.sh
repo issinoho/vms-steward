@@ -14,7 +14,8 @@ version=$(sed -n 's/^#define ST_VERSION *"\(.*\)"/\1/p' "$top/src/core/st_versio
 pcsiversion=$(sed -n 's/^#define ST_PCSI_VERSION *"\(.*\)"/\1/p' "$top/src/core/st_version.h")
 [ -n "$version" ] && [ -n "$pcsiversion" ] || { echo "kit: no version in st_version.h" >&2; exit 1; }
 read -r _ ARCH _ _ _ _ _ < <(awk -v n="$node" '$1==n' "$top/tools/nodes.conf")
-case $ARCH in [Xx]86*) base=X86VMS; archname=x86-64 ;; *) base=I64VMS; archname=IA64 ;; esac
+case ${ARCH^^} in X86*) base=X86VMS; archname=x86-64 ;; ALPHA*|AXP*) base=AXPVMS; archname=Alpha ;;
+    IA64*|I64*) base=I64VMS; archname=IA64 ;; *) echo "kit: unknown architecture '$ARCH' in tools/nodes.conf" >&2; exit 1 ;; esac
 
 # Generated kit inputs: never committed (they carry the version), uploaded to [.KIT].
 stage=$top/out/kitstage
