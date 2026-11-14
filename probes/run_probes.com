@@ -32,6 +32,10 @@ $ show logical SSL3$INCLUDE
 $!
 $ define/process/nolog OPENSSL SSL3$INCLUDE:
 $ ccq = "/STANDARD=C99/POINTER_SIZE=32/NAMES=AS_IS/WARNINGS=ENABLE=QUESTCODE"
+$! Alpha's C defaults to VAX G_FLOAT: probe_hold's LIB$WAIT, given a C float as IEEE S,
+$! then returned at once (a 20 s hold lasted 0.02 s on AXPBOX, 2026-11-14).
+$ if f$edit(f$getsyi("ARCH_NAME"), "UPCASE") .eqs. "ALPHA" then -
+      ccq = ccq + "/FLOAT=IEEE_FLOAT/IEEE_MODE=DENORM_RESULTS"
 $ failed = 0
 $ probes = "probe_crypto,probe_rights,probe_uaf,probe_persona,probe_acm,probe_acm_host,probe_setprv,probe_selfuai,probe_crelnm,probe_jpi,probe_delprc,probe_hold,probe_qui,probe_sndjbc,probe_pwdlen,probe_rmi"
 $ i = 0

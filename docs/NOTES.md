@@ -646,3 +646,12 @@ on one CPU. The same longword limit was found by vmsotel (its findings A6) and b
 `st_plat_sleep_ms` passes `LIB$WAIT` a C `float` with type 4 (IEEE S), which under G_FLOAT
 would be an F_floating misread; `build_vms.com` adds `/FLOAT=IEEE_FLOAT/IEEE_MODE=DENORM_RESULTS`
 on Alpha, as beszel and vmsotel do. Built with it: no warnings, 528 native checks pass.
+
+**The G_FLOAT default, seen: `probe_hold` held for 0.02 s, not 20** (AXPBOX, 2026-11-14).
+Phase 8b on the Alpha could not find its stand-in for a busy pool worker (`P8B_HOLD`): the
+process printed `HOLDING 00003610 as steward_test for 20 s`, but its log stamped `began
+14:54:44.26`, `ended 14:54:44.28`. `run_probes.com` compiled the probes without
+`/FLOAT=IEEE_FLOAT`, so `probe_hold`'s C `float`, handed to `LIB$WAIT` as IEEE S, was an
+F_floating there and `LIB$WAIT` returned at once. With the qualifier on Alpha (as
+`build_vms.com` now has for Steward itself) the same process was seen as STEWARD_TEST, in
+HIB, for 18 s of its 20.

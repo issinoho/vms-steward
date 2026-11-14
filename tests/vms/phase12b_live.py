@@ -27,7 +27,7 @@ BUILD = WORKDIR[:-1] + ".BUILD]"
 AP = 'ap = "$' + BUILD + 'API_PROBE.EXE"'
 STAGE = "SYS$SYSDEVICE:[STEWARD_TEST.P12T]"
 DEST = "SYS$SYSDEVICE:[STEWARD_TEST.P12T.DEST]"
-BASE = "X86VMS" if NODE.startswith("x86") else "I64VMS"
+BASE = "X86VMS" if NODE.startswith("x86") else "AXPVMS" if NODE.startswith("alpha") else "I64VMS"
 DEMO = {"producer": "ISSINOHO", "base": BASE, "name": "STWDEMO"}
 
 def vms(*cmds, timeout=300):
