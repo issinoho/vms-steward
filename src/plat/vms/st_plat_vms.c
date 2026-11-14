@@ -1535,13 +1535,17 @@ int st_plat_holder_remove(unsigned int value, unsigned int uic, st_err *e)
    items came back as 0 on the x86 node. RMI$_CUR, COM and COMO are the exceptions:
    they need exactly 4 (8 gives BADPARAM). $GETRMI writes the return length as a
    longword, 2 bytes past an unsigned short (probes/probe_rmi.c, NOTES.md), so it gets
-   one; $GETSYI writes a word into its low half (little-endian). */
+   one; $GETSYI writes a word into its low half (little-endian).
+   On Alpha, RMI$_FRLIST and RMI$_MODLIST take only a longword: 8 gives BADPARAM
+   there (NOTES.md, 2026-11-14), so an item refused at 8 is asked again with 4. */
 static unsigned int item_u64(int rmi, unsigned short code, unsigned short size, unsigned long long *out)
 {
     unsigned int iosb[2] = { 0, 0 }, st;
     unsigned char buf[8] = { 0 };
     unsigned int len = 0;
     st_ile3 it[2];
+again:
+    iosb[0] = iosb[1] = 0;
     item(&it[0], code, buf, size, (unsigned short *) &len);
     item_end(&it[1]);
     if (rmi) {
@@ -1551,8 +1555,9 @@ static unsigned int item_u64(int rmi, unsigned short code, unsigned short size, 
         st = sys$getsyiw(0, 0, 0, it, iosb, 0, 0);
     }
     if (st & 1) st = iosb[0] & 0xFFFF;
+    if (st == SS$_BADPARAM && rmi && size == 8) { size = 4; goto again; }
     *out = 0;
-    if (st & 1) memcpy(out, buf, len > 8 ? 8 : len);   /* little-endian on IA64 and x86-64 */
+    if (st & 1) memcpy(out, buf, len > 8 ? 8 : len);   /* little-endian on all three */
     return st;
 }
 
@@ -1854,18 +1859,23 @@ int st_plat_monitor(st_monitor *m, st_err *e)
 {
     static unsigned long long val[MON_NITEMS];
     static unsigned int len[MON_NITEMS], ok[MON_NITEMS];
+    /* Each item's buffer size: the table's, until an item refuses 8 bytes and takes 4
+       (RMI$_FRLIST and RMI$_MODLIST on Alpha), after which the whole list works again. */
+    static unsigned short size[MON_NITEMS];
     static st_ile3 it[MON_NITEMS + 1];
     unsigned long long pages = 0, pagesize = 0, v;
     char name[65], sysdev[65], lv[32];
-    unsigned int ctx[2] = { 0, 0 };
+    unsigned int ctx[2] = { 0, 0 }, st;
     size_t i;
     int sys, any = 0;
 
     memset(m, 0, sizeof *m);
     memset(val, 0, sizeof val);
     memset(len, 0, sizeof len);
-    for (i = 0; i < MON_NITEMS; i++)
-        item(&it[i], mon_items[i].code, &val[i], mon_items[i].size, (unsigned short *) &len[i]);
+    for (i = 0; i < MON_NITEMS; i++) {
+        if (size[i] == 0) size[i] = mon_items[i].size;
+        item(&it[i], mon_items[i].code, &val[i], size[i], (unsigned short *) &len[i]);
+    }
     item_end(&it[MON_NITEMS]);
     if (rmi_list(it) & 1) {
         for (i = 0; i < MON_NITEMS; i++) ok[i] = 1;
@@ -1875,7 +1885,13 @@ int st_plat_monitor(st_monitor *m, st_err *e)
             one[0] = it[i];
             item_end(&one[1]);
             val[i] = 0;
-            ok[i] = rmi_list(one) & 1;
+            st = rmi_list(one);
+            if (st == SS$_BADPARAM && size[i] == 8) {
+                size[i] = 4;
+                item(&one[0], mon_items[i].code, &val[i], 4, (unsigned short *) &len[i]);
+                st = rmi_list(one);
+            }
+            ok[i] = st & 1;
         }
     }
     m->sampled_at_ms = now_utc_ms();

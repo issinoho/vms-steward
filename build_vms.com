@@ -45,6 +45,11 @@ $! _SOCKADDR_LEN selects the BSD 4.4 sockaddr layout.
 $ ccq = "/STANDARD=C99/POINTER_SIZE=32/PREFIX_LIBRARY_ENTRIES=ALL_ENTRIES" + -
         "/DEFINE=(_SOCKADDR_LEN)/NOLIST" + -
         "/INCLUDE_DIRECTORY=([.src.core],[.src.svc],[.src.plat])"
+$! Alpha's C defaults to VAX G_FLOAT; IEEE everywhere, as on IA64 and x86-64.
+$! st_plat_sleep_ms hands LIB$WAIT a C float as IEEE S (type 4), which under
+$! G_FLOAT would be an F_floating it misreads.
+$ if f$edit(f$getsyi("ARCH_NAME"), "UPCASE") .eqs. "ALPHA" then -
+      ccq = ccq + "/FLOAT=IEEE_FLOAT/IEEE_MODE=DENORM_RESULTS"
 $ failed = 0
 $ sources = "[.src.core]st_buf,[.src.core]st_fcgi,[.src.core]st_json,[.src.core]st_http," + -
             "[.src.core]st_route,[.src.core]st_lnm,[.src.core]st_proc,[.src.core]st_queue,[.src.core]st_sysgen,[.src.core]st_license,[.src.core]st_product,[.src.core]st_mrec,[.src.core]st_errlog,[.src.svc]st_app,[.src.svc]svc_session," + -

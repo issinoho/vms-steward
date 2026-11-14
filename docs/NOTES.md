@@ -627,3 +627,22 @@ search list. SYLOGIN needs at least W:RE, as the template's own header says. Con
 `SET SECURITY/PROTECTION=(W:RE)` on ;7, `STEWARD$CONTROL START` then started
 STEWARD_19300, STEWARD_19301 and STEWARD_R19300, and `/api/v1/health` through
 lighttpd on the node returned `{"status":"ok"}` (200).
+
+**Alpha (AXPBOX, OpenVMS V8.4-2L2, VSI C V7.4-002): `RMI$_FRLIST` and `RMI$_MODLIST`
+take only a longword** (2026-11-14, `probes/probe_rmi.c`, privileges NOALL,TMPMBX,NETMBX).
+Asked for 8 bytes, both give `%SYSTEM-F-BADPARAM`, as `PROCS` and `DIRIO` do at 8 on every
+node; so the 34-item list in one `$GETRMI` fails as a whole (`34 items in one $GETRMI:
+%SYSTEM-F-BADPARAM`). Every other item the monitor reads is accepted at the size x86 and
+IA64 take (the eight CPU modes at 8, the rest at 4). x86 and IA64 accept FRLIST and MODLIST
+at 8 (and with 4 x86 returned 0: the comment on `item_u64`), so the code now asks with 8 and,
+on BADPARAM, again with 4; the monitor remembers the smaller size, so later samples are one
+list again. Before the fix the system page would have shown 0 free memory, and the monitor
+fallen back to 34 calls a sample with 0 free. After it (`api_probe IAIN - /api/v1/monitor`):
+`"free":4054147072` = SHOW MEMORY `Free 3.77` GB; the modes advanced 1,030 ticks in 10.3 s
+on one CPU. The same longword limit was found by vmsotel (its findings A6) and beszel.
+`RMI$_DISKS` gives BADPARAM on Alpha too; Steward does not use it.
+
+**Alpha's C compiler defaults to VAX G_FLOAT** (VSI C on Alpha; IEEE on IA64 and x86-64).
+`st_plat_sleep_ms` passes `LIB$WAIT` a C `float` with type 4 (IEEE S), which under G_FLOAT
+would be an F_floating misread; `build_vms.com` adds `/FLOAT=IEEE_FLOAT/IEEE_MODE=DENORM_RESULTS`
+on Alpha, as beszel and vmsotel do. Built with it: no warnings, 528 native checks pass.
