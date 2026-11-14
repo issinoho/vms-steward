@@ -133,7 +133,10 @@ static void loaded_line(st_license_parser *p, const char *s, size_t n)
     put(p->cur.product, sizeof p->cur.product, s, n);
 }
 
-/* "Type: PCL,   Units Required: 2  (X86_64 Per Core)": the type and the units. */
+/* "Type: PCL,   Units Required: 2  (X86_64 Per Core)": the type and the units. Alpha
+   lists every type, A to I, most "* Not Permitted *" and some with units of their own
+   (A, the base, then H and I for layered products): the first with units is the
+   system's charge, so the type and units are taken from it and not overwritten. */
 static void charge_line(st_license_parser *p, const char *s, size_t n)
 {
     char line[128];
@@ -141,11 +144,10 @@ static void charge_line(st_license_parser *p, const char *s, size_t n)
     put(line, sizeof line, s, n);
     if (!line[0] || p->ncharge >= ST_LIC_CHARGE_LINES) return;
     memcpy(p->charge[p->ncharge++], line, sizeof line);
-    if (!strncmp(line, "Type:", 5)) {
-        t = line + 5;
-        e = strchr(t, ',');
-        put(p->charge_type, sizeof p->charge_type, t, e ? (size_t) (e - t) : strlen(t));
-    }
+    if (p->charge_units[0] || strncmp(line, "Type:", 5) || !strstr(line, "Units Required:")) return;
+    t = line + 5;
+    e = strchr(t, ',');
+    put(p->charge_type, sizeof p->charge_type, t, e ? (size_t) (e - t) : strlen(t));
     if ((t = strstr(line, "Units Required:")) != NULL) {
         t += 15;
         while (*t == ' ') t++;

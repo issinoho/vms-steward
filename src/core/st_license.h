@@ -31,7 +31,7 @@
 enum { ST_LIC_LOADED = 0, ST_LIC_CHARGE, ST_LIC_DATABASE, ST_LIC_PARTS };
 
 #define ST_LIC_OTHER  6
-#define ST_LIC_CHARGE_LINES 8
+#define ST_LIC_CHARGE_LINES 16   /* Alpha lists types A to I: 11 lines */
 
 typedef struct {
     int  part;                      /* ST_LIC_LOADED or ST_LIC_DATABASE */

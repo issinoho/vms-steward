@@ -86,7 +86,8 @@ try:
         ref = elv("/entry=(start:%d,end:%d)" % (n, n))
         reffields = [l for l in ref.split("\n") if re.match(r"^ {3}\S", l)]
         arch = next((f for f in fields if f.get("description") == "Hardware Architecture"), {})
-        want = ("6", "Intel IA-64") if NODE.startswith("ia64") else ("5", "Intel X86")
+        want = (("6", "Intel IA-64") if NODE.startswith("ia64") else
+                ("4", "Alpha") if NODE.startswith("alpha") else ("5", "Intel X86"))
         check(st == 200 and doc["event"]["number"] == n and doc["event"]["type"] == "Crash Restart" and
               len(fields) >= len(reffields) - 2 and (arch.get("value"), arch.get("translated")) == want,
               "event %d, the latest crash restart: %d fields as ELV gives them (%d top-level lines)" % (n, len(fields), len(reffields)),

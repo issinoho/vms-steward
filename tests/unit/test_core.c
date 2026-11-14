@@ -1944,6 +1944,29 @@ static void test_licenses(void)
     CHECK(!strcmp(p.db_file, "SYS$COMMON:[SYSEXE]LMF$LICENSE.LDB;1") && !strcmp(p.db_created_by, "SYSTEM"),
           "the database's header");
     CHECK(p.ncharge == 1 && !strcmp(p.charge_type, "PCL") && !strcmp(p.charge_units, "2"), "the charge");
+    {
+        /* SHOW LICENSE/CHARGE on the Alpha node (2026-11-14), tabs and all. */
+        static const char *const axp[] = {
+            "%%PART%% CHARGE", "VMS/LMF Charge Information for node AXPBOX",
+            "This is a AlphaServer DS10L, hardware model type 1961",
+            "Type: A, Units Required: 15  \t(VAX/VMS Capacity or OpenVMS Unlimited or Base)",
+            "Type: B, * Not Permitted * \t(VAX/VMS F&A Server)", "Type: C, * Not Permitted * \t(VAX/VMS Concurrent User)",
+            "Type: D, * Not Permitted * \t(VAX/VMS Workstation)",
+            "Type: E, * Not Permitted * \t(VAX/VMS System Integrated Products)",
+            "Type: F, * Not Permitted * \t(VAX Layered Products)", "Type: G, * Not Permitted * \t(Reserved)",
+            "Type: H, Units Required: 1050  \t(Alpha Layered Products)",
+            "Type: I, Units Required: 1050  \t(Layered Products)", "%%STATUS%% 00000001", NULL };
+        lic_got ga;
+        st_license_parser pa;
+        memset(&ga, 0, sizeof ga);
+        st_license_init(&pa, lic_keep, &ga);
+        for (i = 0; axp[i]; i++) st_license_line(&pa, axp[i], strlen(axp[i]));
+        st_license_end(&pa);
+        CHECK(pa.ncharge == 11 && !strcmp(pa.charge[10], "Type: I, Units Required: 1050  \t(Layered Products)"),
+              "Alpha's charge: all eleven lines, the last kept");
+        CHECK(!strcmp(pa.charge_type, "A") && !strcmp(pa.charge_units, "15"),
+              "Alpha's charge: type A, 15 units, not the last type listed");
+    }
     CHECK(st_license_ok(&p, ST_LIC_LOADED) && st_license_ok(&p, ST_LIC_CHARGE) && p.status[ST_LIC_CHARGE] == 1 &&
           st_license_ok(&p, ST_LIC_DATABASE), "each part's status, without DCL's message-shown bit");
 

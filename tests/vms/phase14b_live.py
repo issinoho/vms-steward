@@ -121,7 +121,7 @@ try:
           "purge before 2099: the other two", (st, doc))
     audit = vms("type " + AUDIT)
     check(re.search(r'action="errorlog-new" target="ERRLOG\.SYS" outcome="ok" detail="' + renamed, audit) and
-          len(re.findall(r'action="crash-delete" target="[^"]+" outcome="ok"', audit)) == 3 and
+          len(re.findall(r'action="crash-delete" target="[^"]+" outcome="ok"', audit)) == len(newest3) and
           re.search(r'action="errorlog-new" target="ERRLOG\.SYS" outcome="failed"', audit) and
           re.search(r'user="STEWARD_TEST".*action="crash-delete".*outcome="failed"', audit),
           "each change, and each refusal, in the audit log", audit[-600:])
