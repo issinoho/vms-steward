@@ -17,7 +17,8 @@ see and change.
 
 ## Status
 
-**0.16.0, an early test release** for OpenVMS x86-64 and IA64: a PCSI kit for each is on
+**0.16.0, an early test release** for OpenVMS x86-64 and IA64, and **0.16.1** for Alpha
+(the same Steward, with the fixes Alpha needed; `docs/ALPHA.md`): a PCSI kit for each is on
 the [releases page](https://github.com/issinoho/vms-steward/releases). It opens on a
 dashboard of the system, covers users and rights identifiers (what AUTHORIZE does, from
 creating and copying accounts to deleting them), shows the system's access history (who
