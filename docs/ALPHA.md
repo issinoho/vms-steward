@@ -39,10 +39,24 @@ start`), and a 60 s stand-in outliving the node's slow SSH calls less often than
 - Tests that assumed x86 or IA64: phase 14's architecture (4, Alpha), phase 14b's listing
   count (two on AXPBOX), and phase 12b's and `make_stwdemo.com`'s PCSI base (AXPVMS).
 
+## Installed (2026-11-14, the user's approval)
+
+- **lighttpd:** vms-lighttpd's AXPVMS kit (V1.4-85E3), `VMSLIGHTTPD$CONFIGURE LIGHTTPD [361,1]
+  SYS$SYSDEVICE:[VMSLIGHTTPD_DATA] 80 YES NO` (no PHP); LIGHTTPD.EXE installed with OPER.
+- **Steward:** kit T0.16-0 for AXPVMS (`tools/kit.sh alpha`, now batch jobs there: a clean
+  build, 530 native checks, the kit), installed; `STEWARD$CONFIGURE STEWARD [362,2]
+  SYS$SYSDEVICE:[STEWARD_DATA] 8443 LIGHTTPD "" YES`; its `include` added to LIGHTTPD.CONF.
+  The pool (STEWARD_19300, _19301) and the recorder (STEWARD_R19300) run as STEWARD;
+  `/api/v1/health` through lighttpd on 8443: `{"status":"ok"}`; the page 200; an unsigned
+  `/api/v1/session` 401.
+- **Phases 4 and 8**, which needed it installed: 23 ok and 10 ok. Every phase has now passed
+  on the Alpha.
+- **At boot:** `SYSTARTUP_VMS.COM;46` `st_13 = "lighttpd|SYS$STARTUP:VMSLIGHTTPD$STARTUP.COM"`,
+  `st_14 = "Steward|SYS$STARTUP:STEWARD$STARTUP.COM"`; `SYSHUTDWN.COM;13` their shutdown
+  procedures after vmsnotify's. Not yet seen through a real reboot.
+
 ## Not yet
 
-- Phases 4 and 8 expect Steward installed: the service account at [362,2] (phase 4's next
-  free member) and a running pool (phase 8). Run them after the kit.
-- The kit: `tools/kit.sh` drives the build with interactive DCL, which is unreliable on the
-  Alpha; vms-beszel's moved to batch jobs.
-- A web front end: pcre2, then vms-lighttpd, for AXPVMS (the user's choice, 2026-11-14).
+- HTTPS for browsers: a reverse proxy in front of 8443 (as `ia64.issinoho.com` for IA64), or
+  a certificate in lighttpd. No trusted proxy is configured yet.
+- A real reboot.

@@ -13,7 +13,7 @@ KIT_PRODUCT=STEWARD
 version=$(sed -n 's/^#define ST_VERSION *"\(.*\)"/\1/p' "$top/src/core/st_version.h")
 pcsiversion=$(sed -n 's/^#define ST_PCSI_VERSION *"\(.*\)"/\1/p' "$top/src/core/st_version.h")
 [ -n "$version" ] && [ -n "$pcsiversion" ] || { echo "kit: no version in st_version.h" >&2; exit 1; }
-read -r _ ARCH _ _ _ _ _ < <(awk -v n="$node" '$1==n' "$top/tools/nodes.conf")
+read -r _ ARCH _ _ _ WORKDIR _ < <(awk -v n="$node" '$1==n' "$top/tools/nodes.conf")
 case ${ARCH^^} in X86*) base=X86VMS; archname=x86-64 ;; ALPHA*|AXP*) base=AXPVMS; archname=Alpha ;;
     IA64*|I64*) base=I64VMS; archname=IA64 ;; *) echo "kit: unknown architecture '$ARCH' in tools/nodes.conf" >&2; exit 1 ;; esac
 
@@ -31,12 +31,22 @@ printf 'KIT_PRODUCER=%s\nKIT_PRODUCT=%s\nPCSI_VERSION=%s\nKIT_VERSION=%s\n' \
 echo "kit: Steward $version ($KIT_PRODUCER $base $KIT_PRODUCT $pcsiversion) on $node"
 "$top/tools/push.sh" "$node" > /dev/null
 "$top/tools/vms.sh" "$node" put "$stage"/* -- kit > /dev/null
-"$top/tools/vms.sh" "$node" dcl '@build_vms CLEAN' > "$top/out/kit-build-$node.log" 2>&1
-"$top/tools/vms.sh" "$node" dcl '@build_vms TEST' >> "$top/out/kit-build-$node.log" 2>&1
+# On the Alpha interactive SSH output is unreliable (ALPHA.md): a batch job there.
+run() {   # run DCL lines on the node: one batch job on the Alpha, dcl elsewhere
+    if [ "${ARCH^^}" = ALPHA ]; then
+        local job="$top/out/kitstage-job-$node.com"
+        { echo '$ set noon'; echo "\$ set default $WORKDIR"; printf '$ %s\n' "$@"; } > "$job"
+        "$top/tools/vms.sh" "$node" batch "$job"
+    else
+        "$top/tools/vms.sh" "$node" dcl "$@"
+    fi
+}
+run '@build_vms CLEAN' > "$top/out/kit-build-$node.log" 2>&1
+run '@build_vms TEST' >> "$top/out/kit-build-$node.log" 2>&1
 grep -q 'TEST-OK' "$top/out/kit-build-$node.log" ||
     { tail -20 "$top/out/kit-build-$node.log"; echo "kit: build or native tests failed" >&2; exit 1; }
 grep -E 'checks' "$top/out/kit-build-$node.log" || true
-"$top/tools/vms.sh" "$node" dcl '@[.kit]make_kit' | tee "$top/out/kit-$node.log"
+run '@[.kit]make_kit' | tee "$top/out/kit-$node.log"
 kit=$(sed -n 's/^MAKE_KIT: kit .*\]\([^;]*\);.*/\1/p' "$top/out/kit-$node.log" | head -1)
 [ -n "$kit" ] || { echo "kit: no kit produced (see out/kit-$node.log)" >&2; exit 1; }
 "$top/tools/vms.sh" "$node" get "KIT_$ARCH/$kit" "$top/out/kits/$kit"
