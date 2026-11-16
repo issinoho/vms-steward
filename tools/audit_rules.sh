@@ -51,6 +51,12 @@ rule service-account-test-only "st_plat_vms_test_svc_* called outside tests/" \
 rule core-no-io "I/O in src/core" \
     --include='*.c' '\b(fopen|fwrite|fprintf|printf|puts|recv|send|socket|open|read|write)\(' src/core
 
+# Bounded copies only: st_copy/st_append (st_buf.h). CI's flawfinder fails on these
+# at level 4, but it is not installed everywhere `make audit` runs, and four of them
+# kept CI red from 2026-10-17 while the local audit passed.
+rule no-strcpy "strcpy/strcat (use st_copy/st_append)" \
+    --include='*.c' --include='*.h' '\b(strcpy|strcat)\(' src/
+
 # No real node details or credentials in committed files (CLAUDE.md).
 rule no-node-details "real node details" \
     --exclude-dir=.git --exclude-dir=build --exclude-dir=cache --exclude-dir=out --exclude=nodes.conf \

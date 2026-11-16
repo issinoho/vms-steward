@@ -77,7 +77,7 @@ static int file_query(st_ctx *c, char file[32])
 {
     int got = svc_query(c, "file", file, 32);
     if (got < 0) return -1;
-    if (!got || !file[0]) { strcpy(file, "ERRLOG.SYS"); return 0; }
+    if (!got || !file[0]) { st_copy(file, 32, "ERRLOG.SYS"); return 0; }
     if (!st_valid_errlog_name(file)) {
         st_resp_problem(c->resp, 400, "bad-request", "Bad error log name",
                         "ERRLOG.SYS, or ERRLOG_<yyyymmdd>_<hhmm>.SYS.", 0, NULL);
@@ -475,7 +475,7 @@ static int purge_pick(const char *name, const st_clue_summary *s, void *ctx)
     /* Before the day: its date sorts before it. A listing whose time cannot be read
        is never taken. */
     if (iso[0] && strncmp(iso, pc->before, 10) < 0 && pc->n < MAX_PURGE && strlen(name) < 40)
-        strcpy(pc->names[pc->n++], name);
+        st_copy(pc->names[pc->n++], sizeof pc->names[0], name);
     return 0;
 }
 

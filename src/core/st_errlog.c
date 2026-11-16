@@ -3,6 +3,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include "st_errlog.h"
+#include "st_buf.h"
 
 static const char *const months = "JANFEBMARAPRMAYJUNJULAUGSEPOCTNOVDEC";
 
@@ -101,8 +102,8 @@ static void elv_message(st_elv_parser *p, const char *line, size_t len)
         p->message[n] = '\0';
     } else if (m[0] == '-' && !strstr(p->message, m) && strlen(p->message) + strlen(m) + 3 < sizeof p->message) {
         /* ELV writes its message to both SYS$OUTPUT and SYS$ERROR: once is enough. */
-        strcat(p->message, " / ");
-        strcat(p->message, m);
+        st_append(p->message, sizeof p->message, " / ");
+        st_append(p->message, sizeof p->message, m);
     }
 }
 
@@ -256,7 +257,7 @@ void st_clue_line(st_clue_summary *s, const char *line, size_t len)
     if (s->nitems >= ST_CLUE_MAX_ITEMS || strlen(key) >= sizeof s->items[0].key) return;
     copy_trim(s->items[s->nitems].value, sizeof s->items[0].value, colon + 1, len - klen - 1);
     if (!s->items[s->nitems].value[0]) return;   /* a heading ("Crashdump Summary Information:") */
-    strcpy(s->items[s->nitems].key, key);
+    st_copy(s->items[s->nitems].key, sizeof s->items[0].key, key);
     s->nitems++;
 }
 

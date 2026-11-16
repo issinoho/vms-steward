@@ -25,6 +25,7 @@
 #include "st_app.h"
 #include "svc.h"
 #include "st_product.h"
+#include "st_buf.h"
 
 #define MAX_ROWS 5000   /* each part */
 
@@ -230,7 +231,7 @@ static int member(st_ctx *c, const st_jval *root, const char *key, int required,
     } else if (strlen(v) >= outlen || !valid(v)) {
         snprintf(d, sizeof d, "%s: not a valid value.", key);
     } else {
-        strcpy(out, v);
+        st_copy(out, outlen, v);
         return 0;
     }
     st_resp_problem(c->resp, 422, "invalid-value", "Invalid value", d, 0, NULL);
